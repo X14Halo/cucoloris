@@ -212,6 +212,13 @@ const WATER = name => ({name, params:[
 const MOTION = {name:'Motion', params:[
   {k:'timeScale', l:'Time scale', min:0.05, max:2, step:0.01, u:'×', h:'1 = real speed from the gravity–capillary dispersion relation. Lower it only as a deliberate art-direction choice.'},
 ]};
+const WATER_TYPES = [
+  {name:'Pool (fresh, treated)', sal:0, b:0.01},
+  {name:'Clear ocean', sal:35, b:0.03},
+  {name:'Coastal', sal:33, b:0.3},
+  {name:'Turbid coastal', sal:30, b:1.0},
+  {name:'Lake or river', sal:0, b:0.8},
+];
 const LEVELS = {exposure:-1.3, rolloff:0.35, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false};
 
 const MODES = {
@@ -224,18 +231,21 @@ const MODES = {
         {k:'sunElev', l:'Sun elevation (in air)', min:10, max:90, step:0.5, u:'°'},
         {k:'sunAz', l:'Sun azimuth', min:0, max:360, step:1, u:'°'},
         SUN_DISK,
-        {k:'dispersion', l:'Dispersion', min:0, max:5, step:0.05, u:'×', h:'Chromatic split from water’s IOR difference across wavelengths. 1 = real water.'},
-        {k:'scatter', l:'Turbidity', min:0, max:1, step:0.01, h:'Forward scattering in the water column. Lowers contrast and adds a soft halo.'},
+        {k:'waterType', l:'Water', opts:WATER_TYPES.map(w => w.name), h:'Sets salinity (which shifts the refractive index) and the scattering coefficient of the water column.'},
+        {k:'scatterK', l:'Scattering', min:0, max:4, step:0.01, u:'×', h:'Scales the water type’s scattering coefficient. Light scattered out of each ray spreads into a soft forward halo and lowers caustic contrast with depth.'},
+        {k:'dispersion', l:'Dispersion', min:0, max:5, step:0.05, u:'×', h:'Wavelength-dependent refraction from the measured index of refraction of water (Quan–Fry). 1 = real water. Colour fringes appear only where they exceed a pixel.'},
+        {k:'bakeColor', l:'Bake water absorption into colour', type:'chk', h:'Applies pure-water spectral absorption along each ray’s path. Leave off when your scene’s water volume already absorbs the light.'},
       ]},
       MOTION,
     ],
     presets:[
-      {name:'Pool, still air', v:{seed:7, tileSize:3, wavelength:0.32, slope:0.05, tail:0.15, peak:1.6, directional:0.15, windDir:30, opposing:0.55, ripple:0, chop:0.2, depth:1.5, sunElev:62, sunAz:40, sunDisk:0.53, dispersion:0, scatter:0.04, timeScale:1}},
-      {name:'Pool, light breeze', v:{tileSize:2, wavelength:0.14, slope:0.032, tail:0.4, peak:2, directional:0.5, opposing:0.25, ripple:0.006, depth:1.3}},
-      {name:'Pool, deep end', v:{tileSize:4, wavelength:0.32, slope:0.045, tail:0.2, depth:3.2, scatter:0.08}},
-      {name:'Indoor pool, lamps', v:{tileSize:3, wavelength:0.35, slope:0.04, tail:0.1, opposing:0.7, depth:1.6, sunElev:80, sunDisk:3}},
-      {name:'Tropical shallows', v:{tileSize:6, wavelength:0.8, slope:0.065, tail:0.35, peak:3.3, directional:0.6, opposing:0.1, ripple:0.004, depth:2.2, dispersion:1, scatter:0.12}},
-      {name:'Reef at 6 m', v:{tileSize:12, wavelength:2.4, slope:0.08, tail:0.45, peak:3.3, directional:0.5, opposing:0, ripple:0.003, depth:6, dispersion:1.2, scatter:0.3}},
+      {name:'Pool, still air', v:{seed:7, tileSize:3, wavelength:0.32, slope:0.05, tail:0.3, peak:1.2, directional:0.15, windDir:30, opposing:0.55, ripple:0, chop:0.2, depth:1.5, sunElev:62, sunAz:40, sunDisk:0.53, waterType:0, scatterK:1, dispersion:1, bakeColor:false, timeScale:1}},
+      {name:'Pool, light breeze', v:{tileSize:2, wavelength:0.14, slope:0.032, tail:0.45, peak:1.4, directional:0.5, opposing:0.25, ripple:0.006, depth:1.3}},
+      {name:'Pool, deep end', v:{tileSize:4, wavelength:0.32, slope:0.045, tail:0.3, depth:3.2}},
+      {name:'Shallows, 25 cm', v:{tileSize:1.5, wavelength:0.13, slope:0.07, tail:0.2, peak:1.3, directional:0.35, opposing:0.1, ripple:0, depth:0.25, sunElev:55, waterType:4}},
+      {name:'Indoor pool, lamps', v:{tileSize:3, wavelength:0.35, slope:0.04, tail:0.2, opposing:0.7, depth:1.6, sunElev:80, sunDisk:3}},
+      {name:'Tropical shallows', v:{tileSize:6, wavelength:0.8, slope:0.065, tail:0.35, peak:2.5, directional:0.6, opposing:0.1, ripple:0.004, depth:2.2, waterType:1}},
+      {name:'Reef at 6 m', v:{tileSize:12, wavelength:2.4, slope:0.08, tail:0.45, peak:2.5, directional:0.5, opposing:0, ripple:0.003, depth:6, waterType:2}},
     ],
     post:{...LEVELS},
   },
@@ -266,15 +276,17 @@ const MODES = {
       {name:'Light path', params:[
         {k:'sunElev', l:'Sun elevation', min:5, max:75, step:0.5, u:'°', h:'Lower sun stretches the pattern into horizontal bands; higher sun stretches it upward.'},
         {k:'sunAz', l:'Sun angle to the wall', min:-75, max:75, step:0.5, u:'°', h:'0 = the sun faces the wall squarely across the water.'},
+        {k:'lean', l:'Surface lean', min:-30, max:50, step:0.5, u:'°', h:'Positive leans the surface out over the water, like a flared bow; negative leans it away, like a sloping rock.'},
         SUN_DISK,
       ]},
       MOTION,
     ],
     presets:[
-      {name:'Boat hull, calm harbour', v:{seed:9, tileSize:2, wavelength:0.6, slope:0.012, tail:0.25, peak:2, directional:0.5, windDir:0, opposing:0.4, ripple:0, chop:0.2, sunElev:25, sunAz:10, sunDisk:0.53, timeScale:1}},
-      {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.4, peak:1.6, directional:0.4, opposing:0.6, ripple:0, sunElev:35, sunAz:-15}},
-      {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.3, opposing:0.1, sunElev:45, sunAz:20}},
-      {name:'Pool wall above water', v:{tileSize:1.5, wavelength:0.25, slope:0.015, tail:0.15, opposing:0.7, sunElev:55, sunAz:0}},
+      {name:'Yacht hull, harbour', v:{seed:9, tileSize:3, wavelength:0.7, slope:0.015, tail:0.35, peak:1.4, directional:0.1, windDir:60, opposing:0.5, ripple:0, chop:0.2, sunElev:50, sunAz:15, lean:15, sunDisk:0.53, timeScale:1}},
+      {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.45, peak:1.4, directional:0.4, opposing:0.6, ripple:0, sunElev:40, sunAz:-15, lean:0}},
+      {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.35, directional:0.15, windDir:45, opposing:0.1, sunElev:45, sunAz:20, lean:-8}},
+      {name:'Pool wall above water', v:{tileSize:1.5, wavelength:0.25, slope:0.015, tail:0.25, opposing:0.7, sunElev:55, sunAz:0, lean:0}},
+      {name:'Low sun bands', v:{tileSize:2, wavelength:0.6, slope:0.012, tail:0.25, opposing:0.4, sunElev:22, sunAz:10, lean:0}},
     ],
     post:{...LEVELS},
   },
@@ -406,9 +418,11 @@ float pn3(vec3 q, ivec2 A, ivec2 B, int P, uint s){
 
 const VS_FULL = `#version 300 es
 void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
-/* ---------- Water: evolve the spectrum h(k,t) and pack slopes + horizontal displacement ---------- */
-const FS_SPEC = COMMON + `
+/* ---------- Water: evolve the spectrum h(k,t). Output A packs slope_x + i·slope_y and
+              disp_x + i·disp_y; output B packs the height. Both are inverse-FFT'd. ---------- */
+const FS_SPEC = HEAD + `
 uniform sampler2D uH0; uniform int uN; uniform float uL, uT, uTS, uLoopT, uHw;
+layout(location=0) out vec4 oA; layout(location=1) out vec4 oB;
 vec2 cmul(vec2 a, vec2 b){ return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
 void main(){
   ivec2 ij = ivec2(gl_FragCoord.xy);
@@ -416,17 +430,17 @@ void main(){
   vec2 n = vec2(ij);
   n -= N * step(N * 0.5, n);
   vec2 k = TAU * n / uL; float kl = length(k);
-  if (kl < 1e-6){ fragColor = vec4(0.0); return; }
+  if (kl < 1e-6){ oA = vec4(0.0); oB = vec4(0.0); return; }
   vec4 h0 = texelFetch(uH0, ij, 0);
+  // gravity–capillary dispersion with finite depth: ω² = (gk + σk³/ρ) tanh(kH)
   float w = sqrt((9.81 * kl + 7.4e-5 * kl * kl * kl) * tanh(min(kl * uHw, 10.0))) * uTS;
   if (uLoopT > 0.0) w = floor(w * uLoopT / TAU + 0.5) * TAU / uLoopT;
   float ph = mod(w * uT, TAU);
   vec2 e = vec2(cos(ph), -sin(ph));   // waves travel along +k
   vec2 h = cmul(h0.xy, e) + cmul(vec2(h0.z, -h0.w), vec2(e.x, -e.y));
   vec2 ih = vec2(-h.y, h.x);
-  vec2 P1 = k.x * ih - k.y * h;                 // slope_x + i slope_y
-  vec2 P2 = -(k.x / kl) * ih + (k.y / kl) * h;  // disp_x + i disp_y
-  fragColor = vec4(P1, P2);
+  oA = vec4(k.x * ih - k.y * h, -(k.x / kl) * ih + (k.y / kl) * h);
+  oB = vec4(h, 0.0, 0.0);
 }`;
 /* ---------- Water: one radix-2 Stockham FFT stage (inverse, two complex signals per texel) ---------- */
 const FS_FFT = COMMON + `
@@ -444,77 +458,82 @@ void main(){
   vec2 w = vec2(cos(a), sin(a));
   fragColor = vec4(e.xy + cmul(w, o.xy), e.zw + cmul(w, o.zw));
 }`;
-/* ---------- Water: trace each surface sample to the floor (refraction) or ceiling (reflection) ---------- */
-const FS_SURF = COMMON + `
-uniform sampler2D uA; uniform float uDepth, uChop, uEtaR, uEtaB, uTile; uniform vec3 uL; uniform int uRefl;
-void main(){
-  vec4 a = texelFetch(uA, ivec2(gl_FragCoord.xy), 0);
-  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
-  vec2 d = -uChop * a.zw / uTile;   // Gerstner: points gather toward crests
-  if (uRefl == 1){
-    vec3 r = reflect(uL, n), r0 = reflect(uL, vec3(0.0, 0.0, 1.0));
-    vec2 o = d + uDepth / max(r.z, 0.05) * r.xy - uDepth / r0.z * r0.xy;
-    fragColor = vec4(o, o);
-  } else {
-    vec3 rR = refract(uL, n, uEtaR), rB = refract(uL, n, uEtaB);
-    vec3 r0R = refract(uL, vec3(0.0, 0.0, 1.0), uEtaR), r0B = refract(uL, vec3(0.0, 0.0, 1.0), uEtaB);
-    vec2 oR = d + uDepth / (-rR.z) * rR.xy - uDepth / (-r0R.z) * r0R.xy;
-    vec2 oB = d + uDepth / (-rB.z) * rB.xy - uDepth / (-r0B.z) * r0B.xy;
-    fragColor = vec4(oR, oB);
-  }
-}`;
 
-/* ---------- Caustics: photon mesh. Each triangle carries its source area;
-              intensity = source area / landed area (energy conserving). ---------- */
-const VS_MESH = HEAD + `
-uniform sampler2D uOff; uniform int uM, uG, uMargin, uChan;
-out vec2 vOld;
-int wrap1(int c, int p){ return c - p * int(floor(float(c) / float(p))); }
+/* ---------- Water: per-ray light transport. Every mesh vertex is a point on the displaced,
+              heighted surface; its ray is refracted (or reflected) by Snell's law at that
+              point's true normal, weighted by unpolarized Fresnel, and carried to the
+              receiving plane. Brightness = source area / landed area. ---------- */
+const FRES = `
+float fres(float ci, float n){
+  float st2 = (1.0 - ci * ci) / (n * n);
+  if (st2 >= 1.0) return 1.0;
+  float ct = sqrt(1.0 - st2);
+  float rs = (ci - n * ct) / (ci + n * ct), rp = (n * ci - ct) / (n * ci + ct);
+  return 0.5 * (rs * rs + rp * rp);
+}`;
+const VS_MESH = HEAD + FRES + `
+uniform sampler2D uSa, uSb; uniform int uM, uG, uMargin, uRefl;
+uniform float uTile, uDepth, uChop, uN, uF0; uniform vec3 uL; uniform vec2 uFlat;
+out vec2 vOld; out float vF;
 void main(){
   int q = gl_VertexID / 6; int k = gl_VertexID - q * 6;
   ivec2 cr = (k == 1 || k == 4) ? ivec2(1, 0) : ((k == 2 || k == 3) ? ivec2(0, 1) : ((k == 5) ? ivec2(1, 1) : ivec2(0, 0)));
   int gj = q / uG; int gi = q - gj * uG;
   ivec2 id = ivec2(gi, gj) + cr - ivec2(uMargin);
-  vec4 o = texelFetch(uOff, ivec2(wrap1(id.x, uM), wrap1(id.y, uM)), 0);
-  vec2 off = uChan == 0 ? o.xy : (uChan == 1 ? o.zw : 0.5 * (o.xy + o.zw));
   vec2 rest = (vec2(id) + 0.5) / float(uM);
+  vec4 a = textureLod(uSa, rest, 0.0);
+  float h = textureLod(uSb, rest, 0.0).x;
+  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
+  vec2 p = rest * uTile - uChop * a.zw;
+  float ci = max(dot(-uL, n), 0.0);
+  vec2 hit;
+  if (uRefl == 1){
+    vec3 r = reflect(uL, n);
+    hit = p + (uDepth - h) / max(r.z, 0.03) * r.xy;
+    vF = fres(ci, uN) / uF0;
+  } else {
+    vec3 r = refract(uL, n, 1.0 / uN);
+    hit = p + (uDepth + h) / max(-r.z, 0.03) * r.xy;
+    vF = (1.0 - fres(ci, uN)) / uF0;
+  }
   vOld = rest;
-  gl_Position = vec4((rest + off) * 2.0 - 1.0, 0.0, 1.0);
+  gl_Position = vec4((hit / uTile - uFlat) * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FS_MESH = HEAD + `
-in vec2 vOld; out vec4 fragColor; uniform vec3 uMask; uniform float uA;
+in vec2 vOld; in float vF; out vec4 fragColor; uniform vec3 uMask; uniform float uA;
 void main(){
   vec2 dx = dFdx(vOld), dy = dFdy(vOld);
   float a0 = abs(dx.x * dy.y - dx.y * dy.x);
-  float I = min(a0 * uA * uA, 120.0);
-  fragColor = vec4(uMask * I, 1.0);
+  fragColor = vec4(uMask * min(a0 * uA * uA, 120.0) * vF, 1.0);
 }`;
-
-/* ---------- Hull and wall caustics: reflected rays from the water in front of a vertical
-              wall land at a height set by how far away the reflecting water is.
-              Same energy-conserving photon mesh as the floor. ---------- */
-const VS_WALL = HEAD + `
-uniform sampler2D uF; uniform int uM, uGy, uMy; uniform float uTile, uChop; uniform vec3 uL, uR0;
-out vec2 vOld;
-int wrap1(int c, int p){ return c - p * int(floor(float(c) / float(p))); }
+/* ---------- Hulls, walls and rocks: reflected rays from the water in front of a surface
+              that may lean toward (flared bow) or away from the water. ---------- */
+const VS_WALL = HEAD + FRES + `
+uniform sampler2D uSa, uSb; uniform int uM, uGy, uMy;
+uniform float uTile, uChop, uCosL, uSinL, uN, uF0, uLatK; uniform vec3 uL;
+out vec2 vOld; out float vF;
 void main(){
   int q = gl_VertexID / 6; int k = gl_VertexID - q * 6;
   ivec2 cr = (k == 1 || k == 4) ? ivec2(1, 0) : ((k == 2 || k == 3) ? ivec2(0, 1) : ((k == 5) ? ivec2(1, 1) : ivec2(0, 0)));
   int gx = q / uGy; int gy = q - gx * uGy;
-  ivec2 id = ivec2(gx, gy - uMy) + cr;          // x = distance from the wall, y = along the wall
-  vec4 a = texelFetch(uF, ivec2(wrap1(id.x, uM), wrap1(id.y, uM)), 0);
+  ivec2 id = ivec2(gx, gy - uMy) + cr;          // x = distance out from the wall, y = along the wall
+  vec2 rest = vec2(id) / float(uM);
+  vec4 a = textureLod(uSa, rest, 0.0);
+  float h = textureLod(uSb, rest, 0.0).x;
   vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
   vec3 r = reflect(uL, n);
+  vF = fres(max(dot(-uL, n), 0.0), uN) / uF0;
   vec2 d = -uChop * a.zw;
-  float x = float(id.x) / float(uM) * uTile + d.x;
-  float y = float(id.y) / float(uM) * uTile + d.y;
-  float rx = min(r.x, -0.02);
-  float t = max(x, 0.0) / (-rx);
-  float z = t * max(r.z, 0.0);
-  float yy = y + t * r.y - max(x, 0.0) / (-uR0.x) * uR0.y;
-  vOld = vec2(id) / float(uM);
-  gl_Position = vec4(yy / uTile * 2.0 - 1.0, z / uTile * 2.0 - 1.0, 0.0, 1.0);
+  vec3 P = vec3(max(rest.x * uTile + d.x, 0.0), rest.y * uTile + d.y, h);
+  float den = min(r.x * uCosL - r.z * uSinL, -0.02);
+  float t = -(P.x * uCosL - P.z * uSinL) / den;
+  vec3 H = P + t * r;
+  float s = H.x * uSinL + H.z * uCosL;            // height up the surface from the waterline
+  float yy = H.y - rest.x * uTile * uLatK;
+  vOld = rest;
+  gl_Position = vec4(yy / uTile * 2.0 - 1.0, s / uTile * 2.0 - 1.0, 0.0, 1.0);
 }`;
+
 
 /* ---------- Sun-disk convolution with limb darkening. On walls the blur grows with height,
               because the light has travelled further from the water. ---------- */
@@ -604,7 +623,6 @@ function program(vs, fs, name) {
 const PR = {
   spec: program(VS_FULL, FS_SPEC, 'water spectrum'),
   fft: program(VS_FULL, FS_FFT, 'FFT'),
-  surf: program(VS_FULL, FS_SURF, 'surface'),
   mesh: program(VS_MESH, FS_MESH, 'caustic mesh'),
   wall: program(VS_WALL, FS_MESH, 'wall caustic mesh'),
   disk: program(VS_FULL, FS_DISK, 'disk blur'),
@@ -687,10 +705,29 @@ function dataTex(w, h, data, filter = gl.NEAREST) {
 
 
 const QUAL = {
-  draft: {ss:1.0, N:256, taps:24, sub:1},
-  high:  {ss:1.5, N:512, taps:64, sub:4},
-  ultra: {ss:2.0, N:1024, taps:128, sub:10},
+  draft: {ss:1.0, N:256, over:1, taps:24, sub:1, bands:3},
+  high:  {ss:1.5, N:1024, over:1, taps:64, sub:4, bands:6},
+  ultra: {ss:2.0, N:2048, over:2, taps:128, sub:8, bands:12},
 };
+function mrtF(name, w, h) {
+  let t = targets[name];
+  if (t && t.w === w && t.h === h) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
+  const a = makeTex(w, h, 'f32', false), b = makeTex(w, h, 'f32', false);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  t = targets[name] = {tex:a, tex2:b, fb, w, h};
+  return t;
+}
+const linearFloat = !!gl.getExtension('OES_texture_float_linear');
+function filt(texo, linear) {
+  gl.bindTexture(gl.TEXTURE_2D, texo);
+  const f = linear && linearFloat ? gl.LINEAR : gl.NEAREST;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, f); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, f);
+}
 function rng(seed) {
   let a = seed | 0;
   return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -764,9 +801,9 @@ function waterSpectrum(P, N) {
   Object.assign(water, {sig, N, kappa:Math.sqrt(kap / 2)});
   return water;
 }
-function runFFT(spec, N) {
+function runFFT(spec, N, tag = 'w') {
   let src = spec;
-  const a = tgt('wfa', N, N, 'f32'), b = tgt('wfb', N, N, 'f32');
+  const a = tgt(tag + 'fa', N, N, 'f32'), b = tgt(tag + 'fb', N, N, 'f32');
   for (const horiz of [1, 0]) {
     for (let sub = 2; sub <= N; sub *= 2) {
       const dst = src === a ? b : a;
@@ -777,99 +814,153 @@ function runFFT(spec, N) {
   return src;
 }
 
+/* ---------- Optics of water ---------- */
+// Refractive index of water, Quan & Fry (1995), 20 °C; λ in nm, salinity S in PSU
+function nWater(lam, S) {
+  const T = 20;
+  return 1.31405 + (1.779e-4 - 1.05e-6 * T + 1.6e-8 * T * T) * S - 2.02e-6 * T * T
+       + (15.868 + 0.01155 * S - 0.00423 * T) / lam - 4382 / (lam * lam) + 1.1455e6 / (lam * lam * lam);
+}
+// Pure-water absorption (1/m), Pope & Fry (1997), sampled
+const ABS = [[400, 0.0066], [425, 0.0048], [450, 0.0092], [475, 0.0114], [500, 0.0204], [525, 0.0425], [550, 0.0565], [575, 0.0894], [600, 0.2224], [625, 0.2834], [650, 0.34], [675, 0.45], [700, 0.65]];
+const absorb = lam => { for (let i = 1; i < ABS.length; i++) if (lam <= ABS[i][0]) { const [l0, a0] = ABS[i - 1], [l1, a1] = ABS[i]; return a0 + (a1 - a0) * (lam - l0) / (l1 - l0); } return 0.65; };
+// CIE 1931 colour matching (Wyman, Sloan & Shirley 2013 fit) → linear sRGB
+const g3 = (x, m, s1, s2) => { const t = (x - m) / (x < m ? s1 : s2); return Math.exp(-0.5 * t * t); };
+function cmf(l) {
+  const X = 1.056 * g3(l, 599.8, 37.9, 31.0) + 0.362 * g3(l, 442.0, 16.0, 26.7) - 0.065 * g3(l, 501.1, 20.4, 26.2);
+  const Y = 0.821 * g3(l, 568.8, 46.9, 40.5) + 0.286 * g3(l, 530.9, 16.3, 31.1);
+  const Z = 1.217 * g3(l, 437.0, 11.8, 36.0) + 0.681 * g3(l, 459.0, 26.0, 13.8);
+  return [3.2406 * X - 1.5372 * Y - 0.4986 * Z, -0.9689 * X + 1.8758 * Y + 0.0415 * Z, 0.0557 * X - 0.2040 * Y + 1.0570 * Z];
+}
+function spectralBands(K) {
+  const out = [], sum = [0, 0, 0];
+  for (let i = 0; i < K; i++) {
+    const lam = 400 + (i + 0.5) * 300 / K;
+    let w = [0, 0, 0];
+    for (let s = 0; s < 8; s++) { const c = cmf(400 + (i + (s + 0.5) / 8) * 300 / K); for (let k = 0; k < 3; k++) w[k] += Math.max(0, c[k]); }
+    out.push({lam, w}); for (let k = 0; k < 3; k++) sum[k] += w[k];
+  }
+  out.forEach(b => { b.w = b.w.map((v, k) => v / sum[k]); });
+  return out;
+}
+
 function renderCaustics(P, res, t, target, tl) {
   const Q = QUAL[S.quality];
-  const N = Q.N;
+  const N = Q.N, M = N * Q.over;
   const A = Math.min(4096, Math.round(res * Q.ss));
   const W = waterSpectrum(P, N);
+  const wt = WATER_TYPES[P.waterType | 0] || WATER_TYPES[0];
+  const sal = target === 0 ? wt.sal : 0;
+  const nMean = nWater(550, sal);
   const Hw = target === 0 ? Math.max(P.depth, 0.2) : 30;
-  const spec = tgt('wspec', N, N, 'f32');
+  // simulate: evolve spectrum, inverse FFT slopes/displacement and height
+  const spec = mrtF('wspec', N, N);
   pass(PR.spec, spec, p => {
     tex(p, 'uH0', W.tex, 0); i1(p, 'uN', N); f1(p, 'uL', P.tileSize);
     f1(p, 'uT', tl.loop ? ((t % tl.len) + tl.len) % tl.len : t); f1(p, 'uTS', P.timeScale);
     f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uHw', Hw);
   });
-  const field = runFFT(spec, N);
-  const e = P.sunElev * DEG;
-  const az = (target === 2 ? P.sunAz : P.sunAz) * DEG;
+  const fA = runFFT(spec, N, 'wa');
+  const fB = runFFT({tex:spec.tex2}, N, 'wb');
+  filt(fA.tex, true); filt(fB.tex, true);
+  const e = P.sunElev * DEG, az = P.sunAz * DEG;
   const th = P.sunDisk * 0.5 * DEG;
   const sigma = Math.hypot(P.slope, P.ripple);
+  const L0 = [-Math.cos(e) * Math.cos(az), -Math.cos(e) * Math.sin(az), -Math.sin(e)];
   const acc = tgt('cacc', A, A, 'f16', true);
   bindTarget(acc);
   gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
   gl.bindVertexArray(vao);
-  let rSun, radK = 0, lines = [];
+  let rSun = 0, radK = 0, mixS = 0, r2 = 0;
+  const lines = [];
   if (target === 2) {
-    // wall at x = 0 facing +x; sun azimuth measured from the wall normal
-    const L = [-Math.cos(e) * Math.cos(az), -Math.cos(e) * Math.sin(az), -Math.sin(e)];
-    const R0 = [L[0], L[1], -L[2]];
-    const s = R0[2] / -R0[0];                       // wall height gained per metre of water
-    const xMax = P.tileSize / s * 1.15 + 0.05;
-    const Gx = clamp(Math.ceil(xMax / P.tileSize * N), 8, 4096);
-    const my = Math.ceil(clamp(xMax / -R0[0] * 2.5 * sigma / P.tileSize + 0.02, 0.02, 0.8) * N + Math.abs(R0[1] / R0[0]) * 0);
-    const Gy = N + 2 * my;
-    const p = PR.wall; gl.useProgram(p.p);
-    tex(p, 'uF', field.tex, 0); i1(p, 'uM', N); i1(p, 'uGy', Gy); i1(p, 'uMy', my);
-    f1(p, 'uTile', P.tileSize); f1(p, 'uChop', P.chop); f3(p, 'uL', ...L); f3(p, 'uR0', ...R0);
-    f3(p, 'uMask', s, s, s); f1(p, 'uA', A);
-    gl.drawArrays(gl.TRIANGLES, 0, Gx * Gy * 6);
-    // path length to height z: z / sin(e); the wall sees the disk obliquely by 1/cos(incidence)
-    const cosInc = Math.max(-R0[0], 0.15);
-    radK = Math.tan(th) / Math.sin(e) / Math.sqrt(cosInc);
-    rSun = 0;
-    const F = fresnel(Math.sin(e));
-    lines.push(`Texture spans ${P.tileSize.toFixed(1)} m along the wall × ${P.tileSize.toFixed(1)} m up from the waterline; tiles sideways only`);
-    lines.push(`Lit by water up to ${xMax.toFixed(1)} m out · sun-disk blur grows from 0 at the waterline to Ø ${(2 * radK * P.tileSize * 1000).toFixed(0)} mm at the top`);
-    lines.push(`Aim the fake light from ${P.sunElev.toFixed(1)}° below horizontal (mirror of the sun). Reflected sun is ${(F * 100).toFixed(1)}% of direct sun (Fresnel)`);
+    const lam = (P.lean || 0) * DEG, cL = Math.cos(lam), sL = Math.sin(lam);
+    const R0 = [L0[0], L0[1], -L0[2]];
+    const den0 = R0[0] * cL - R0[2] * sL;
+    if (den0 > -0.03) {
+      lines.push('The reflected sun runs parallel to or away from this surface, so no caustics reach it. Lower the lean or raise the sun.');
+    } else {
+      const t1 = -cL / den0, kS = sL + t1 * (R0[0] * sL + R0[2] * cL), latK = t1 * R0[1];
+      const xMax = P.tileSize / kS * 1.15 + 0.05;
+      const Gx = clamp(Math.ceil(xMax / P.tileSize * M), 8, 8192);
+      const my = Math.ceil(clamp(xMax * t1 * 2.5 * sigma / P.tileSize + 0.02, 0.02, 0.8) * M);
+      const Gy = M + 2 * my;
+      const F0 = fresnel(Math.sin(e), nMean);
+      const p = PR.wall; gl.useProgram(p.p);
+      tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1);
+      i1(p, 'uM', M); i1(p, 'uGy', Gy); i1(p, 'uMy', my);
+      f1(p, 'uTile', P.tileSize); f1(p, 'uChop', P.chop); f1(p, 'uCosL', cL); f1(p, 'uSinL', sL);
+      f1(p, 'uN', nMean); f1(p, 'uF0', F0); f1(p, 'uLatK', latK); f3(p, 'uL', ...L0);
+      f3(p, 'uMask', kS, kS, kS); f1(p, 'uA', A);
+      gl.drawArrays(gl.TRIANGLES, 0, Gx * Gy * 6);
+      radK = Math.tan(th) * (t1 / kS) / Math.sqrt(Math.max(-den0, 0.15));
+      lines.push(`Texture spans ${P.tileSize.toFixed(1)} m along the surface × ${P.tileSize.toFixed(1)} m up from the waterline; tiles sideways only`);
+      lines.push(`Lit by water up to ${xMax.toFixed(1)} m out · sun-disk blur grows from 0 at the waterline to Ø ${(2 * radK * P.tileSize * 1000).toFixed(0)} mm at the top`);
+      lines.push(`Point the fake light up at the surface from ${P.sunElev.toFixed(1)}° below horizontal (the sun mirrored in the water). Reflected sun is ${(F0 * 100).toFixed(1)}% of direct sun (Fresnel); each facet carries its own Fresnel weight`);
+    }
   } else {
     const refl = target === 1;
-    const L = [-Math.cos(e) * Math.cos(az), -Math.cos(e) * Math.sin(az), -Math.sin(e)];
-    const D = P.depth / P.tileSize;
-    const dsp = refl ? 0 : P.dispersion;
-    const etaR = 1 / (1.333 - 0.0065 * dsp), etaB = 1 / (1.333 + 0.0065 * dsp);
-    const surf = tgt('csurf', N, N, 'f32');
-    gl.disable(gl.BLEND);
-    pass(PR.surf, surf, p => {
-      tex(p, 'uA', field.tex, 0); f1(p, 'uDepth', D); f1(p, 'uChop', P.chop); f1(p, 'uTile', P.tileSize);
-      f1(p, 'uEtaR', etaR); f1(p, 'uEtaB', etaB); f3(p, 'uL', ...L); i1(p, 'uRefl', refl ? 1 : 0);
-    });
-    bindTarget(acc);
-    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-    const dev = refl ? 2.2 : 0.3;
-    const marg = clamp(D * dev * 3.2 * sigma / Math.max(Math.sin(e), 0.3) + P.chop * sigma * 0.5 / (2 * Math.PI / P.wavelength) / P.tileSize + 0.01, 0.02, 0.6);
-    const mc = Math.ceil(marg * N), G = N + 2 * mc;
-    const p = PR.mesh; gl.useProgram(p.p);
-    tex(p, 'uOff', surf.tex, 0); i1(p, 'uM', N); i1(p, 'uG', G); i1(p, 'uMargin', mc); f1(p, 'uA', A);
-    const count = G * G * 6;
-    if (dsp > 0.001) {
-      for (const [ch, m] of [[0, [1, 0, 0]], [2, [0, 1, 0]], [1, [0, 0, 1]]]) { i1(p, 'uChan', ch); f3(p, 'uMask', ...m); gl.drawArrays(gl.TRIANGLES, 0, count); }
-    } else { i1(p, 'uChan', 2); f3(p, 'uMask', 1, 1, 1); gl.drawArrays(gl.TRIANGLES, 0, count); }
-    rSun = refl ? D * Math.tan(th) / Math.max(Math.sin(e), 0.2) : D * Math.tan(th) / 1.333 / Math.max(Math.sin(e), 0.2);
-    const kp = 2 * Math.PI / P.wavelength;
-    const onset = W.kappa > 0 ? (refl ? 0.22 : 1.6) / W.kappa : Infinity;
-    lines.push(`Caustic lines start to focus ≈ ${onset < 100 ? onset.toFixed(2) + ' m' : 'beyond 100 m'} from the surface (set: ${P.depth.toFixed(2)} m)`);
-    lines.push(`Sun-disk blur: Ø ${(rSun * 2 * P.tileSize * 1000).toFixed(1)} mm`);
-    if (refl) {
-      lines.push(`Aim the fake light straight up from below at ${P.sunElev.toFixed(1)}° elevation (mirror of the sun). Reflected sun is ${(fresnel(Math.sin(e)) * 100).toFixed(1)}% of direct sun (Fresnel)`);
-    } else {
-      const tt = Math.asin(Math.cos(e) / 1.333);
-      lines.push(`Underwater the light travels ${(90 - tt / DEG).toFixed(1)}° above horizontal (refracted), not ${P.sunElev.toFixed(1)}°. Aim the fake light along that angle, azimuth ${P.sunAz.toFixed(0)}°`);
+    const D = P.depth;
+    const tt = Math.asin(Math.cos(e) / nMean);           // refracted angle from vertical
+    const Lpath = refl ? D / Math.sin(e) : D / Math.cos(tt);
+    // flat-surface landing offset (removed so the pattern stays centred)
+    let flat;
+    if (refl) flat = [D / Math.tan(e) * Math.cos(az) / P.tileSize * -1, D / Math.tan(e) * Math.sin(az) / P.tileSize * -1];
+    else { const k = D * Math.tan(tt) / P.tileSize; flat = [-k * Math.cos(az), -k * Math.sin(az)]; }
+    // spectral bands: trace each wavelength only when its fringes exceed a third of a pixel
+    let bands = [{lam:550, w:[1, 1, 1]}];
+    if (!refl && P.dispersion > 0) {
+      const dn = (nWater(400, sal) - nWater(700, sal)) * P.dispersion;
+      const fringePx = D * sigma * dn / (nMean * nMean) / P.tileSize * A;
+      if (fringePx > 0.33) bands = spectralBands(Q.bands);
     }
+    const F0 = refl ? fresnel(Math.sin(e), nMean) : 1 - fresnel(Math.sin(e), nMean);
+    const dev = refl ? 2.2 : 0.3;
+    const marg = clamp(D * dev * 3.2 * sigma / Math.max(Math.sin(e), 0.3) / P.tileSize + P.chop * sigma * 0.5 / (2 * Math.PI / P.wavelength) / P.tileSize + 0.01, 0.02, 0.6);
+    const mc = Math.ceil(marg * M), G = M + 2 * mc;
+    const p = PR.mesh; gl.useProgram(p.p);
+    tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1);
+    i1(p, 'uM', M); i1(p, 'uG', G); i1(p, 'uMargin', mc); i1(p, 'uRefl', refl ? 1 : 0);
+    f1(p, 'uTile', P.tileSize); f1(p, 'uDepth', D); f1(p, 'uChop', P.chop); f1(p, 'uF0', F0);
+    f3(p, 'uL', ...L0); f2(p, 'uFlat', ...flat); f1(p, 'uA', A);
+    for (const b of bands) {
+      const n = bands.length > 1 ? nMean + (nWater(b.lam, sal) - nMean) * P.dispersion : nMean;
+      let m = b.w;
+      if (!refl && P.bakeColor) {
+        if (bands.length > 1) m = m.map(v => v * Math.exp(-absorb(b.lam) * Lpath));
+        else m = [Math.exp(-absorb(610) * Lpath), Math.exp(-absorb(550) * Lpath), Math.exp(-absorb(465) * Lpath)];
+      }
+      f1(p, 'uN', n); f3(p, 'uMask', ...m);
+      gl.drawArrays(gl.TRIANGLES, 0, G * G * 6);
+    }
+    rSun = refl ? D * Math.tan(th) / Math.pow(Math.max(Math.sin(e), 0.2), 1.5) : (Lpath * Math.tan(th) / nMean) / Math.cos(tt) / P.tileSize * P.tileSize;
+    rSun /= P.tileSize;
+    if (!refl) {
+      const b = wt.b * P.scatterK;
+      const unsc = Math.exp(-b * Lpath);
+      mixS = 1 - unsc;
+      r2 = Math.hypot(rSun, Lpath * Math.tan(5 * DEG) / P.tileSize);
+      lines.push(`Refracted light travels ${(90 - tt / DEG).toFixed(1)}° above horizontal underwater (not ${P.sunElev.toFixed(1)}°): aim the fake light along that, azimuth ${P.sunAz.toFixed(0)}°`);
+      lines.push(`${bands.length > 1 ? bands.length + ' wavelengths traced (dispersion fringes visible at this scale)' : 'One wavelength traced: dispersion fringes are below a third of a pixel here'} · ${(unsc * 100).toFixed(1)}% of light reaches the floor unscattered`);
+    } else {
+      lines.push(`Aim the fake light straight up at ${P.sunElev.toFixed(1)}° elevation (the sun mirrored in the water). Reflected sun is ${(F0 * 100).toFixed(1)}% of direct sun; each facet carries its own Fresnel weight`);
+    }
+    const onset = W.kappa > 0 ? (refl ? 0.22 : 1.6) / W.kappa : Infinity;
+    lines.unshift(`Caustic lines start to focus ≈ ${onset < 100 ? onset.toFixed(2) + ' m' : 'beyond 100 m'} from the surface (set: ${D.toFixed(2)} m) · sun-disk blur Ø ${(rSun * 2 * P.tileSize * 1000).toFixed(1)} mm`);
   }
   gl.disable(gl.BLEND);
   mips(acc);
   const rT = Math.max(rSun, 0.75 / res);
-  const r2 = rT * 5 + 0.004 + (target === 0 ? P.scatter * 0.025 : 0);
   const out = tgt('cout', res, res, 'f16');
   pass(PR.disk, out, p => {
-    tex(p, 'uSrc', acc.tex, 0); f1(p, 'uRad', rT); f1(p, 'uRad2', r2); f1(p, 'uMix', target === 0 ? P.scatter * 0.65 : 0);
+    tex(p, 'uSrc', acc.tex, 0); f1(p, 'uRad', rT); f1(p, 'uRad2', Math.max(r2, rT)); f1(p, 'uMix', mixS);
     f1(p, 'uGain', 1); f1(p, 'uLimb', 0.6); f1(p, 'uRadK', radK); f1(p, 'uSrcRes', A); i1(p, 'uClampY', target === 2 ? 1 : 0);
-    i1(p, 'uTaps', Q.taps); f1(p, 'uLod', lodFor(rT, A, Q.taps, 1)); f1(p, 'uLod2', lodFor(r2, A, Q.taps, 1));
+    i1(p, 'uTaps', Q.taps); f1(p, 'uLod', lodFor(rT, A, Q.taps, 1)); f1(p, 'uLod2', lodFor(Math.max(r2, rT), A, Q.taps, 1));
   });
   const kp = 2 * Math.PI / P.wavelength;
   const w = Math.sqrt((9.81 * kp + 7.4e-5 * kp ** 3) * Math.tanh(Math.min(kp * Hw, 10))) * P.timeScale;
-  info = [`Spectral simulation: ${N}² wave components · linear output, mean 1.0`,
+  info = [`Simulated surface ${N}² (${(P.tileSize / N * 1000).toFixed(1)} mm per sample) · ${M}² light rays · linear output, mean 1.0`,
           `Dominant waves: period ${(2 * Math.PI / w).toFixed(2)} s, moving ${(w / kp).toFixed(2)} m/s`, ...lines].join('\n') +
          (tl.loop ? `\nEvery wave completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
