@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Simulated water caustics for light gobos: underwater, overhead and hull reflections, seamless and loopable.">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Cucoloris Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: lighting-workbench — square gobo plate dominates the left, a parameter rail runs down the right; stacks on phones */
+:root{
+  --bg:#0e1115;
+  --panel:#141920;
+  --raise:#1b2129;
+  --line:#27303b;
+  --fg:#dfe5ec;
+  --mute:#8994a2;
+  --accent:#f0b25e;      /* tungsten 3200K */
+  --accent-ink:#1b1206;
+  --sky:#9fbef5;         /* daylight 5600K, used for info readouts */
+  --warn:#e4806b;
+  --f-disp:'Archivo', 'Arial Narrow', system-ui, sans-serif;
+  --f-ui:'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:13px;}
+*{box-sizing:border-box}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{
+  height:100%;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 360px;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:0 18px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-block:0 12px;
+}
+.top{
+  grid-column:1 / -1;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-block:12px;border-bottom:1px solid var(--line);margin-bottom:14px;
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{width:26px;height:26px;border-radius:50%;flex:none;
+  background:
+    radial-gradient(circle at 34% 38%, var(--bg) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 64% 30%, var(--bg) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 58% 66%, var(--bg) 0 4px, transparent 4.5px),
+    radial-gradient(circle at 30% 70%, var(--bg) 0 2px, transparent 2.5px),
+    var(--accent);
+}
+.brand h1{margin:0;font-family:var(--f-disp);font-stretch:68%;font-weight:760;font-size:22px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
+.brand p{margin:3px 0 0;color:var(--mute);font-size:12px}
+.modes{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap}
+.mode{background:none;border:0;padding:7px 14px;border-radius:6px;cursor:pointer;color:var(--mute);font-weight:560;font-stretch:88%;letter-spacing:.02em}
+.mode:hover{color:var(--fg)}
+.mode[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.plate{position:relative;flex:1;min-height:0;display:grid;place-items:center;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0/40px 40px,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/40px 40px,
+    #0a0c0f;
+  border:1px solid var(--line);border-radius:6px;overflow:hidden}
+#cv{display:block;background:#000;box-shadow:0 0 0 1px #000, 0 10px 40px rgba(0,0,0,.6)}
+.hud{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none}
+.chip{font-family:var(--f-mono);font-size:11px;background:rgba(10,12,15,.78);border:1px solid var(--line);padding:3px 7px;border-radius:4px;color:var(--mute);font-variant-numeric:tabular-nums}
+.chip.ok{color:var(--sky)}
+.err{position:absolute;inset:auto 10px 10px 10px;background:#2a1712;border:1px solid var(--warn);color:#f6d2c8;padding:10px 12px;border-radius:6px;font-family:var(--f-mono);font-size:11.5px;white-space:pre-wrap;max-height:50%;overflow:auto}
+
+.transport{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.ib{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--line);background:var(--raise);cursor:pointer;flex:none}
+.ib:hover{border-color:var(--mute)}
+.ib.play{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ib svg{width:14px;height:14px}
+.tc{font-family:var(--f-mono);font-size:11.5px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:150px;text-align:right}
+.viewbar{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;color:var(--mute);font-size:12px}
+.viewbar label{display:flex;align-items:center;gap:6px}
+.viewbar select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px}
+.tog{display:flex;align-items:center;gap:6px;cursor:pointer}
+.tog input{accent-color:var(--accent)}
+
+/* sliders */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:linear-gradient(90deg,var(--accent) 0 var(--pct,50%),var(--line) var(--pct,50%) 100%)}
+input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:var(--line)}
+input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--fg);border:2px solid var(--bg);margin-top:-5px;box-shadow:0 0 0 1px var(--line)}
+input[type=range]::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:var(--fg);border:2px solid var(--bg)}
+#scrub{flex:1;min-width:60px}
+
+.rail{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px;padding-bottom:20px}
+.sect-label{font-family:var(--f-disp);font-stretch:75%;font-weight:640;text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:var(--mute)}
+.presets{display:flex;flex-direction:column;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.pchip{background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:12px}
+.pchip:hover{border-color:var(--accent);color:var(--accent)}
+.pchip.alt{background:none;color:var(--mute)}
+details.grp{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+details.grp > summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+details.grp > summary::-webkit-details-marker{display:none}
+details.grp > summary::after{content:"";width:7px;height:7px;border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
+.ctrls{display:flex;flex-direction:column;gap:9px;padding:0 12px 12px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center}
+.row > label{color:var(--fg);font-size:12.5px;cursor:default;user-select:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row output{font-family:var(--f-mono);font-size:11.5px;color:var(--accent);font-variant-numeric:tabular-nums}
+.row input[type=range]{grid-column:1 / -1}
+.row select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px;max-width:170px}
+.row.chk input{accent-color:var(--accent);width:16px;height:16px}
+.info{font-family:var(--f-mono);font-size:11px;line-height:1.6;color:var(--sky);background:var(--panel);border:1px dashed var(--line);border-radius:8px;padding:9px 12px;white-space:pre-wrap}
+.hint{color:var(--mute);font-size:11.5px;line-height:1.5;margin:0}
+.phint{grid-column:1 / -1;color:var(--mute);font-size:11px;line-height:1.45;margin:2px 0 0}
+
+@media (max-width: 860px){
+  html,body{height:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto}
+  .stage{min-height:auto}
+  .plate{flex:none;aspect-ratio:1/1;max-width:100%}
+  .rail{overflow:visible;padding-right:0}
+  .tc{min-width:0}
+}
+@media (prefers-reduced-motion: reduce){ details.grp > summary::after{transition:none} }
+</style>
+</head>
+<body>
+
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div><h1>Cucoloris Lab</h1><p>Simulated water caustics for light gobos · real-time speed · seamless</p></div>
+    </div>
+    <nav class="modes" id="modes" role="tablist" aria-label="Where the caustics land"></nav>
+  </header>
+
+  <section class="stage">
+    <div class="plate" id="plate">
+      <canvas id="cv" width="512" height="512" aria-label="Gobo preview"></canvas>
+      <div class="hud" id="hud"></div>
+      <div class="err" id="err" hidden></div>
+    </div>
+    <div class="transport">
+      <button class="ib" id="prev" aria-label="Previous frame"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+      <button class="ib play" id="play" aria-label="Pause"><svg viewBox="0 0 16 16" fill="currentColor" id="playIcon"><path d="M4 2h3v12H4zM9 2h3v12H9z"/></svg></button>
+      <button class="ib" id="next" aria-label="Next frame"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button>
+      <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Loop position">
+      <div class="tc" id="tc">0.00 s</div>
+    </div>
+    <div class="viewbar">
+      <label>Preview <select id="vRes"><option value="512">512²</option><option value="1024">1024²</option><option value="2048">2048²</option></select></label>
+      <label>Quality <select id="vQual"><option value="draft">Draft</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
+      <label>View <select id="vTiles"><option value="1">Single tile</option><option value="2">2 × 2 tiled</option><option value="3">3 × 3 tiled</option></select></label>
+      <label class="tog"><input type="checkbox" id="vHeat"> False color</label>
+      <label class="tog"><input type="checkbox" id="vSeams"> Tile borders</label>
+    </div>
+  </section>
+
+  <aside class="rail" id="rail">
+    <div class="presets">
+      <span class="sect-label">Presets</span>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="info" id="info"></div>
+    <details class="grp" open>
+      <summary><span class="sect-label">Timeline</span></summary>
+      <div class="ctrls" id="timeline"></div>
+    </details>
+    <p class="hint">Hover a label for what it means physically; double-click it to reset. Space plays and pauses. Speeds default to real time.</p>
+  </aside>
+</div>
+
+<script>
+(() => {
+'use strict';
+const DEG = Math.PI / 180;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const $ = id => document.getElementById(id);
+
+/* =====================================================================
+   PARAMETER SCHEMA
+   One water simulation, three ways to receive its light:
+   underwater surfaces (refracted), overhead surfaces (reflected) and
+   vertical surfaces at the waterline such as hulls, walls and rocks
+   (reflected).
+   ===================================================================== */
+const SUN_DISK = {k:'sunDisk', l:'Light source Ø', min:0.1, max:6, step:0.01, u:'°', h:'Angular diameter of the light source. The sun is 0.53°. Pool lamps and overcast-thin sun are larger and soften every line.'};
+const WATER = name => ({name, params:[
+  {k:'tileSize', l:'Tile size', min:0.5, max:20, step:0.1, u:'m', h:'Real-world width of one tile. Every other size here is physical.'},
+  {k:'wavelength', l:'Dominant wavelength', min:0.03, max:5, step:0.01, u:'m', h:'Peak of the wave spectrum. Sets the size of the caustic cells and, through the dispersion relation, how fast they move.'},
+  {k:'slope', l:'Surface slope (RMS)', min:0.003, max:0.2, step:0.001, h:'Root-mean-square slope of the waves. Glassy water is below 0.02, still pools 0.03–0.05, open water in a breeze 0.08–0.15.'},
+  {k:'tail', l:'Short-wave content', min:0, max:1, step:0.01, h:'Energy in waves shorter than the dominant ones. Low for still pools that only carry gentle residual swell; high for wind-driven water, where short waves crowd the caustics into fine mesh.'},
+  {k:'peak', l:'Wave regularity', min:1, max:7, step:0.1, h:'JONSWAP peak enhancement. 1 = broad, irregular wind sea. 7 = narrow, regular swell.'},
+  {k:'directional', l:'Directionality', min:0, max:1, step:0.01, h:'0 = waves from every direction. 1 = waves aligned with the wave direction.'},
+  {k:'windDir', l:'Wave direction', min:0, max:360, step:1, u:'°'},
+  {k:'opposing', l:'Reflected waves', min:0, max:1, step:0.01, h:'Waves bouncing back off pool walls, hulls or a seawall. Turns travelling patterns into ones that shimmer in place.'},
+  {k:'ripple', l:'Wind ripples (RMS slope)', min:0, max:0.15, step:0.001, h:'Capillary ripples 1–4 cm long raised by gusts. They flicker fast and add fine sparkle.'},
+  {k:'chop', l:'Crest sharpening', min:0, max:1, step:0.01, h:'Choppy (Gerstner) horizontal displacement from the simulation.'},
+]});
+const MOTION = {name:'Motion', params:[
+  {k:'timeScale', l:'Time scale', min:0.05, max:2, step:0.01, u:'×', h:'1 = real speed from the gravity–capillary dispersion relation. Lower it only as a deliberate art-direction choice.'},
+]};
+const LEVELS = {exposure:-1.3, rolloff:0.35, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false};
+
+const MODES = {
+  under: {
+    short:'Underwater', target:0, tileable:true, tl:{loop:true, len:10, shutter:180},
+    groups:[
+      WATER('Water surface'),
+      {name:'Light path', params:[
+        {k:'depth', l:'Depth below surface', min:0.1, max:15, step:0.05, u:'m', h:'Distance from the water surface to the surface receiving the caustics.'},
+        {k:'sunElev', l:'Sun elevation (in air)', min:10, max:90, step:0.5, u:'°'},
+        {k:'sunAz', l:'Sun azimuth', min:0, max:360, step:1, u:'°'},
+        SUN_DISK,
+        {k:'dispersion', l:'Dispersion', min:0, max:5, step:0.05, u:'×', h:'Chromatic split from water’s IOR difference across wavelengths. 1 = real water.'},
+        {k:'scatter', l:'Turbidity', min:0, max:1, step:0.01, h:'Forward scattering in the water column. Lowers contrast and adds a soft halo.'},
+      ]},
+      MOTION,
+    ],
+    presets:[
+      {name:'Pool, still air', v:{seed:7, tileSize:3, wavelength:0.32, slope:0.05, tail:0.15, peak:1.6, directional:0.15, windDir:30, opposing:0.55, ripple:0, chop:0.2, depth:1.5, sunElev:62, sunAz:40, sunDisk:0.53, dispersion:0, scatter:0.04, timeScale:1}},
+      {name:'Pool, light breeze', v:{tileSize:2, wavelength:0.14, slope:0.032, tail:0.4, peak:2, directional:0.5, opposing:0.25, ripple:0.006, depth:1.3}},
+      {name:'Pool, deep end', v:{tileSize:4, wavelength:0.32, slope:0.045, tail:0.2, depth:3.2, scatter:0.08}},
+      {name:'Indoor pool, lamps', v:{tileSize:3, wavelength:0.35, slope:0.04, tail:0.1, opposing:0.7, depth:1.6, sunElev:80, sunDisk:3}},
+      {name:'Tropical shallows', v:{tileSize:6, wavelength:0.8, slope:0.065, tail:0.35, peak:3.3, directional:0.6, opposing:0.1, ripple:0.004, depth:2.2, dispersion:1, scatter:0.12}},
+      {name:'Reef at 6 m', v:{tileSize:12, wavelength:2.4, slope:0.08, tail:0.45, peak:3.3, directional:0.5, opposing:0, ripple:0.003, depth:6, dispersion:1.2, scatter:0.3}},
+    ],
+    post:{...LEVELS},
+  },
+  over: {
+    short:'Overhead (reflected)', target:1, tileable:true, tl:{loop:true, len:10, shutter:180},
+    groups:[
+      WATER('Water surface'),
+      {name:'Light path', params:[
+        {k:'depth', l:'Height above water', min:0.1, max:15, step:0.05, u:'m', h:'Height of the ceiling, dock or hull underside above the water.'},
+        {k:'sunElev', l:'Sun elevation', min:10, max:85, step:0.5, u:'°'},
+        {k:'sunAz', l:'Sun azimuth', min:0, max:360, step:1, u:'°'},
+        SUN_DISK,
+      ]},
+      MOTION,
+    ],
+    presets:[
+      {name:'Under a dock', v:{seed:5, tileSize:4, wavelength:0.9, slope:0.013, tail:0.2, peak:2, directional:0.4, windDir:20, opposing:0.3, ripple:0, chop:0.2, depth:1.8, sunElev:35, sunAz:40, sunDisk:0.53, timeScale:1}},
+      {name:'Bridge underside', v:{tileSize:10, wavelength:1.6, slope:0.012, tail:0.3, peak:2.5, directional:0.7, opposing:0, depth:5, sunElev:30}},
+      {name:'Boat overhang, choppy', v:{tileSize:3, wavelength:0.5, slope:0.03, tail:0.5, peak:1.5, directional:0.3, opposing:0.4, ripple:0.004, depth:0.8, sunElev:45}},
+      {name:'Indoor pool ceiling', v:{tileSize:6, wavelength:0.4, slope:0.012, tail:0.1, opposing:0.7, depth:3.5, sunElev:60, sunDisk:3}},
+    ],
+    post:{...LEVELS},
+  },
+  hull: {
+    short:'Hull & walls (reflected)', target:2, tileable:false, tl:{loop:true, len:10, shutter:180},
+    groups:[
+      WATER('Water surface'),
+      {name:'Light path', params:[
+        {k:'sunElev', l:'Sun elevation', min:5, max:75, step:0.5, u:'°', h:'Lower sun stretches the pattern into horizontal bands; higher sun stretches it upward.'},
+        {k:'sunAz', l:'Sun angle to the wall', min:-75, max:75, step:0.5, u:'°', h:'0 = the sun faces the wall squarely across the water.'},
+        SUN_DISK,
+      ]},
+      MOTION,
+    ],
+    presets:[
+      {name:'Boat hull, calm harbour', v:{seed:9, tileSize:2, wavelength:0.6, slope:0.012, tail:0.25, peak:2, directional:0.5, windDir:0, opposing:0.4, ripple:0, chop:0.2, sunElev:25, sunAz:10, sunDisk:0.53, timeScale:1}},
+      {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.4, peak:1.6, directional:0.4, opposing:0.6, ripple:0, sunElev:35, sunAz:-15}},
+      {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.3, opposing:0.1, sunElev:45, sunAz:20}},
+      {name:'Pool wall above water', v:{tileSize:1.5, wavelength:0.25, slope:0.015, tail:0.15, opposing:0.7, sunElev:55, sunAz:0}},
+    ],
+    post:{...LEVELS},
+  },
+};
+
+const POST = [
+  {k:'exposure', l:'Preview exposure', min:-6, max:4, step:0.05, u:'EV', h:'Preview only. The pattern itself is linear with a mean of 1.0, so it redistributes the light without dimming it.'},
+  {k:'rolloff', l:'Highlight rolloff', min:0, max:1, step:0.01, h:'Compresses hot caustic peaks instead of clipping them.'},
+  {k:'gamma', l:'Gamma', min:0.3, max:3, step:0.01},
+  {k:'contrast', l:'S-curve', min:0, max:1, step:0.01},
+  {k:'black', l:'Black point', min:0, max:0.5, step:0.005},
+  {k:'white', l:'White point', min:0.2, max:2, step:0.01},
+  {k:'floor', l:'Ambient fill', min:0, max:0.5, step:0.005, h:'Lifts the darkest value so the gobo never fully blocks the light.'},
+  {k:'invert', l:'Invert', type:'chk'},
+];
+
+const DEFAULTS = {};
+for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v};
+
+/* =====================================================================
+   STATE (+ per-viewer persistence)
+   ===================================================================== */
+const small = Math.min(innerWidth, innerHeight) < 700 || matchMedia('(pointer:coarse)').matches;
+const S = {
+  mode:'under', p:{}, post:{}, tl:{}, fps:24, t:0, playing:true,
+  res: small ? 512 : 1024, quality: small ? 'draft' : 'high', tiles:1, heat:false, seams:false,
+};
+for (const m of Object.keys(MODES)) { S.p[m] = {...DEFAULTS[m]}; S.post[m] = {...MODES[m].post}; S.tl[m] = {...MODES[m].tl}; }
+const STORE = 'cucLab.v3';
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (saved) {
+    for (const m of Object.keys(MODES)) {
+      if (saved.p && saved.p[m]) Object.assign(S.p[m], saved.p[m]);
+      if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
+      if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
+    }
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles']) if (saved[k] !== undefined) S[k] = saved[k];
+    if (!MODES[S.mode]) S.mode = 'under';
+  }
+} catch (e) {}
+let saveTimer = 0;
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles})); } catch (e) {}
+  }, 300);
+}
+const TL = () => S.tl[S.mode];
+
+/* =====================================================================
+   WEBGL SETUP
+   ===================================================================== */
+const cv = $('cv');
+const errEl = $('err');
+function showErr(msg) { errEl.hidden = false; errEl.textContent = msg; }
+const gl = cv.getContext('webgl2', {antialias:false, alpha:false, premultipliedAlpha:false, preserveDrawingBuffer:false, powerPreference:'high-performance'});
+if (!gl) { showErr('This tool needs WebGL 2. Open it in a current version of Chrome, Edge, Firefox or Safari.'); return; }
+const floatOK = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+if (!floatOK) showErr('This GPU or browser cannot render to float textures (EXT_color_buffer_float), which the water simulation needs.');
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp sampler2D;
+#define PI 3.14159265359
+#define TAU 6.28318530718
+`;
+const COMMON = HEAD + `
+out vec4 fragColor;
+uniform vec2 uRes;
+
+uint hashu(uint x){ x ^= x >> 16u; x *= 0x7feb352du; x ^= x >> 15u; x *= 0x846ca68bu; x ^= x >> 16u; return x; }
+uint hash3(ivec3 c, uint s){
+  return hashu(uint(c.x + 65536) * 0x8da6b343u + hashu(uint(c.y + 65536) * 0xd8163841u + hashu(uint(c.z + 65536) * 0xcb1ab31fu + s)));
+}
+float rnd(ivec3 c, uint s){ return float(hash3(c, s) >> 8u) * (1.0 / 16777216.0); }
+int wrap1(int c, int p){ return c - p * int(floor(float(c) / float(p))); }
+// Reduce an integer lattice point modulo the period lattice spanned by A and B.
+ivec2 wrapL(ivec2 c, ivec2 A, ivec2 B){
+  float det = float(A.x * B.y - A.y * B.x);
+  float a = floor(float(c.x * B.y - c.y * B.x) / det);
+  float b = floor(float(A.x * c.y - A.y * c.x) / det);
+  return c - int(a) * A - int(b) * B;
+}
+vec2 grad2(ivec2 c, uint s){ float a = float(hash3(ivec3(c, 0), s)) * (TAU / 4294967296.0); return vec2(cos(a), sin(a)); }
+float pn2(vec2 q, ivec2 A, ivec2 B, uint s){
+  vec2 i = floor(q), f = q - i; ivec2 c = ivec2(i);
+  vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  float a = dot(grad2(wrapL(c, A, B), s), f);
+  float b = dot(grad2(wrapL(c + ivec2(1, 0), A, B), s), f - vec2(1, 0));
+  float d = dot(grad2(wrapL(c + ivec2(0, 1), A, B), s), f - vec2(0, 1));
+  float e = dot(grad2(wrapL(c + ivec2(1, 1), A, B), s), f - vec2(1, 1));
+  return mix(mix(a, b, u.x), mix(d, e, u.x), u.y) * 1.414;
+}
+float pn2f(vec2 uv, int F, uint s){ return pn2(uv * float(F), ivec2(F, 0), ivec2(0, F), s); }
+float fbm2(vec2 uv, int F, int oct, uint s){
+  float v = 0.0, a = 0.5, n = 0.0;
+  for (int o = 0; o < 8; o++){ if (o >= oct) break; v += a * pn2f(uv, F << o, s + uint(o) * 101u); n += a; a *= 0.5; }
+  return v / n;
+}
+vec3 grad3(ivec2 c, int z, uint s){
+  uint h = hash3(ivec3(c, z), s);
+  float zz = float(h & 0xFFFFu) * (2.0 / 65535.0) - 1.0;
+  float a = float(h >> 16u) * (TAU / 65536.0);
+  float r = sqrt(max(0.0, 1.0 - zz * zz));
+  return vec3(r * cos(a), r * sin(a), zz);
+}
+float pn3(vec3 q, ivec2 A, ivec2 B, int P, uint s){
+  vec3 i = floor(q), f = q - i; ivec2 c = ivec2(i.xy); int cz = int(i.z);
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  ivec2 c00 = wrapL(c, A, B), c10 = wrapL(c + ivec2(1, 0), A, B), c01 = wrapL(c + ivec2(0, 1), A, B), c11 = wrapL(c + ivec2(1, 1), A, B);
+  int z0 = wrap1(cz, P), z1 = wrap1(cz + 1, P);
+  float n000 = dot(grad3(c00, z0, s), f);
+  float n100 = dot(grad3(c10, z0, s), f - vec3(1, 0, 0));
+  float n010 = dot(grad3(c01, z0, s), f - vec3(0, 1, 0));
+  float n110 = dot(grad3(c11, z0, s), f - vec3(1, 1, 0));
+  float n001 = dot(grad3(c00, z1, s), f - vec3(0, 0, 1));
+  float n101 = dot(grad3(c10, z1, s), f - vec3(1, 0, 1));
+  float n011 = dot(grad3(c01, z1, s), f - vec3(0, 1, 1));
+  float n111 = dot(grad3(c11, z1, s), f - vec3(1, 1, 1));
+  return mix(mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+             mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y), u.z) * 1.25;
+}
+`;
+
+const VS_FULL = `#version 300 es
+void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`;
+/* ---------- Water: evolve the spectrum h(k,t) and pack slopes + horizontal displacement ---------- */
+const FS_SPEC = COMMON + `
+uniform sampler2D uH0; uniform int uN; uniform float uL, uT, uTS, uLoopT, uHw;
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+void main(){
+  ivec2 ij = ivec2(gl_FragCoord.xy);
+  float N = float(uN);
+  vec2 n = vec2(ij);
+  n -= N * step(N * 0.5, n);
+  vec2 k = TAU * n / uL; float kl = length(k);
+  if (kl < 1e-6){ fragColor = vec4(0.0); return; }
+  vec4 h0 = texelFetch(uH0, ij, 0);
+  float w = sqrt((9.81 * kl + 7.4e-5 * kl * kl * kl) * tanh(min(kl * uHw, 10.0))) * uTS;
+  if (uLoopT > 0.0) w = floor(w * uLoopT / TAU + 0.5) * TAU / uLoopT;
+  float ph = mod(w * uT, TAU);
+  vec2 e = vec2(cos(ph), -sin(ph));   // waves travel along +k
+  vec2 h = cmul(h0.xy, e) + cmul(vec2(h0.z, -h0.w), vec2(e.x, -e.y));
+  vec2 ih = vec2(-h.y, h.x);
+  vec2 P1 = k.x * ih - k.y * h;                 // slope_x + i slope_y
+  vec2 P2 = -(k.x / kl) * ih + (k.y / kl) * h;  // disp_x + i disp_y
+  fragColor = vec4(P1, P2);
+}`;
+/* ---------- Water: one radix-2 Stockham FFT stage (inverse, two complex signals per texel) ---------- */
+const FS_FFT = COMMON + `
+uniform sampler2D uSrc; uniform int uN, uSub, uHoriz;
+vec2 cmul(vec2 a, vec2 b){ return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
+void main(){
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  int idx = uHoriz == 1 ? p.x : p.y;
+  int hs = uSub / 2;
+  int ev = (idx / uSub) * hs + (idx % hs);
+  int od = ev + uN / 2;
+  vec4 e = texelFetch(uSrc, uHoriz == 1 ? ivec2(ev, p.y) : ivec2(p.x, ev), 0);
+  vec4 o = texelFetch(uSrc, uHoriz == 1 ? ivec2(od, p.y) : ivec2(p.x, od), 0);
+  float a = TAU * float(idx % uSub) / float(uSub);
+  vec2 w = vec2(cos(a), sin(a));
+  fragColor = vec4(e.xy + cmul(w, o.xy), e.zw + cmul(w, o.zw));
+}`;
+/* ---------- Water: trace each surface sample to the floor (refraction) or ceiling (reflection) ---------- */
+const FS_SURF = COMMON + `
+uniform sampler2D uA; uniform float uDepth, uChop, uEtaR, uEtaB, uTile; uniform vec3 uL; uniform int uRefl;
+void main(){
+  vec4 a = texelFetch(uA, ivec2(gl_FragCoord.xy), 0);
+  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
+  vec2 d = -uChop * a.zw / uTile;   // Gerstner: points gather toward crests
+  if (uRefl == 1){
+    vec3 r = reflect(uL, n), r0 = reflect(uL, vec3(0.0, 0.0, 1.0));
+    vec2 o = d + uDepth / max(r.z, 0.05) * r.xy - uDepth / r0.z * r0.xy;
+    fragColor = vec4(o, o);
+  } else {
+    vec3 rR = refract(uL, n, uEtaR), rB = refract(uL, n, uEtaB);
+    vec3 r0R = refract(uL, vec3(0.0, 0.0, 1.0), uEtaR), r0B = refract(uL, vec3(0.0, 0.0, 1.0), uEtaB);
+    vec2 oR = d + uDepth / (-rR.z) * rR.xy - uDepth / (-r0R.z) * r0R.xy;
+    vec2 oB = d + uDepth / (-rB.z) * rB.xy - uDepth / (-r0B.z) * r0B.xy;
+    fragColor = vec4(oR, oB);
+  }
+}`;
+
+/* ---------- Caustics: photon mesh. Each triangle carries its source area;
+              intensity = source area / landed area (energy conserving). ---------- */
+const VS_MESH = HEAD + `
+uniform sampler2D uOff; uniform int uM, uG, uMargin, uChan;
+out vec2 vOld;
+int wrap1(int c, int p){ return c - p * int(floor(float(c) / float(p))); }
+void main(){
+  int q = gl_VertexID / 6; int k = gl_VertexID - q * 6;
+  ivec2 cr = (k == 1 || k == 4) ? ivec2(1, 0) : ((k == 2 || k == 3) ? ivec2(0, 1) : ((k == 5) ? ivec2(1, 1) : ivec2(0, 0)));
+  int gj = q / uG; int gi = q - gj * uG;
+  ivec2 id = ivec2(gi, gj) + cr - ivec2(uMargin);
+  vec4 o = texelFetch(uOff, ivec2(wrap1(id.x, uM), wrap1(id.y, uM)), 0);
+  vec2 off = uChan == 0 ? o.xy : (uChan == 1 ? o.zw : 0.5 * (o.xy + o.zw));
+  vec2 rest = (vec2(id) + 0.5) / float(uM);
+  vOld = rest;
+  gl_Position = vec4((rest + off) * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const FS_MESH = HEAD + `
+in vec2 vOld; out vec4 fragColor; uniform vec3 uMask; uniform float uA;
+void main(){
+  vec2 dx = dFdx(vOld), dy = dFdy(vOld);
+  float a0 = abs(dx.x * dy.y - dx.y * dy.x);
+  float I = min(a0 * uA * uA, 120.0);
+  fragColor = vec4(uMask * I, 1.0);
+}`;
+
+/* ---------- Hull and wall caustics: reflected rays from the water in front of a vertical
+              wall land at a height set by how far away the reflecting water is.
+              Same energy-conserving photon mesh as the floor. ---------- */
+const VS_WALL = HEAD + `
+uniform sampler2D uF; uniform int uM, uGy, uMy; uniform float uTile, uChop; uniform vec3 uL, uR0;
+out vec2 vOld;
+int wrap1(int c, int p){ return c - p * int(floor(float(c) / float(p))); }
+void main(){
+  int q = gl_VertexID / 6; int k = gl_VertexID - q * 6;
+  ivec2 cr = (k == 1 || k == 4) ? ivec2(1, 0) : ((k == 2 || k == 3) ? ivec2(0, 1) : ((k == 5) ? ivec2(1, 1) : ivec2(0, 0)));
+  int gx = q / uGy; int gy = q - gx * uGy;
+  ivec2 id = ivec2(gx, gy - uMy) + cr;          // x = distance from the wall, y = along the wall
+  vec4 a = texelFetch(uF, ivec2(wrap1(id.x, uM), wrap1(id.y, uM)), 0);
+  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
+  vec3 r = reflect(uL, n);
+  vec2 d = -uChop * a.zw;
+  float x = float(id.x) / float(uM) * uTile + d.x;
+  float y = float(id.y) / float(uM) * uTile + d.y;
+  float rx = min(r.x, -0.02);
+  float t = max(x, 0.0) / (-rx);
+  float z = t * max(r.z, 0.0);
+  float yy = y + t * r.y - max(x, 0.0) / (-uR0.x) * uR0.y;
+  vOld = vec2(id) / float(uM);
+  gl_Position = vec4(yy / uTile * 2.0 - 1.0, z / uTile * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* ---------- Sun-disk convolution with limb darkening. On walls the blur grows with height,
+              because the light has travelled further from the water. ---------- */
+const FS_DISK = COMMON + `
+uniform sampler2D uSrc;
+uniform float uRad, uRad2, uMix, uGain, uLimb, uLod, uLod2, uRadK, uSrcRes;
+uniform int uTaps, uClampY;
+vec3 disk(vec2 uv, float r, float lod){
+  vec3 s = vec3(0.0); float ws = 0.0;
+  for (int i = 0; i < 256; i++){
+    if (i >= uTaps) break;
+    float rho = sqrt((float(i) + 0.5) / float(uTaps));
+    float th = float(i) * 2.39996323;
+    vec2 p = uv + r * rho * vec2(cos(th), sin(th));
+    if (uClampY == 1) p.y = clamp(p.y, 0.0005, 0.9995);
+    float w = 1.0 - uLimb * (1.0 - sqrt(max(0.0, 1.0 - rho * rho)));
+    s += w * textureLod(uSrc, p, lod).rgb; ws += w;
+  }
+  return s / ws;
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  float r = uRad, lod = uLod;
+  if (uRadK > 0.0){
+    r = max(uRad + uRadK * uv.y, 0.6 / uSrcRes);
+    lod = max(0.0, log2(max(r * uSrcRes * sqrt(PI / float(uTaps)), 1e-6)) - 0.25);
+  }
+  vec3 c = disk(uv, r, lod);
+  if (uMix > 0.0) c = mix(c, disk(uv, uRad2, uLod2), uMix);
+  fragColor = vec4(c * uGain, 1.0);
+}`;
+
+/* ---------- Output levels and display ---------- */
+const FS_POST = COMMON + `
+uniform sampler2D uSrc; uniform float uExpo, uRoll, uBlack, uWhite, uGamma, uContrast, uFloor; uniform int uInv;
+void main(){
+  vec3 v = texture(uSrc, gl_FragCoord.xy / uRes).rgb * exp2(uExpo);
+  float k = uRoll * 2.0;
+  v = v * (1.0 + k) / (1.0 + v * k);   // 1 stays 1, peaks compress toward (1+k)/k
+  v = clamp((v - uBlack) / max(uWhite - uBlack, 1e-4), 0.0, 1.0);
+  v = pow(v, vec3(1.0 / uGamma));
+  v = mix(v, v * v * (3.0 - 2.0 * v), uContrast);
+  v = uFloor + (1.0 - uFloor) * v;
+  if (uInv == 1) v = 1.0 - v;
+  fragColor = vec4(v, 1.0);
+}`;
+const FS_DISP = COMMON + `
+uniform sampler2D uSrc; uniform float uTiles; uniform int uHeat, uSeams;
+vec3 turbo(float x){
+  x = clamp(x, 0.0, 1.0); vec4 v4 = vec4(1.0, x, x * x, x * x * x); vec2 v2 = v4.zw * v4.z;
+  return vec3(dot(v4, vec4(0.13572138, 4.61539260, -42.66032258, 132.13108234)) + dot(v2, vec2(-152.94239396, 59.28637943)),
+              dot(v4, vec4(0.09140261, 2.19418839, 4.84296658, -14.18503333)) + dot(v2, vec2(4.27729857, 2.82956604)),
+              dot(v4, vec4(0.10667330, 12.64194608, -60.58204836, 110.36276771)) + dot(v2, vec2(-89.90310912, 27.34824973)));
+}
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes * uTiles;
+  vec3 c = texture(uSrc, uv).rgb;
+  if (uHeat == 1) c = turbo(dot(c, vec3(0.2126, 0.7152, 0.0722)));
+  if (uSeams == 1 && uTiles > 1.0){
+    vec2 f = abs(fract(uv + 0.5) - 0.5) / fwidth(uv);
+    float l = 1.0 - clamp(min(f.x, f.y) - 0.5, 0.0, 1.0);
+    c = mix(c, vec3(0.94, 0.70, 0.37), l * 0.8);
+  }
+  fragColor = vec4(c, 1.0);
+}`;
+const FS_COPY = COMMON + `
+uniform sampler2D uSrc; uniform float uGain;
+void main(){ fragColor = vec4(texture(uSrc, gl_FragCoord.xy / uRes).rgb * uGain, 1.0); }`;
+
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src); gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+function program(vs, fs, name) {
+  const p = gl.createProgram();
+  try {
+    gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+    gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  } catch (e) { showErr('Shader error in ' + name + ':\n' + e.message); throw e; }
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) { showErr('Link error in ' + name + ':\n' + gl.getProgramInfoLog(p)); throw new Error('link'); }
+  const locs = {};
+  return {p, u: n => (n in locs) ? locs[n] : (locs[n] = gl.getUniformLocation(p, n))};
+}
+const PR = {
+  spec: program(VS_FULL, FS_SPEC, 'water spectrum'),
+  fft: program(VS_FULL, FS_FFT, 'FFT'),
+  surf: program(VS_FULL, FS_SURF, 'surface'),
+  mesh: program(VS_MESH, FS_MESH, 'caustic mesh'),
+  wall: program(VS_WALL, FS_MESH, 'wall caustic mesh'),
+  disk: program(VS_FULL, FS_DISK, 'disk blur'),
+  post: program(VS_FULL, FS_POST, 'post'),
+  disp: program(VS_FULL, FS_DISP, 'display'),
+  copy: program(VS_FULL, FS_COPY, 'copy'),
+};
+
+const f1 = (p, n, v) => gl.uniform1f(p.u(n), v);
+const f2 = (p, n, a, b) => gl.uniform2f(p.u(n), a, b);
+const f3 = (p, n, a, b, c) => gl.uniform3f(p.u(n), a, b, c);
+const i1 = (p, n, v) => gl.uniform1i(p.u(n), v);
+const i2 = (p, n, a, b) => gl.uniform2i(p.u(n), a, b);
+const u1 = (p, n, v) => gl.uniform1ui(p.u(n), v >>> 0);
+function tex(p, n, t, unit) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(p.u(n), unit); }
+
+const targets = {};
+function makeTex(w, h, fmt, mip) {
+  const texo = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texo);
+  let ifmt = gl.RGBA8, type = gl.UNSIGNED_BYTE, filt = gl.LINEAR;
+  if (fmt === 'f32' && floatOK) { ifmt = gl.RGBA32F; type = gl.FLOAT; filt = gl.NEAREST; }
+  else if ((fmt === 'f16' || fmt === 'f32') && floatOK) { ifmt = gl.RGBA16F; type = gl.HALF_FLOAT; }
+  gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, w, h, 0, gl.RGBA, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  if (mip) gl.generateMipmap(gl.TEXTURE_2D);
+  return texo;
+}
+function tgt(name, w, h, fmt, mip = false) {
+  let t = targets[name];
+  if (t && t.w === w && t.h === h && t.fmt === fmt && t.mip === mip) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); }
+  const texo = makeTex(w, h, fmt, mip);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texo, 0);
+  t = targets[name] = {tex:texo, fb, w, h, fmt, mip};
+  return t;
+}
+function mrt(name, w, h) {
+  let t = targets[name];
+  if (t && t.w === w && t.h === h) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
+  const a = makeTex(w, h, 'u8', true), b = makeTex(w, h, 'u8', true);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  t = targets[name] = {tex:a, tex2:b, fb, w, h, mrt:true};
+  return t;
+}
+function bindTarget(t) {
+  if (t) { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.viewport(0, 0, t.w, t.h); }
+  else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, cv.width, cv.height); }
+}
+function pass(prog, t, setup) {
+  gl.bindVertexArray(vao);
+  bindTarget(t);
+  gl.useProgram(prog.p);
+  f2(prog, 'uRes', t ? t.w : cv.width, t ? t.h : cv.height);
+  setup(prog);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function mips(t) { gl.bindTexture(gl.TEXTURE_2D, t.tex); gl.generateMipmap(gl.TEXTURE_2D); }
+const lodFor = (r, srcRes, taps, stretch) => Math.max(0, Math.log2(Math.max(r * srcRes * Math.sqrt(Math.PI * stretch / taps), 1e-6)) - 0.25);
+function dataTex(w, h, data, filter = gl.NEAREST) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, data);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+
+
+const QUAL = {
+  draft: {ss:1.0, N:256, taps:24, sub:1},
+  high:  {ss:1.5, N:512, taps:64, sub:4},
+  ultra: {ss:2.0, N:1024, taps:128, sub:10},
+};
+function rng(seed) {
+  let a = seed | 0;
+  return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function gauss(r) { const u = Math.max(r(), 1e-12), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+function gauss(r) { const u = Math.max(r(), 1e-12), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+let info = '';
+const fmtLen = s => s >= 120 ? (s / 60).toFixed(s % 60 ? 1 : 0) + ' min' : (+s).toFixed(s % 1 ? 1 : 0) + ' s';
+const fresnel = (cosi, n = 1.333) => {
+  const sint = Math.sqrt(Math.max(0, 1 - cosi * cosi)) / n, cost = Math.sqrt(Math.max(0, 1 - sint * sint));
+  const rs = (cosi - n * cost) / (cosi + n * cost), rp = (n * cosi - cost) / (n * cosi + cost);
+  return 0.5 * (rs * rs + rp * rp);
+};
+
+/* =====================================================================
+   WATER
+   A Tessendorf spectral simulation: every lattice wave vector carries a
+   complex amplitude drawn from a JONSWAP spectrum (plus capillary
+   ripples) and evolves by the gravity–capillary dispersion relation.
+   Inverse FFT gives slopes and choppy displacement each frame. Light is
+   traced through that surface with an energy-conserving photon mesh,
+   so the result is linear with a mean of exactly 1.
+   ===================================================================== */
+const water = {sig:'', tex:null, N:0, kappa:0};
+function waterSpectrum(P, N) {
+  const sig = [P.seed, P.tileSize, P.wavelength, P.slope, P.tail, P.peak, P.directional, P.windDir, P.opposing, P.ripple, N].join('|');
+  if (sig === water.sig) return water;
+  const L = P.tileSize, r = rng(P.seed * 9781 + 17);
+  const kp = 2 * Math.PI / P.wavelength;
+  const sExp = 1 + 24 * P.directional * P.directional;
+  const th0 = P.windDir * DEG;
+  const kr = 2 * Math.PI / 0.025;
+  const kcut = Math.min(Math.PI * N / L * 0.8, 2 * Math.PI / 0.005);
+  const ktail = kp * (1.5 + 10 * P.tail * P.tail);
+  const NN = N * N;
+  const Fg = new Float64Array(NN), Fr = new Float64Array(NN), K = new Float64Array(NN);
+  let sg = 0, sr = 0;
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const nx = i < N / 2 ? i : i - N, ny = j < N / 2 ? j : j - N;
+    if (!nx && !ny) continue;
+    const kx = 2 * Math.PI * nx / L, ky = 2 * Math.PI * ny / L, k = Math.hypot(kx, ky);
+    const th = Math.atan2(ky, kx) - th0;
+    const c2 = Math.cos(th / 2) ** 2, s2 = 1 - c2;
+    const D = Math.pow(c2, sExp) + P.opposing * Math.pow(s2, sExp);
+    const sw = k <= kp ? 0.07 : 0.09;
+    const rr = Math.exp(-Math.pow(Math.sqrt(k / kp) - 1, 2) / (2 * sw * sw));
+    const cut = Math.exp(-((k / kcut) ** 2));
+    const Sg = Math.pow(k, -3) * Math.exp(-1.25 * (kp / k) ** 2) * Math.pow(P.peak, rr) * cut * Math.exp(-((k / ktail) ** 2));
+    const Dr = c2 * c2 + 0.3 * P.opposing * s2 * s2;
+    const Sr = Math.pow(k, -3) * Math.exp(-Math.pow(Math.log(k / kr), 2) / (2 * 0.35 * 0.35)) * cut;
+    const idx = j * N + i;
+    Fg[idx] = Sg / k * D; Fr[idx] = Sr / k * Dr; K[idx] = k;
+    sg += k * k * Fg[idx]; sr += k * k * Fr[idx];
+  }
+  const data = new Float32Array(NN * 4);
+  let kap = 0;
+  for (let idx = 0; idx < NN; idx++) {
+    let e = (sg > 0 ? P.slope * P.slope * Fg[idx] / sg : 0) + (sr > 0 && P.ripple > 0 ? P.ripple * P.ripple * Fr[idx] / sr : 0);
+    e *= 0.5;
+    const a = Math.sqrt(e) / Math.SQRT2;
+    data[idx * 4] = a * gauss(r); data[idx * 4 + 1] = a * gauss(r);
+    kap += Math.pow(K[idx], 4) * e * 2;
+  }
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const idx = j * N + i, m = ((N - j) % N) * N + ((N - i) % N);
+    data[idx * 4 + 2] = data[m * 4]; data[idx * 4 + 3] = data[m * 4 + 1];
+  }
+  if (water.tex) gl.deleteTexture(water.tex);
+  water.tex = dataTex(N, N, data);
+  Object.assign(water, {sig, N, kappa:Math.sqrt(kap / 2)});
+  return water;
+}
+function runFFT(spec, N) {
+  let src = spec;
+  const a = tgt('wfa', N, N, 'f32'), b = tgt('wfb', N, N, 'f32');
+  for (const horiz of [1, 0]) {
+    for (let sub = 2; sub <= N; sub *= 2) {
+      const dst = src === a ? b : a;
+      pass(PR.fft, dst, p => { tex(p, 'uSrc', src.tex, 0); i1(p, 'uN', N); i1(p, 'uSub', sub); i1(p, 'uHoriz', horiz); });
+      src = dst;
+    }
+  }
+  return src;
+}
+
+function renderCaustics(P, res, t, target, tl) {
+  const Q = QUAL[S.quality];
+  const N = Q.N;
+  const A = Math.min(4096, Math.round(res * Q.ss));
+  const W = waterSpectrum(P, N);
+  const Hw = target === 0 ? Math.max(P.depth, 0.2) : 30;
+  const spec = tgt('wspec', N, N, 'f32');
+  pass(PR.spec, spec, p => {
+    tex(p, 'uH0', W.tex, 0); i1(p, 'uN', N); f1(p, 'uL', P.tileSize);
+    f1(p, 'uT', tl.loop ? ((t % tl.len) + tl.len) % tl.len : t); f1(p, 'uTS', P.timeScale);
+    f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uHw', Hw);
+  });
+  const field = runFFT(spec, N);
+  const e = P.sunElev * DEG;
+  const az = (target === 2 ? P.sunAz : P.sunAz) * DEG;
+  const th = P.sunDisk * 0.5 * DEG;
+  const sigma = Math.hypot(P.slope, P.ripple);
+  const acc = tgt('cacc', A, A, 'f16', true);
+  bindTarget(acc);
+  gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindVertexArray(vao);
+  let rSun, radK = 0, lines = [];
+  if (target === 2) {
+    // wall at x = 0 facing +x; sun azimuth measured from the wall normal
+    const L = [-Math.cos(e) * Math.cos(az), -Math.cos(e) * Math.sin(az), -Math.sin(e)];
+    const R0 = [L[0], L[1], -L[2]];
+    const s = R0[2] / -R0[0];                       // wall height gained per metre of water
+    const xMax = P.tileSize / s * 1.15 + 0.05;
+    const Gx = clamp(Math.ceil(xMax / P.tileSize * N), 8, 4096);
+    const my = Math.ceil(clamp(xMax / -R0[0] * 2.5 * sigma / P.tileSize + 0.02, 0.02, 0.8) * N + Math.abs(R0[1] / R0[0]) * 0);
+    const Gy = N + 2 * my;
+    const p = PR.wall; gl.useProgram(p.p);
+    tex(p, 'uF', field.tex, 0); i1(p, 'uM', N); i1(p, 'uGy', Gy); i1(p, 'uMy', my);
+    f1(p, 'uTile', P.tileSize); f1(p, 'uChop', P.chop); f3(p, 'uL', ...L); f3(p, 'uR0', ...R0);
+    f3(p, 'uMask', s, s, s); f1(p, 'uA', A);
+    gl.drawArrays(gl.TRIANGLES, 0, Gx * Gy * 6);
+    // path length to height z: z / sin(e); the wall sees the disk obliquely by 1/cos(incidence)
+    const cosInc = Math.max(-R0[0], 0.15);
+    radK = Math.tan(th) / Math.sin(e) / Math.sqrt(cosInc);
+    rSun = 0;
+    const F = fresnel(Math.sin(e));
+    lines.push(`Texture spans ${P.tileSize.toFixed(1)} m along the wall × ${P.tileSize.toFixed(1)} m up from the waterline; tiles sideways only`);
+    lines.push(`Lit by water up to ${xMax.toFixed(1)} m out · sun-disk blur grows from 0 at the waterline to Ø ${(2 * radK * P.tileSize * 1000).toFixed(0)} mm at the top`);
+    lines.push(`Aim the fake light from ${P.sunElev.toFixed(1)}° below horizontal (mirror of the sun). Reflected sun is ${(F * 100).toFixed(1)}% of direct sun (Fresnel)`);
+  } else {
+    const refl = target === 1;
+    const L = [-Math.cos(e) * Math.cos(az), -Math.cos(e) * Math.sin(az), -Math.sin(e)];
+    const D = P.depth / P.tileSize;
+    const dsp = refl ? 0 : P.dispersion;
+    const etaR = 1 / (1.333 - 0.0065 * dsp), etaB = 1 / (1.333 + 0.0065 * dsp);
+    const surf = tgt('csurf', N, N, 'f32');
+    gl.disable(gl.BLEND);
+    pass(PR.surf, surf, p => {
+      tex(p, 'uA', field.tex, 0); f1(p, 'uDepth', D); f1(p, 'uChop', P.chop); f1(p, 'uTile', P.tileSize);
+      f1(p, 'uEtaR', etaR); f1(p, 'uEtaB', etaB); f3(p, 'uL', ...L); i1(p, 'uRefl', refl ? 1 : 0);
+    });
+    bindTarget(acc);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    const dev = refl ? 2.2 : 0.3;
+    const marg = clamp(D * dev * 3.2 * sigma / Math.max(Math.sin(e), 0.3) + P.chop * sigma * 0.5 / (2 * Math.PI / P.wavelength) / P.tileSize + 0.01, 0.02, 0.6);
+    const mc = Math.ceil(marg * N), G = N + 2 * mc;
+    const p = PR.mesh; gl.useProgram(p.p);
+    tex(p, 'uOff', surf.tex, 0); i1(p, 'uM', N); i1(p, 'uG', G); i1(p, 'uMargin', mc); f1(p, 'uA', A);
+    const count = G * G * 6;
+    if (dsp > 0.001) {
+      for (const [ch, m] of [[0, [1, 0, 0]], [2, [0, 1, 0]], [1, [0, 0, 1]]]) { i1(p, 'uChan', ch); f3(p, 'uMask', ...m); gl.drawArrays(gl.TRIANGLES, 0, count); }
+    } else { i1(p, 'uChan', 2); f3(p, 'uMask', 1, 1, 1); gl.drawArrays(gl.TRIANGLES, 0, count); }
+    rSun = refl ? D * Math.tan(th) / Math.max(Math.sin(e), 0.2) : D * Math.tan(th) / 1.333 / Math.max(Math.sin(e), 0.2);
+    const kp = 2 * Math.PI / P.wavelength;
+    const onset = W.kappa > 0 ? (refl ? 0.22 : 1.6) / W.kappa : Infinity;
+    lines.push(`Caustic lines start to focus ≈ ${onset < 100 ? onset.toFixed(2) + ' m' : 'beyond 100 m'} from the surface (set: ${P.depth.toFixed(2)} m)`);
+    lines.push(`Sun-disk blur: Ø ${(rSun * 2 * P.tileSize * 1000).toFixed(1)} mm`);
+    if (refl) {
+      lines.push(`Aim the fake light straight up from below at ${P.sunElev.toFixed(1)}° elevation (mirror of the sun). Reflected sun is ${(fresnel(Math.sin(e)) * 100).toFixed(1)}% of direct sun (Fresnel)`);
+    } else {
+      const tt = Math.asin(Math.cos(e) / 1.333);
+      lines.push(`Underwater the light travels ${(90 - tt / DEG).toFixed(1)}° above horizontal (refracted), not ${P.sunElev.toFixed(1)}°. Aim the fake light along that angle, azimuth ${P.sunAz.toFixed(0)}°`);
+    }
+  }
+  gl.disable(gl.BLEND);
+  mips(acc);
+  const rT = Math.max(rSun, 0.75 / res);
+  const r2 = rT * 5 + 0.004 + (target === 0 ? P.scatter * 0.025 : 0);
+  const out = tgt('cout', res, res, 'f16');
+  pass(PR.disk, out, p => {
+    tex(p, 'uSrc', acc.tex, 0); f1(p, 'uRad', rT); f1(p, 'uRad2', r2); f1(p, 'uMix', target === 0 ? P.scatter * 0.65 : 0);
+    f1(p, 'uGain', 1); f1(p, 'uLimb', 0.6); f1(p, 'uRadK', radK); f1(p, 'uSrcRes', A); i1(p, 'uClampY', target === 2 ? 1 : 0);
+    i1(p, 'uTaps', Q.taps); f1(p, 'uLod', lodFor(rT, A, Q.taps, 1)); f1(p, 'uLod2', lodFor(r2, A, Q.taps, 1));
+  });
+  const kp = 2 * Math.PI / P.wavelength;
+  const w = Math.sqrt((9.81 * kp + 7.4e-5 * kp ** 3) * Math.tanh(Math.min(kp * Hw, 10))) * P.timeScale;
+  info = [`Spectral simulation: ${N}² wave components · linear output, mean 1.0`,
+          `Dominant waves: period ${(2 * Math.PI / w).toFixed(2)} s, moving ${(w / kp).toFixed(2)} m/s`, ...lines].join('\n') +
+         (tl.loop ? `\nEvery wave completes whole cycles in ${fmtLen(tl.len)}` : '');
+  return out;
+}
+
+/* =====================================================================
+   FRAME (with shutter motion blur)
+   ===================================================================== */
+function renderAt(t) { return renderCaustics(S.p[S.mode], S.res, t, MODES[S.mode].target, TL()); }
+function render() {
+  const tl = TL(), Q = QUAL[S.quality];
+  const sub = tl.shutter > 0 ? Q.sub : 1;
+  let out;
+  if (sub <= 1) out = renderAt(S.t);
+  else {
+    const span = tl.shutter / 360 / S.fps;
+    const acc = tgt('mblur', S.res, S.res, 'f16');
+    let msg = '';
+    for (let k = 0; k < sub; k++) {
+      const o = renderAt(S.t + ((k + 0.5) / sub - 0.5) * span);
+      if (k === 0) msg = info;
+      bindTarget(acc);
+      if (k === 0) { gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); }
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      pass(PR.copy, acc, p => { tex(p, 'uSrc', o.tex, 0); f1(p, 'uGain', 1 / sub); });
+      gl.disable(gl.BLEND);
+    }
+    info = msg;
+    out = acc;
+  }
+  const Pp = S.post[S.mode];
+  const fin = tgt('final', S.res, S.res, 'u8', true);
+  pass(PR.post, fin, p => {
+    tex(p, 'uSrc', out.tex, 0); f1(p, 'uExpo', Pp.exposure); f1(p, 'uRoll', Pp.rolloff);
+    f1(p, 'uBlack', Pp.black); f1(p, 'uWhite', Pp.white); f1(p, 'uGamma', Pp.gamma);
+    f1(p, 'uContrast', Pp.contrast); f1(p, 'uFloor', Pp.floor); i1(p, 'uInv', Pp.invert ? 1 : 0);
+  });
+  mips(fin);
+  pass(PR.disp, null, p => {
+    tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0);
+  });
+}
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+function decimals(step) { const s = String(step); return s.includes('.') ? s.split('.')[1].length : 0; }
+function fmtVal(def, v) {
+  if (def.fmt) return def.fmt(v);
+  return (+v).toFixed(decimals(def.step)) + (def.u ? (def.u === '°' || def.u === '×' ? def.u : ' ' + def.u) : '');
+}
+function setPct(input) { const pct = (input.value - input.min) / (input.max - input.min) * 100; input.style.setProperty('--pct', pct + '%'); }
+
+function control(def, store, idPrefix, dflt, onChange) {
+  const id = idPrefix + '-' + def.k;
+  const row = document.createElement('div');
+  row.className = 'row' + (def.type === 'chk' ? ' chk' : '');
+  const lab = document.createElement('label');
+  lab.htmlFor = id; lab.textContent = def.l;
+  if (def.h) lab.title = def.h;
+  row.append(lab);
+  if (def.opts) {
+    const sel = document.createElement('select'); sel.id = id;
+    def.opts.forEach((o, i) => { const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o; sel.append(op); });
+    sel.value = store[def.k];
+    sel.onchange = () => { store[def.k] = +sel.value; onChange(def.k); };
+    row.append(sel);
+  } else if (def.type === 'chk') {
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = !!store[def.k];
+    cb.onchange = () => { store[def.k] = cb.checked; onChange(def.k); };
+    row.append(cb);
+  } else {
+    const out = document.createElement('output'); out.htmlFor = id;
+    const rg = document.createElement('input');
+    rg.type = 'range'; rg.id = id;
+    const toSlider = v => def.log ? 1000 * Math.log(v / def.min) / Math.log(def.max / def.min) : v;
+    const fromSlider = x => def.log ? Math.round(def.min * Math.pow(def.max / def.min, x / 1000) / def.step) * def.step : +x;
+    if (def.log) { rg.min = 0; rg.max = 1000; rg.step = 1; } else { rg.min = def.min; rg.max = def.max; rg.step = def.step; }
+    rg.value = toSlider(store[def.k]);
+    out.textContent = fmtVal(def, store[def.k]);
+    setPct(rg);
+    rg.oninput = () => { store[def.k] = fromSlider(rg.value); out.textContent = fmtVal(def, store[def.k]); setPct(rg); onChange(def.k); };
+    lab.ondblclick = () => { if (dflt && dflt[def.k] !== undefined) { rg.value = toSlider(dflt[def.k]); rg.oninput(); } };
+    row.append(out, rg);
+  }
+  if (def.h && def.showHint) { const h = document.createElement('p'); h.className = 'phint'; h.textContent = def.h; row.append(h); }
+  return row;
+}
+const changed = () => { dirty = true; save(); };
+
+function buildModes() {
+  const nav = $('modes'); nav.innerHTML = '';
+  for (const [k, m] of Object.entries(MODES)) {
+    const b = document.createElement('button');
+    b.className = 'mode'; b.setAttribute('role', 'tab'); b.id = 'mode-' + k; b.textContent = m.short;
+    b.setAttribute('aria-selected', k === S.mode);
+    b.onclick = () => { S.mode = k; S.t = S.t % TL().len; buildModes(); buildPanel(); buildTimeline(); changed(); };
+    nav.append(b);
+  }
+}
+function buildPanel() {
+  const m = MODES[S.mode], store = S.p[S.mode];
+  const pr = $('presets'); pr.innerHTML = '';
+  m.presets.forEach(ps => {
+    const b = document.createElement('button'); b.className = 'pchip'; b.textContent = ps.name;
+    b.onclick = () => { S.p[S.mode] = {...DEFAULTS[S.mode], ...ps.v, seed:S.p[S.mode].seed}; buildPanel(); changed(); };
+    pr.append(b);
+  });
+  const rs = document.createElement('button'); rs.className = 'pchip alt'; rs.textContent = 'New seed';
+  rs.onclick = () => { S.p[S.mode].seed = 1 + Math.floor(Math.random() * 9999); buildPanel(); changed(); };
+  pr.append(rs);
+  const groups = $('groups'); groups.innerHTML = '';
+  const mk = (title, defs, st, dflt, open = true) => {
+    const d = document.createElement('details'); d.className = 'grp'; d.open = open;
+    const s = document.createElement('summary'); s.innerHTML = '<span class="sect-label"></span>'; s.firstChild.textContent = title;
+    const c = document.createElement('div'); c.className = 'ctrls';
+    defs.forEach(def => c.append(control(def, st, S.mode + (st === store ? '' : '-post'), dflt, changed)));
+    d.append(s, c); groups.append(d);
+  };
+  m.groups.forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
+  mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
+}
+function buildTimeline() {
+  const tl = TL(), box = $('timeline'); box.innerHTML = '';
+  const defs = [
+    {k:'loop', l:'Seamless loop', type:'chk', showHint:true, h:'Every frequency snaps to whole cycles of the loop, so the last frame flows into the first.'},
+    {k:'len', l:tl.loop ? 'Loop length' : 'Sequence length', min:1, max:1800, step:0.5, log:true, fmt:fmtLen},
+    {k:'shutter', l:'Motion blur', opts:['Off', '90° shutter', '180° shutter (film)', '270° shutter', '360° shutter'], vals:[0, 90, 180, 270, 360], h:'Averages sub-frames across the shutter interval, as a real camera does. Draft quality skips it.'},
+  ];
+  defs.forEach(def => box.append(control(def, tl, 'tl-' + S.mode, MODES[S.mode].tl, k => {
+    if (k === 'loop') buildTimeline();
+    if (k === 'len') S.t = S.t % tl.len;
+    changed();
+  })));
+  box.append(control({k:'fps', l:'Frame rate', opts:['24', '25', '30', '48', '60'], vals:[24, 25, 30, 48, 60]}, S, 'tl', {fps:24}, changed));
+
+}
+
+// view controls
+const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHeat'), vSeams = $('vSeams');
+vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
+vRes.onchange = () => { S.res = +vRes.value; changed(); };
+vQual.onchange = () => { S.quality = vQual.value; changed(); };
+vTiles.onchange = () => { S.tiles = +vTiles.value; changed(); };
+vHeat.onchange = () => { S.heat = vHeat.checked; dirty = true; };
+vSeams.onchange = () => { S.seams = vSeams.checked; dirty = true; };
+
+// transport
+const playBtn = $('play'), scrub = $('scrub'), tc = $('tc');
+const ICON_PAUSE = '<path d="M4 2h3v12H4zM9 2h3v12H9z"/>', ICON_PLAY = '<path d="M4 2l10 6-10 6z"/>';
+function setPlaying(v) {
+  S.playing = v; $('playIcon').innerHTML = v ? ICON_PAUSE : ICON_PLAY;
+  playBtn.setAttribute('aria-label', v ? 'Pause' : 'Play');
+}
+playBtn.onclick = () => setPlaying(!S.playing);
+function stepFrame(d) {
+  setPlaying(false);
+  const total = Math.max(1, Math.round(TL().len * S.fps));
+  const f = Math.floor(S.t * S.fps + 1e-6);
+  S.t = (((f + d) % total + total) % total) / S.fps; dirty = true;
+}
+$('prev').onclick = () => stepFrame(-1);
+$('next').onclick = () => stepFrame(1);
+scrub.oninput = () => { setPlaying(false); S.t = scrub.value / 1000 * TL().len; dirty = true; };
+document.addEventListener('keydown', ev => {
+  const ae = document.activeElement;
+  if (ev.code !== 'Space') return;
+  if (ae && (/SELECT|BUTTON|TEXTAREA/.test(ae.tagName) || (ae.tagName === 'INPUT' && ae.type !== 'range'))) return;
+  ev.preventDefault(); setPlaying(!S.playing);
+});
+function updateTransport() {
+  const len = TL().len;
+  const total = Math.max(1, Math.round(len * S.fps));
+  const f = Math.min(total - 1, Math.floor(S.t * S.fps + 1e-6));
+  tc.textContent = `${S.t.toFixed(2)} s · frame ${f + 1}/${total}`;
+  scrub.value = Math.round(S.t / len * 1000); setPct(scrub);
+}
+
+// canvas sizing
+const plate = $('plate');
+function fit() {
+  const r = plate.getBoundingClientRect();
+  const css = Math.max(120, Math.floor(Math.min(r.width, r.height) - 24));
+  cv.style.width = css + 'px'; cv.style.height = css + 'px';
+  const px = Math.min(2048, Math.round(css * (window.devicePixelRatio || 1)));
+  if (cv.width !== px) { cv.width = px; cv.height = px; }
+  dirty = true;
+}
+new ResizeObserver(fit).observe(plate);
+
+// HUD
+const hud = $('hud');
+function updateHud(ms) {
+  const m = MODES[S.mode], tl = TL();
+  hud.innerHTML = '';
+  const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
+  add(`${S.res}²`);
+  add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
+  add(m.tileable ? 'Seamless tile' : 'Tiles sideways', 'ok');
+  add(tl.loop ? `Loop ${fmtLen(tl.len)}` : `Sequence ${fmtLen(tl.len)}`, tl.loop ? 'ok' : '');
+  if (tl.shutter > 0 && QUAL[S.quality].sub > 1) add(`${tl.shutter}° shutter`);
+}
+
+
+/* =====================================================================
+   LOOP
+   ===================================================================== */
+let dirty = true, last = performance.now(), msAvg = 0, hudTimer = 0;
+function tick(now) {
+  const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
+  const len = TL().len;
+  if (S.playing) { S.t = (S.t + dt) % len; dirty = true; }
+  if (dirty) {
+    dirty = false;
+    const t0 = performance.now();
+    try { render(); } catch (e) { console.error(e); showErr(String(e && e.stack || e)); }
+    updateTransport();
+    $('info').textContent = info;
+    const cost = performance.now() - t0;
+    msAvg = msAvg ? msAvg * 0.85 + cost * 0.15 : cost;
+  }
+  if (now - hudTimer > 500) { hudTimer = now; updateHud(S.playing ? msAvg : 0); }
+  requestAnimationFrame(tick);
+}
+
+buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
+window.__cuc = {S, render: () => { render(); $('info').textContent = info; }, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1};
+requestAnimationFrame(tick);
+})();
+
+</script>
+
+</body>
+</html>
