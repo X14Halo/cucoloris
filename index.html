@@ -311,8 +311,8 @@ const MODES = {
         {k:'species', l:'Species', opts:SPECIES.map(s => s.name)},
         {k:'tileSize', l:'Tile size (across the beam)', min:2, max:30, step:0.5, u:'m', h:'Width of one tile measured perpendicular to the sunlight. The pattern tiles seamlessly in both directions.'},
         {k:'cover', l:'Canopy cover', min:0.1, max:1.5, step:0.01, h:'How much of the sky the canopy fills. Lower values open larger gaps between branch clusters.'},
-        {k:'treeSize', l:'Tree size', min:0.3, max:1.6, step:0.01, u:'×'},
-        {k:'crownBase', l:'Lowest branches', min:0.2, max:2, step:0.01, u:'×', h:'Scales the height of the crown base. Low values bring foliage down close to the lit surface for crisp leaf shapes.'},
+        {k:'canopyTop', l:'Height of tree tops', min:2, max:25, step:0.1, u:'m', h:'Top of the canopy above the ground. One storey is about 3 m.'},
+        {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
@@ -333,15 +333,15 @@ const MODES = {
       ]},
     ],
     presets:[
-      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, treeSize:1, crownBase:1, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, swayBranch:1, swayTwig:1, flutter:1}},
-      {name:'Round sun spots, tall canopy', v:{species:0, tileSize:3, cover:0.9, treeSize:1.6, leafDensity:0.85, sunElev:65}},
-      {name:'Maple, park shade', v:{species:1, tileSize:3, cover:0.9, sunElev:55}},
-      {name:'Birch, light breeze', v:{species:2, tileSize:3, cover:1.0, windSpeed:3, sunElev:50}},
-      {name:'Aspen, gentle shimmer', v:{species:3, tileSize:3, cover:1.0, windSpeed:3, sunElev:55}},
-      {name:'Pine canopy', v:{species:4, tileSize:4, cover:0.9, sunElev:50}},
-      {name:'Palm, beach', v:{species:5, tileSize:9, cover:0.6, windSpeed:4, sunElev:65}},
-      {name:'Leaves close to a wall', v:{species:1, tileSize:3, cover:1.1, treeSize:0.35, crownBase:0.35, recvHeight:0.8, sunElev:40}},
-      {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, leafDensity:0.5, sunElev:15}},
+      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, swayBranch:1, swayTwig:1, flutter:1}},
+      {name:'Round sun spots, tall canopy', v:{species:0, tileSize:3, cover:0.9, canopyTop:16, canopyDepth:5, leafDensity:0.85, sunElev:65}},
+      {name:'Maple, park shade', v:{species:1, tileSize:3, cover:0.9, canopyTop:10, canopyDepth:4, sunElev:55}},
+      {name:'Birch, light breeze', v:{species:2, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:50}},
+      {name:'Aspen, gentle shimmer', v:{species:3, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55}},
+      {name:'Pine canopy', v:{species:4, tileSize:4, cover:0.9, canopyTop:14, canopyDepth:5, sunElev:50}},
+      {name:'Palm, beach', v:{species:5, tileSize:9, cover:0.6, canopyTop:9, canopyDepth:3, windSpeed:4, sunElev:65}},
+      {name:'One storey up', v:{species:1, tileSize:3, cover:1.0, canopyTop:4, canopyDepth:1.5, sunElev:50}},
+      {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
   },
@@ -1517,7 +1517,7 @@ function pnoise(r, px, py) {
 /* A seamless patch of canopy: branches enter from trunks outside the tile and grow by space
    colonization through a periodic slab of crown, so the tile can be smaller than one tree. */
 function growPatch(sp, r, B, P, Lx, Ly, H) {
-  const zb = H * Math.min((sp.base ?? 0.3) * (P.crownBase ?? 1), 0.85), zt = H;
+  const zt = H, zb = Math.max(0.3, zt - P.canopyDepth);
   const seg = sp.seg * 0.85, infl = sp.infl, kill = sp.kill * 0.8;
   const wx = d => d - Lx * Math.round(d / Lx), wy = d => d - Ly * Math.round(d / Ly);
   const md = (a, L) => ((a % L) + L) % L;
@@ -1538,7 +1538,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   const nStem = Math.max(1, Math.round(Lx * Ly / 7));
   for (let s = 0; s < nStem; s++) {
     const x = r() * Lx, y = r() * Ly;
-    nx.push(x); ny.push(y); nz.push(zb - 0.5); np.push(-1); nt.push(1); rid.push(s);
+    nx.push(x); ny.push(y); nz.push(zb - 0.3); np.push(-1); nt.push(1); rid.push(s);
     nx.push(x + (r() - 0.5) * 0.2); ny.push(y + (r() - 0.5) * 0.2); nz.push(zb); np.push(nx.length - 2); nt.push(1); rid.push(s);
   }
   const GX = Math.max(1, Math.floor(Lx / infl)), GY = Math.max(1, Math.floor(Ly / infl)), csx = Lx / GX, csy = Ly / GY;
@@ -1581,7 +1581,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
       const l = Math.hypot(dx, dy, dz);
       accX[i] = undefined;
       if (l < 1e-6 || (kids[i] || 0) >= 3) continue;
-      const x = nx[i] + seg * dx / l, y = ny[i] + seg * dy / l, z = nz[i] + seg * dz / l;
+      const x = nx[i] + seg * dx / l, y = ny[i] + seg * dy / l, z = Math.max(zb - 0.15, Math.min(zt, nz[i] + seg * dz / l));
       let crowded = false;
       near(ngrid, x, y, z, q => { if (q !== i && wx(nx[q] - x) ** 2 + wy(ny[q] - y) ** 2 + (nz[q] - z) ** 2 < (seg * 0.55) ** 2) { crowded = true; return false; } });
       if (crowded) continue;
@@ -1597,7 +1597,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   for (let i = n - 1; i >= 0; i--) { if (!nch[i]) tip[i] = 0; if (np[i] >= 0) tip[np[i]] = Math.min(tip[np[i]], tip[i] + 1); }
   for (let i = n - 1; i >= 0; i--) { rad[i] = nch[i] ? Math.pow(acc25[i], 0.4) : 0.004; if (np[i] >= 0) acc25[np[i]] += Math.pow(rad[i], 2.5); }
   let rmax = 1e-4; for (let i = 0; i < n; i++) if (np[i] < 0) rmax = Math.max(rmax, rad[i]);
-  const rs = Math.min(0.11 * P.treeSize / rmax, 1.6);
+  const rs = Math.min(0.11 / rmax, 1.6);
   for (let i = 0; i < n; i++) rad[i] = Math.max(0.0018, rad[i] * rs);
   // woody area index: real canopies carry roughly 0.3–0.6 m² of branch silhouette per m² of ground
   let wood = 0;
@@ -1697,10 +1697,10 @@ function hierarchy(B, start, end, G) {
 
 const treeCache = new Map();
 function growOne(P, sp, idx) {
-  const key = [P.seed, P.species, P.treeSize, P.leafDensity, P.leafScale, P.crownBase, idx].join('|');
+  const key = [P.seed, P.species, P.canopyTop, P.leafDensity, P.leafScale, idx].join('|');
   if (treeCache.has(key)) return treeCache.get(key);
   const r = rng(P.seed * 7717 + (P.species | 0) * 31 + idx * 104729 + 5);
-  const H = sp.H * P.treeSize * (0.85 + 0.3 * r()), R = sp.R * P.treeSize * (0.85 + 0.3 * r());
+  const H = P.canopyTop * (0.9 + 0.2 * r()), R = sp.R * (0.85 + 0.3 * r());
   const B = newBuilder();
   if (sp.kind === 'pine') growPine(sp, r, B, 0, 0, 0, H, R, P);
   else if (sp.kind === 'palm') growPalm(sp, r, B, 0, 0, 0, H, R, P);
@@ -1720,11 +1720,11 @@ function genTrees(P) {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 5);
     const B = newBuilder();
     const G = {g1:[], g2:[], ng1:[], ng2:[], ns1:[], ns2:[]};
-    const nS = growPatch(sp, r0, B, P, Lx, Ly, sp.H * P.treeSize);
+    const nS = growPatch(sp, r0, B, P, Lx, Ly, P.canopyTop);
     hierarchy(B, 0, B.x.length, G);
     return {B, G, sp, nTrees:nS, Lx, Ly, patch:true};
   }
-  const Rm = sp.R * P.treeSize;
+  const Rm = sp.R;
   const nT = clamp(Math.round(P.cover * Lx * Ly / (Math.PI * Rm * Rm)), 1, 16);
   const r = rng(P.seed * 131 + 17);
   const pos = [];
@@ -1907,7 +1907,7 @@ function sunTaps(P, n) {
   return tapsCache;
 }
 function treesFor(P) {
-  const sig = [P.seed, P.species, P.tileSize, P.cover, P.treeSize, P.leafDensity, P.leafScale, P.crownBase, P.trunks, Math.round(P.sunElev * 2) / 2].join('|');
+  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, Math.round(P.sunElev * 2) / 2].join('|');
   if (sig !== TR.sig) {
     TR.data = genTrees(P);
     uploadTrees(TR.data, P);
@@ -1962,11 +1962,13 @@ function renderTrees(P, res, t, tl) {
     gl.uniform1fv(p.u('uH[0]'), new Float32Array(H)); gl.uniform1fv(p.u('uLod[0]'), new Float32Array(lod)); f3(p, 'uK', ...K);
   });
   const W = TR.wind, th = P.sunDisk * 0.5 * DEG;
-  const hMean = T.B.treeInfo.reduce((s, q) => s + q.H, 0) / T.B.treeInfo.length * 0.75;
-  const dMean = Math.max(hMean - zr, 0.1) / sinE;
+  const zTop = T.patch ? P.canopyTop : T.B.treeInfo.reduce((s, q) => s + q.H, 0) / T.B.treeInfo.length;
+  const zBot = T.patch ? Math.max(0.3, P.canopyTop - P.canopyDepth) : zTop * 0.8;
+  const dMean = Math.max(0.5 * (zTop + zBot) - zr, 0.1) / sinE;
+  const dLo = Math.max(zBot - zr, 0.05) / sinE, dHi = Math.max(zTop - zr, 0.05) / sinE;
   info = (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
          `Light space: the tile is ${P.tileSize.toFixed(1)} m square across the beam. Project it along the sun and the renderer stretches it ${(1 / sinE).toFixed(2)}× on flat ground\n` +
-         `Gaps act as pinholes: sun images about Ø ${(2 * dMean * Math.tan(th) * 100).toFixed(1)} cm for leaves ${dMean.toFixed(1)} m up the beam\n` +
+         `Foliage ${zBot.toFixed(1)}–${zTop.toFixed(1)} m above the lit surface: shadow edges soften by ${(2 * dLo * Math.tan(th) * 100).toFixed(1)}–${(2 * dHi * Math.tan(th) * 100).toFixed(1)} cm (real sun Ø ${P.sunDisk.toFixed(2)}°); gaps throw round sun spots that size\n` +
          `Branch sway ${W.fnTree.toFixed(2)} Hz, ±${(W.rmsTop * 100 * 1.4).toFixed(1)} cm · twigs ±${(W.twA * 1000 * 1.4).toFixed(1)} mm at 2–3 Hz · leaf flutter ≈ ${T.sp.flutHz.toFixed(1)} Hz` +
          (tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
