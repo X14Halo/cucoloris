@@ -151,7 +151,7 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
   <header class="top">
     <div class="brand">
       <span class="mark" aria-hidden="true"></span>
-      <div><h1>Cucoloris Lab</h1><p>Simulated water caustics and tree shadows for light gobos · real-time speed · seamless</p></div>
+      <div><h1>Cucoloris Lab</h1><p>Simulated water caustics, tree shadows and window light for light gobos · real-time speed</p></div>
     </div>
     <nav class="modes" id="modes" role="tablist" aria-label="Where the caustics land"></nav>
   </header>
@@ -220,7 +220,8 @@ const WATER = name => ({name, params:[
   {k:'directional', l:'Directionality', min:0, max:1, step:0.01, h:'0 = waves from every direction. 1 = waves aligned with the wave direction.'},
   {k:'windDir', l:'Wave direction', min:0, max:360, step:1, u:'°'},
   {k:'opposing', l:'Reflected waves', min:0, max:1, step:0.01, h:'Waves bouncing back off pool walls, hulls or a seawall. Turns travelling patterns into ones that shimmer in place.'},
-  {k:'ripple', l:'Wind ripples (RMS slope)', min:0, max:0.15, step:0.001, h:'Capillary ripples 1–4 cm long raised by gusts. They flicker fast and add fine sparkle.'},
+  {k:'ripple', l:'Wind ripples (RMS slope)', min:0, max:0.15, step:0.001, h:'Capillary ripples 1–4 cm long raised by gusts, inside each gust patch. They oscillate at about 8–10 Hz, as real ones do.'},
+  {k:'ripPatch', l:'Ripple patchiness', min:0, max:1, step:0.01, h:'Real wind ripples come in drifting gust patches (cat\'s paws) with glassy water between them. 0 spreads them evenly everywhere.'},
   {k:'chop', l:'Crest sharpening', min:0, max:1, step:0.01, h:'Choppy (Gerstner) horizontal displacement from the simulation.'},
 ]});
 const MOTION = {name:'Motion', params:[
@@ -266,7 +267,7 @@ const MODES = {
       MOTION,
     ],
     presets:[
-      {name:'Pool, still air', v:{seed:7, tileSize:3, wavelength:0.32, slope:0.05, tail:0.3, peak:1.2, directional:0.15, windDir:30, opposing:0.55, ripple:0, chop:0.2, depth:1.5, sunElev:62, sunAz:40, sunDisk:0.53, waterType:0, scatterK:1, dispersion:1, bakeColor:false, timeScale:1}},
+      {name:'Pool, still air', v:{seed:7, tileSize:3, wavelength:0.32, slope:0.05, tail:0.3, peak:1.2, directional:0.15, windDir:30, opposing:0.55, ripple:0, ripPatch:0.75, chop:0.2, depth:1.5, sunElev:62, sunAz:40, sunDisk:0.53, waterType:0, scatterK:1, dispersion:1, bakeColor:false, timeScale:1}},
       {name:'Pool, light breeze', v:{tileSize:2, wavelength:0.14, slope:0.032, tail:0.45, peak:1.4, directional:0.5, opposing:0.25, ripple:0.006, depth:1.3}},
       {name:'Pool, deep end', v:{tileSize:4, wavelength:0.32, slope:0.045, tail:0.3, depth:3.2}},
       {name:'Shallows, 25 cm', v:{tileSize:1.5, wavelength:0.13, slope:0.07, tail:0.2, peak:1.3, directional:0.35, opposing:0.1, ripple:0, depth:0.25, sunElev:55, waterType:4}},
@@ -289,7 +290,7 @@ const MODES = {
       MOTION,
     ],
     presets:[
-      {name:'Under a dock', v:{seed:5, tileSize:4, wavelength:0.9, slope:0.013, tail:0.2, peak:2, directional:0.4, windDir:20, opposing:0.3, ripple:0, chop:0.2, depth:1.8, sunElev:35, sunAz:40, sunDisk:0.53, timeScale:1}},
+      {name:'Under a dock', v:{seed:5, tileSize:4, wavelength:0.9, slope:0.013, tail:0.2, peak:2, directional:0.4, windDir:20, opposing:0.3, ripple:0, ripPatch:0.75, chop:0.2, depth:1.8, sunElev:35, sunAz:40, sunDisk:0.53, timeScale:1}},
       {name:'Bridge underside', v:{tileSize:10, wavelength:1.6, slope:0.012, tail:0.3, peak:2.5, directional:0.7, opposing:0, depth:5, sunElev:30}},
       {name:'Boat overhang, choppy', v:{tileSize:3, wavelength:0.5, slope:0.03, tail:0.5, peak:1.5, directional:0.3, opposing:0.4, ripple:0.004, depth:0.8, sunElev:45}},
       {name:'Indoor pool ceiling', v:{tileSize:6, wavelength:0.4, slope:0.012, tail:0.1, opposing:0.7, depth:3.5, sunElev:60, sunDisk:3}},
@@ -309,7 +310,7 @@ const MODES = {
       MOTION,
     ],
     presets:[
-      {name:'Yacht hull, harbour', v:{seed:9, tileSize:3, wavelength:0.7, slope:0.015, tail:0.35, peak:1.4, directional:0.1, windDir:60, opposing:0.5, ripple:0, chop:0.2, sunElev:50, sunAz:15, lean:15, sunDisk:0.53, timeScale:1}},
+      {name:'Yacht hull, harbour', v:{seed:9, tileSize:3, wavelength:0.7, slope:0.015, tail:0.35, peak:1.4, directional:0.1, windDir:60, opposing:0.5, ripple:0, ripPatch:0.75, chop:0.2, sunElev:50, sunAz:15, lean:15, sunDisk:0.53, timeScale:1}},
       {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.45, peak:1.4, directional:0.4, opposing:0.6, ripple:0, sunElev:40, sunAz:-15, lean:0}},
       {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.35, directional:0.15, windDir:45, opposing:0.1, sunElev:45, sunAz:20, lean:-8}},
       {name:'Pool wall above water', v:{tileSize:1.5, wavelength:0.25, slope:0.015, tail:0.25, opposing:0.7, sunElev:55, sunAz:0, lean:0}},
@@ -367,6 +368,117 @@ const MODES = {
   },
 };
 
+/* ---------- Windows: sunlight through a real window ---------- */
+const WIN_STYLES = ['Picture window', 'Double-hung sash', 'Prairie (border lites)', 'Casement pair', 'French doors', 'Industrial steel', 'Leaded diamonds', 'Arched sunburst', 'Round oculus', 'Sliding'];
+// per style: size, frame, glazing bar and pane layout (upper / lower sash for double-hung)
+const WIN_STYLE_DEF = [
+  {W:1.6, H:1.2, fw:0.07, bw:0.022, cols:1, rows:1, cols2:1, rows2:1},
+  {W:0.9, H:1.5, fw:0.065, bw:0.022, cols:3, rows:2, cols2:3, rows2:2},
+  {W:1.2, H:1.4, fw:0.07, bw:0.022, cols:1, rows:1, cols2:1, rows2:1},
+  {W:1.2, H:1.3, fw:0.065, bw:0.022, cols:2, rows:3, cols2:1, rows2:1},
+  {W:1.5, H:2.2, fw:0.075, bw:0.024, cols:2, rows:5, cols2:1, rows2:1},
+  {W:2.0, H:2.4, fw:0.04, bw:0.03, cols:5, rows:6, cols2:1, rows2:1},
+  {W:0.8, H:1.2, fw:0.06, bw:0.007, cols:5, rows:1, cols2:1, rows2:1},
+  {W:1.0, H:1.9, fw:0.07, bw:0.022, cols:2, rows:3, cols2:1, rows2:1},
+  {W:0.9, H:0.9, fw:0.07, bw:0.024, cols:2, rows:2, cols2:1, rows2:1},
+  {W:1.6, H:1.1, fw:0.06, bw:0.022, cols:1, rows:1, cols2:1, rows2:1},
+];
+const OPEN_LABEL = {1:'Lower sash raised', 5:'Pivot vent open', 9:'Slider open'};
+const treeChoices = () => ['None', ...MODES.trees.presets.filter(p => !/white frame/.test(p.name)).map(p => p.name)];
+MODES.windows = {
+  short:'Windows', kind:'windows', tileable:false, tl:{loop:true, len:20, shutter:180},
+  onParam(k, P) {
+    if (k === 'style') { Object.assign(P, WIN_STYLE_DEF[P.style | 0]); return true; }
+    return ['blind', 'curtain', 'trees', 'glass'].includes(k);
+  },
+  get groups() {
+    const P = S.p.windows;
+    const st = P.style | 0;
+    const win = [
+      {k:'style', l:'Style', opts:WIN_STYLES},
+      {k:'W', l:'Width', min:0.3, max:4, step:0.01, u:'m'},
+      {k:'H', l:'Height', min:0.3, max:3.5, step:0.01, u:'m'},
+      {k:'fw', l:'Frame & sash width', min:0.015, max:0.15, step:0.001, fmt:v => (v * 1000).toFixed(0) + ' mm', h:'Width of the frame and the sash rails and stiles.'},
+    ];
+    if (st !== 2) win.push({k:'bw', l:st === 6 ? 'Lead came width' : 'Glazing bar width', min:0.003, max:0.06, step:0.001, fmt:v => (v * 1000).toFixed(0) + ' mm'});
+    if (st !== 2) win.push(
+      {k:'cols', l:st === 1 ? 'Upper sash panes across' : st === 6 ? 'Diamonds across' : st === 7 ? 'Panes across (sunburst rays)' : st === 8 ? 'Spokes per quarter' : 'Panes across', min:1, max:12, step:1},
+      {k:'rows', l:st === 1 ? 'Upper sash panes down' : st === 6 ? 'Diamond height' : st === 8 ? 'Inner ring (0/1+)' : 'Panes down', min:st === 8 ? 0 : 1, max:12, step:1});
+    if (st === 1) win.push({k:'cols2', l:'Lower sash panes across', min:1, max:12, step:1}, {k:'rows2', l:'Lower sash panes down', min:1, max:12, step:1});
+    if (st === 2) win.push({k:'border', l:'Border lite width', min:0.04, max:0.3, step:0.005, u:'m'});
+    if (OPEN_LABEL[st]) win.push({k:'open', l:OPEN_LABEL[st], min:0, max:1, step:0.01});
+    win.push(
+      {k:'wallT', l:'Wall thickness', min:0.05, max:0.7, step:0.01, u:'m', h:'The reveal around the window clips the beam at an angle, so the patch narrows as the sun swings across.'},
+      {k:'inset', l:'Window position in wall', min:0, max:1, step:0.01, fmt:v => v < 0.05 ? 'Outside face' : v > 0.95 ? 'Inside face' : (v * 100).toFixed(0) + '% in', h:'Where the frame sits within the wall depth.'},
+    );
+    const glass = [
+      {k:'glass', l:'Glass', opts:['Clear float', 'Old wavy (antique)', 'Seeded (bubbles)', 'Reeded (fluted)', 'Textured obscure', 'Frosted (acid etched)', 'Wired safety glass']},
+      {k:'glazing', l:'Glazing', opts:['Single pane', 'Double glazed', 'Triple glazed'], h:'Each pane reflects about 8% at normal incidence and more at grazing angles (Fresnel).'},
+    ];
+    if (P.glass === 1 || P.glass === 2 || P.glass === 0) glass.push({k:'distort', l:'Glass waviness', min:0, max:4, step:0.01, u:'×', h:'Thickness ripples in the glass bend the light into soft caustic streaks. Old cylinder glass is 1–2×.'});
+    if (P.glass === 3 || P.glass === 4) glass.push({k:'distort', l:'Texture strength', min:0.2, max:3, step:0.01, u:'×', h:'How far the textured glass spreads the light.'});
+    glass.push({k:'screen', l:'Insect screen', opts:['None', 'Full screen', 'Lower half'], h:'Fine mesh outside the glass: it cuts about a third of the light and its frame casts a shadow.'});
+    const dirt = [
+      {k:'grime', l:'Dust & grime', min:0, max:1, step:0.01, h:'Builds up in the corners and along the bottom of each pane.'},
+      {k:'smudge', l:'Smudges & wipe marks', min:0, max:1, step:0.01},
+      {k:'spots', l:'Dried water spots', min:0, max:1, step:0.01},
+      {k:'rain', l:'Raindrops & streaks', min:0, max:1, step:0.01, h:'Each drop is a tiny lens: it throws a dark ring with a bright focused centre.'},
+      {k:'fog', l:'Condensation', min:0, max:1, step:0.01, h:'Fog on the lower part of each pane, broken by drips running down.'},
+    ];
+    const bl = P.blind | 0;
+    const blinds = [{k:'blind', l:'Blinds & shades', opts:['None', 'Venetian, 25 mm aluminium', 'Venetian, 50 mm wood', 'Vertical blinds', 'Plantation shutters', 'Roller shade', 'Pleated shade']}];
+    if (bl === 1 || bl === 2 || bl === 3 || bl === 4) blinds.push({k:'tilt', l:'Slat tilt', min:-80, max:80, step:0.5, u:'°', h:'0° is fully open. As the slats close the light bars thin, and with the sun high, slats tilted the other way block it sooner.'});
+    if (bl && bl !== 4) blinds.push({k:'lower', l:bl === 3 ? 'Drawn across' : 'Lowered', min:0, max:1, step:0.01, fmt:v => (v * 100).toFixed(0) + '%'});
+    if (bl === 1 || bl === 2 || bl === 3 || bl === 4) blinds.push({k:'imperf', l:'Wear & unevenness', min:0, max:1, step:0.01, h:'Slats that sag, twist or sit at slightly different angles.'});
+    const cu = P.curtain | 0;
+    const curt = [{k:'curtain', l:'Curtains', opts:['None', 'Sheer voile', 'Lace', 'Linen', 'Blackout drapes', 'Café curtain (sheer, lower half)']}];
+    if (cu) {
+      if (cu !== 5) curt.push({k:'cOpen', l:'Drawn open', min:0, max:1, step:0.01, fmt:v => (v * 100).toFixed(0) + '%'});
+      curt.push({k:'full', l:'Fullness', min:1.2, max:3.5, step:0.05, u:'×', h:'Fabric width over the width it hangs across. More fullness means deeper folds.'},
+                {k:'breeze', l:'Breeze', min:0, max:1, step:0.01, h:'Air through an open window: folds drift and the hem billows. 0 is still.'});
+    }
+    const out = [
+      {k:'eave', l:'Roof eave overhang', min:0, max:1.5, step:0.01, u:'m', h:'Depth of an eave or awning above the window. With a high sun it shades the top of the window.'},
+      {k:'eaveH', l:'Eave height above window', min:0, max:1.5, step:0.01, u:'m'},
+      {k:'trees', l:'Trees outside', opts:treeChoices(), h:'A real tree canopy between the sun and the window, with its own wind and its own (much softer) shadow edges.'}];
+    if (P.trees) out.push(
+      {k:'treeDist', l:'Canopy distance', min:2, max:40, step:0.1, u:'m', h:'From the window out to the middle of the canopy, along the sunlight.'},
+      {k:'treeCover', l:'Canopy cover', min:0.1, max:1.4, step:0.01},
+      {k:'treeWind', l:'Wind', min:0, max:12, step:0.1, u:'m/s'},
+    );
+    const sun = [
+      {k:'sunElev', l:'Sun elevation', min:3, max:80, step:0.5, u:'°'},
+      {k:'sunAz', l:'Sun angle across the window', min:-75, max:75, step:0.5, u:'°', h:'0° is square to the window. Off-axis sun narrows the patch and the reveal eats into one side.'},
+      {k:'recv', l:'Distance to lit surface', min:0.2, max:8, step:0.05, u:'m', h:'From the glass to where the light lands, along the beam. Further away, every shadow edge softens (the sun is 0.53° across).'},
+      {k:'zoom', l:'Framing', min:0.5, max:3, step:0.01, u:'×', h:'1× fits the projected window with a small margin. Larger shows more black around it.'},
+    ];
+    return [{name:'Window', params:win}, {name:'Glass', params:glass}, {name:'Dirt & weather', params:dirt}, {name:'Blinds & shades', params:blinds}, {name:'Curtains', params:curt}, {name:'Outside', params:out}, {name:'Sun & throw', params:sun}];
+  },
+  presets:[
+    {name:'Colonial 6-over-6', v:{seed:7, style:1, ...WIN_STYLE_DEF[1], border:0.12, open:0, wallT:0.3, inset:0.3, glass:1, glazing:0, distort:1, screen:0,
+      grime:0.25, smudge:0.15, spots:0, rain:0, fog:0, blind:0, tilt:20, lower:1, imperf:0.3, curtain:0, cOpen:0.6, full:2.2, breeze:0.15,
+      trees:0, treeDist:8, treeCover:0.8, treeWind:2, eave:0, eaveH:0.3, sunElev:32, sunAz:18, recv:2.2, zoom:1}},
+    {name:'Venetian blinds, afternoon', v:{style:0, ...WIN_STYLE_DEF[0], glass:0, glazing:1, blind:1, tilt:10, lower:1, imperf:0.35, grime:0.1, smudge:0, sunElev:28, sunAz:22, recv:2}},
+    {name:'Wood blinds with tapes', v:{style:0, ...WIN_STYLE_DEF[0], W:1.3, H:1.4, glass:0, glazing:1, blind:2, tilt:12, lower:0.8, imperf:0.4, grime:0.05, smudge:0, sunElev:30, sunAz:-15, recv:2.4}},
+    {name:'Sheer curtains, breeze', v:{style:3, ...WIN_STYLE_DEF[3], glass:0, glazing:1, curtain:1, cOpen:0.25, full:2.0, breeze:0.6, grime:0.1, smudge:0.1, sunElev:35, sunAz:10, recv:2}},
+    {name:'Lace curtains', v:{style:1, ...WIN_STYLE_DEF[1], cols:1, rows:1, cols2:1, rows2:1, glass:0, curtain:2, cOpen:0, full:1.6, breeze:0.1, grime:0.15, sunElev:30, sunAz:-12, recv:1.6}},
+    {name:'Plantation shutters', v:{style:0, ...WIN_STYLE_DEF[0], W:1.1, H:1.5, glass:0, glazing:1, blind:4, tilt:20, imperf:0.2, grime:0.05, smudge:0, sunElev:35, sunAz:20, recv:2}},
+    {name:'Industrial steel, grimy', v:{style:5, ...WIN_STYLE_DEF[5], open:0.45, glass:6, glazing:0, grime:0.8, smudge:0.3, spots:0.4, sunElev:40, sunAz:-20, recv:3.5, wallT:0.4, inset:0.2}},
+    {name:'Leaded diamonds, old glass', v:{style:6, ...WIN_STYLE_DEF[6], glass:1, glazing:0, distort:1.6, grime:0.4, smudge:0.1, sunElev:30, sunAz:15, recv:1.6, wallT:0.5, inset:0.25}},
+    {name:'Arched sunburst', v:{style:7, ...WIN_STYLE_DEF[7], glass:0, glazing:1, grime:0.15, sunElev:38, sunAz:12, recv:2.6}},
+    {name:'French doors, low morning sun', v:{style:4, ...WIN_STYLE_DEF[4], glass:0, glazing:1, grime:0.15, smudge:0.35, sunElev:14, sunAz:25, recv:3.5, wallT:0.25}},
+    {name:'Rainy window', v:{style:0, ...WIN_STYLE_DEF[0], glass:0, glazing:1, rain:0.8, grime:0.2, sunElev:30, sunAz:10, recv:1.2}},
+    {name:'Craftsman with a tree outside', v:{style:1, ...WIN_STYLE_DEF[1], cols:3, rows:1, cols2:1, rows2:1, glass:0, glazing:1, trees:1, treeDist:7, treeCover:0.55, treeWind:2.5, grime:0.15, sunElev:35, sunAz:15, recv:2.2}},
+    {name:'Roller shade half down', v:{style:2, ...WIN_STYLE_DEF[2], glass:0, glazing:1, blind:5, lower:0.5, grime:0.1, sunElev:35, sunAz:-15, recv:2}},
+    {name:'Frosted bathroom window', v:{style:0, ...WIN_STYLE_DEF[0], W:0.7, H:0.9, glass:5, glazing:1, grime:0.2, sunElev:40, sunAz:10, recv:1.5}},
+    {name:'Reeded glass door', v:{style:4, ...WIN_STYLE_DEF[4], cols:1, rows:3, glass:3, distort:1, glazing:0, sunElev:25, sunAz:10, recv:2}},
+    {name:'High sun under an eave', v:{style:3, ...WIN_STYLE_DEF[3], glass:0, glazing:1, eave:0.45, eaveH:0.35, wallT:0.2, grime:0.1, sunElev:50, sunAz:-10, recv:2.2}},
+    {name:'Porthole', v:{style:8, ...WIN_STYLE_DEF[8], cols:1, rows:0, W:0.6, H:0.6, fw:0.05, glass:0, glazing:0, spots:0.6, grime:0.3, sunElev:25, sunAz:5, recv:1.5, wallT:0.15}},
+    {name:'Blinds and a tree outside', v:{style:0, ...WIN_STYLE_DEF[0], glass:0, glazing:1, blind:1, tilt:8, lower:1, imperf:0.3, trees:2, treeDist:9, treeCover:0.6, treeWind:3, sunElev:30, sunAz:20, recv:2.4}},
+  ],
+  post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
+};
+
 const POST = [
   {k:'exposure', l:'Preview exposure', min:-6, max:4, step:0.05, u:'EV', h:'Preview only. The pattern itself is linear with a mean of 1.0, so it redistributes the light without dimming it.'},
   {k:'rolloff', l:'Highlight rolloff', min:0, max:1, step:0.01, h:'Compresses hot caustic peaks instead of clipping them.'},
@@ -399,7 +511,7 @@ try {
       if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
       if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
     }
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scene', 'cam']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'under';
   }
 } catch (e) {}
@@ -407,7 +519,7 @@ let saveTimer = 0;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scene:S.scene, cam:S.cam})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -496,7 +608,7 @@ void main(){ vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2)
 /* ---------- Water: evolve the spectrum h(k,t). Output A packs slope_x + i·slope_y and
               disp_x + i·disp_y; output B packs the height. Both are inverse-FFT'd. ---------- */
 const FS_SPEC = HEAD + `
-uniform sampler2D uH0; uniform int uN; uniform float uL, uT, uTS, uLoopT, uHw;
+uniform sampler2D uH0, uH0r; uniform int uN; uniform float uL, uT, uTS, uLoopT, uHw;
 layout(location=0) out vec4 oA; layout(location=1) out vec4 oB;
 vec2 cmul(vec2 a, vec2 b){ return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x); }
 void main(){
@@ -515,7 +627,11 @@ void main(){
   vec2 h = cmul(h0.xy, e) + cmul(vec2(h0.z, -h0.w), vec2(e.x, -e.y));
   vec2 ih = vec2(-h.y, h.x);
   oA = vec4(k.x * ih - k.y * h, -(k.x / kl) * ih + (k.y / kl) * h);
-  oB = vec4(h, 0.0, 0.0);
+  // wind ripples kept apart (slopes only), so they can be confined to gust patches
+  vec4 r0 = texelFetch(uH0r, ij, 0);
+  vec2 hr = cmul(r0.xy, e) + cmul(vec2(r0.z, -r0.w), vec2(e.x, -e.y));
+  vec2 ihr = vec2(-hr.y, hr.x);
+  oB = vec4(h, k.x * ihr - k.y * hr);
 }`;
 /* ---------- Water: one radix-2 Stockham FFT stage (inverse, two complex signals per texel) ---------- */
 const FS_FFT = COMMON + `
@@ -547,7 +663,7 @@ float fres(float ci, float n){
   return 0.5 * (rs * rs + rp * rp);
 }`;
 const VS_MESH = HEAD + FRES + `
-uniform sampler2D uSa, uSb; uniform int uM, uG, uMargin, uRefl;
+uniform sampler2D uSa, uSb, uSm; uniform int uM, uG, uMargin, uRefl;
 uniform float uTile, uDepth, uChop, uN, uF0; uniform vec3 uL; uniform vec2 uFlat;
 out vec2 vOld; out float vF;
 void main(){
@@ -556,9 +672,10 @@ void main(){
   int gj = q / uG; int gi = q - gj * uG;
   ivec2 id = ivec2(gi, gj) + cr - ivec2(uMargin);
   vec2 rest = (vec2(id) + 0.5) / float(uM);
-  vec4 a = textureLod(uSa, rest, 0.0);
-  float h = textureLod(uSb, rest, 0.0).x;
-  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
+  vec4 a = textureLod(uSa, rest, 0.0), b = textureLod(uSb, rest, 0.0);
+  float h = b.x;
+  vec2 sl = a.xy + textureLod(uSm, rest, 0.0).r * b.zw;
+  vec3 n = normalize(vec3(-sl, 1.0));
   vec2 p = rest * uTile - uChop * a.zw;
   float ci = max(dot(-uL, n), 0.0);
   vec2 hit;
@@ -584,7 +701,7 @@ void main(){
 /* ---------- Hulls, walls and rocks: reflected rays from the water in front of a surface
               that may lean toward (flared bow) or away from the water. ---------- */
 const VS_WALL = HEAD + FRES + `
-uniform sampler2D uSa, uSb; uniform int uM, uGy, uMy;
+uniform sampler2D uSa, uSb, uSm; uniform int uM, uGy, uMy;
 uniform float uTile, uChop, uCosL, uSinL, uN, uF0, uLatK; uniform vec3 uL;
 out vec2 vOld; out float vF;
 void main(){
@@ -593,9 +710,10 @@ void main(){
   int gx = q / uGy; int gy = q - gx * uGy;
   ivec2 id = ivec2(gx, gy - uMy) + cr;          // x = distance out from the wall, y = along the wall
   vec2 rest = vec2(id) / float(uM);
-  vec4 a = textureLod(uSa, rest, 0.0);
-  float h = textureLod(uSb, rest, 0.0).x;
-  vec3 n = normalize(vec3(-a.x, -a.y, 1.0));
+  vec4 a = textureLod(uSa, rest, 0.0), b = textureLod(uSb, rest, 0.0);
+  float h = b.x;
+  vec2 sl = a.xy + textureLod(uSm, rest, 0.0).r * b.zw;
+  vec3 n = normalize(vec3(-sl, 1.0));
   vec3 r = reflect(uL, n);
   vF = fres(max(dot(-uL, n), 0.0), uN) / uF0;
   vec2 d = -uChop * a.zw;
@@ -1033,26 +1151,32 @@ function waterSpectrum(P, N) {
     const cut = Math.exp(-((k / kcut) ** 2));
     const Sg = Math.pow(k, -3) * Math.exp(-1.25 * (kp / k) ** 2) * Math.pow(P.peak, rr) * cut * Math.exp(-((k / ktail) ** 2));
     const Dr = c2 * c2 + 0.3 * P.opposing * s2 * s2;
-    const Sr = Math.pow(k, -3) * Math.exp(-Math.pow(Math.log(k / kr), 2) / (2 * 0.35 * 0.35)) * cut;
+    // ripples the grid cannot resolve are dropped, not pushed into longer waves: normalise over the uncut band
+    const Sr0 = Math.pow(k, -3) * Math.exp(-Math.pow(Math.log(k / kr), 2) / (2 * 0.35 * 0.35));
     const idx = j * N + i;
-    Fg[idx] = Sg / k * D; Fr[idx] = Sr / k * Dr; K[idx] = k;
-    sg += k * k * Fg[idx]; sr += k * k * Fr[idx];
+    Fg[idx] = Sg / k * D; Fr[idx] = Sr0 * cut / k * Dr; K[idx] = k;
+    sg += k * k * Fg[idx]; sr += k * k * Sr0 / k * Dr;
   }
-  const data = new Float32Array(NN * 4);
+  const data = new Float32Array(NN * 4), dataR = new Float32Array(NN * 4);
   let kap = 0;
+  const r2 = rng(P.seed * 7193 + 5);
   for (let idx = 0; idx < NN; idx++) {
-    let e = (sg > 0 ? P.slope * P.slope * Fg[idx] / sg : 0) + (sr > 0 && P.ripple > 0 ? P.ripple * P.ripple * Fr[idx] / sr : 0);
-    e *= 0.5;
-    const a = Math.sqrt(e) / Math.SQRT2;
+    const e = 0.5 * (sg > 0 ? P.slope * P.slope * Fg[idx] / sg : 0);
+    const er = 0.5 * (sr > 0 && P.ripple > 0 ? P.ripple * P.ripple * Fr[idx] / sr : 0);
+    const a = Math.sqrt(e) / Math.SQRT2, ar = Math.sqrt(er) / Math.SQRT2;
     data[idx * 4] = a * gauss(r); data[idx * 4 + 1] = a * gauss(r);
-    kap += Math.pow(K[idx], 4) * e * 2;
+    dataR[idx * 4] = ar * gauss(r2); dataR[idx * 4 + 1] = ar * gauss(r2);
+    kap += Math.pow(K[idx], 4) * (e + er) * 2;
   }
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const idx = j * N + i, m = ((N - j) % N) * N + ((N - i) % N);
     data[idx * 4 + 2] = data[m * 4]; data[idx * 4 + 3] = data[m * 4 + 1];
+    dataR[idx * 4 + 2] = dataR[m * 4]; dataR[idx * 4 + 3] = dataR[m * 4 + 1];
   }
   if (water.tex) gl.deleteTexture(water.tex);
+  if (water.texR) gl.deleteTexture(water.texR);
   water.tex = dataTex(N, N, data);
+  water.texR = dataTex(N, N, dataR);
   Object.assign(water, {sig, N, kappa:Math.sqrt(kap / 2)});
   return water;
 }
@@ -1099,6 +1223,35 @@ function spectralBands(K) {
   return out;
 }
 
+/* Wind ripples arrive in gust patches (cat's paws) that drift downwind and come and go
+   over a few seconds, leaving glassy water between them. The patch field tiles with the
+   water and loops with the timeline. */
+const FS_RMASK = COMMON + `
+uniform float uT, uPatch, uZ; uniform vec2 uDrift; uniform int uF, uPz;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 q = uv * float(uF) - uDrift;
+  float z = uZ;
+  float n = pn3(vec3(q, z), ivec2(uF, 0), ivec2(0, uF), uPz, 11u)
+          + 0.5 * pn3(vec3(q * 2.0, z * 2.0), ivec2(uF * 2, 0), ivec2(0, uF * 2), uPz * 2, 12u);
+  float m = smoothstep(-0.05, 0.45, n);
+  fragColor = vec4(mix(1.0, m, uPatch), 0.0, 0.0, 1.0);
+}`;
+PR.rmask = program(VS_FULL, FS_RMASK, 'ripple patches');
+function rippleMask(P, t, tl) {
+  const out = tgt('rmask', 256, 256, 'f16');
+  const L = P.tileSize, F = Math.max(1, Math.round(L / 1.6));
+  const T = tl.len, tt = tl.loop ? ((t % T) + T) % T : t;
+  // patches ride the wind at ~1.5 m/s and live a few seconds; both snap to the loop
+  const Pz = tl.loop ? Math.max(1, Math.round(T / 5)) : 1000;
+  const shift = tl.loop ? Math.round(1.5 * T / L) * L / T : 1.5;
+  const d = shift * tt / L * F, th = (P.windDir || 0) * DEG;
+  pass(PR.rmask, out, p => {
+    f1(p, 'uPatch', P.ripple > 0 ? clamp(P.ripPatch ?? 0.75, 0, 1) : 0); i1(p, 'uF', F); i1(p, 'uPz', Pz);
+    f1(p, 'uZ', tl.loop ? tt / T * Pz : tt / 5); f2(p, 'uDrift', d * Math.cos(th), d * Math.sin(th));
+  });
+  return out;
+}
 function renderCaustics(P, res, t, target, tl) {
   const Q = QUAL[S.quality];
   const N = Q.N, M = N * Q.over;
@@ -1111,13 +1264,14 @@ function renderCaustics(P, res, t, target, tl) {
   // simulate: evolve spectrum, inverse FFT slopes/displacement and height
   const spec = mrtF('wspec', N, N);
   pass(PR.spec, spec, p => {
-    tex(p, 'uH0', W.tex, 0); i1(p, 'uN', N); f1(p, 'uL', P.tileSize);
+    tex(p, 'uH0', W.tex, 0); tex(p, 'uH0r', W.texR, 1); i1(p, 'uN', N); f1(p, 'uL', P.tileSize);
     f1(p, 'uT', tl.loop ? ((t % tl.len) + tl.len) % tl.len : t); f1(p, 'uTS', P.timeScale);
     f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uHw', Hw);
   });
   const fA = runFFT(spec, N, 'wa');
   const fB = runFFT({tex:spec.tex2}, N, 'wb');
   filt(fA.tex, true); filt(fB.tex, true);
+  const rm = rippleMask(P, t, tl);
   const e = P.sunElev * DEG, az = P.sunAz * DEG;
   const th = P.sunDisk * 0.5 * DEG;
   const sigma = Math.hypot(P.slope, P.ripple);
@@ -1143,7 +1297,7 @@ function renderCaustics(P, res, t, target, tl) {
       const Gy = M + 2 * my;
       const F0 = fresnel(Math.sin(e), nMean);
       const p = PR.wall; gl.useProgram(p.p);
-      tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1);
+      tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1); tex(p, 'uSm', rm.tex, 2);
       i1(p, 'uM', M); i1(p, 'uGy', Gy); i1(p, 'uMy', my);
       f1(p, 'uTile', P.tileSize); f1(p, 'uChop', P.chop); f1(p, 'uCosL', cL); f1(p, 'uSinL', sL);
       f1(p, 'uN', nMean); f1(p, 'uF0', F0); f1(p, 'uLatK', latK); f3(p, 'uL', ...L0);
@@ -1175,7 +1329,7 @@ function renderCaustics(P, res, t, target, tl) {
     const marg = clamp(D * dev * 3.2 * sigma / Math.max(Math.sin(e), 0.3) / P.tileSize + P.chop * sigma * 0.5 / (2 * Math.PI / P.wavelength) / P.tileSize + 0.01, 0.02, 0.6);
     const mc = Math.ceil(marg * M), G = M + 2 * mc;
     const p = PR.mesh; gl.useProgram(p.p);
-    tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1);
+    tex(p, 'uSa', fA.tex, 0); tex(p, 'uSb', fB.tex, 1); tex(p, 'uSm', rm.tex, 2);
     i1(p, 'uM', M); i1(p, 'uG', G); i1(p, 'uMargin', mc); i1(p, 'uRefl', refl ? 1 : 0);
     f1(p, 'uTile', P.tileSize); f1(p, 'uDepth', D); f1(p, 'uChop', P.chop); f1(p, 'uF0', F0);
     f3(p, 'uL', ...L0); f2(p, 'uFlat', ...flat); f1(p, 'uA', A);
@@ -2026,21 +2180,20 @@ function sunTaps(P, n) {
   tapsCache = {sig, tex:dataTex(n, 1, data), n, maxR:Math.tan(th) / P.tileSize};
   return tapsCache;
 }
-function treesFor(P) {
+function treesFor(P, tl = S.tl.trees) {
   const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, Math.round(P.sunElev * 2) / 2].join('|');
   if (sig !== TR.sig) {
     TR.data = genTrees(P);
     uploadTrees(TR.data, P);
     TR.sig = sig; TR.windSig = '';
   }
-  const tl = S.tl.trees;
   const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.gustRate, P.indep, tl.loop, tl.len].join('|');
   if (ws !== TR.windSig) { windSetup(TR.data, P, tl); TR.windSig = ws; }
   return TR.data;
 }
 function renderTrees(P, res, t, tl) {
   const Q = QUAL[S.quality];
-  const T = treesFor(P);
+  const T = treesFor(P, tl);
   const tt = tl.loop ? ((t % tl.len) + tl.len) % tl.len : t;
   windEval(T, tt);
   const e = Math.max(P.sunElev, 5) * DEG, sinE = Math.sin(e), cot = 1 / Math.tan(e);
@@ -2097,10 +2250,651 @@ function renderTrees(P, res, t, tl) {
 }
 
 /* =====================================================================
+   WINDOWS
+   Sunlight through a window, built from physical layers at their real
+   depths: the wall reveal (outer and inner faces), the frame and sashes
+   (with their own depth), the glass (Fresnel loss, waviness caustics,
+   dirt, rain, condensation), blinds or shutters inside the reveal and
+   curtains in the room. Each layer is drawn in the window plane, then
+   every gobo pixel is traced back toward the sun through all of them for
+   many points across the sun disk, so each layer's shadow softens by its
+   own distance to the lit surface. The output is in light space.
+   ===================================================================== */
+const WIN = {cover:3};
+const WIN_GLSL = `
+uniform vec2 uWin; uniform float uFW, uBW, uBorder, uOpen, uPx; uniform int uStyle, uCols, uRows, uCols2, uRows2;
+uniform vec3 uSunW; uniform uint uSeed;
+float aa(float d){ return clamp(d / uPx + 0.5, 0.0, 1.0); }
+float rdist(vec2 p, vec2 lo, vec2 hi){ vec2 a = min(p - lo, hi - p); return min(a.x, a.y); }
+float h2(vec2 c, uint s){ return rnd(ivec3(ivec2(c), 7), uSeed * 131u + s); }
+// quintic fade keeps the second derivative continuous, so caustics show no lattice
+float vn(vec2 p, uint s){ vec2 i = floor(p), f = fract(p), u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  return mix(mix(h2(i, s), h2(i + vec2(1, 0), s), u.x), mix(h2(i + vec2(0, 1), s), h2(i + vec2(1, 1), s), u.x), u.y); }
+float fbm(vec2 p, int o, uint s){ float v = 0.0, a = 0.5, n = 0.0; for (int i = 0; i < 6; i++){ if (i >= o) break; v += a * vn(p, s + uint(i) * 17u); n += a; p = p * 2.03 + vec2(17.1, 9.3); a *= 0.5; } return v / n; }
+// the window opening in the wall (signed distance, positive inside)
+float sdOpen(vec2 p){
+  float W = uWin.x * 0.5, H = uWin.y * 0.5;
+  if (uStyle == 8) return min(W, H) - length(p);
+  if (uStyle == 7){
+    vec2 c = vec2(0.0, H - W);
+    if (p.y > c.y) return min(W - length(p - c), p.y + H);
+    return min(min(p.x + W, W - p.x), p.y + H);
+  }
+  return min(min(p.x + W, W - p.x), min(p.y + H, H - p.y));
+}
+struct Pane { float m; float g; float id; float edge; float v; };
+// distance to the nearest interior glazing bar of an n-way division
+float barD(float u, int n, float cell){ if (n < 2) return 1e3; float k = clamp(floor(u + 0.5), 1.0, float(n - 1)); return abs(u - k) * cell; }
+// a sash: stiles and top rail sw, bottom rail rb, glass split into cols × rows lites
+void sash(vec2 p, vec2 lo, vec2 hi, float sw, float rb, int cols, int rows, float pid, inout Pane P){
+  float inS = aa(rdist(p, lo, hi));
+  if (inS <= 0.0) return;
+  vec2 glo = lo + vec2(sw, rb), ghi = hi - vec2(sw, sw);
+  float dG = rdist(p, glo, ghi);
+  vec2 cell = (ghi - glo) / vec2(float(cols), float(rows));
+  vec2 u = (p - glo) / cell;
+  float db = min(barD(u.x, cols, cell.x), barD(u.y, rows, cell.y)) - uBW * 0.5;
+  float gl = aa(dG) * aa(db);
+  P.m *= 1.0 - inS * (1.0 - gl);
+  if (gl > 0.0){
+    vec2 ci = clamp(floor(u), vec2(0.0), vec2(float(cols - 1), float(rows - 1)));
+    P.g += gl; P.id = pid * 97.0 + ci.x + ci.y * 13.0;
+    P.edge = min(P.edge, min(max(dG, 0.0), max(db, 0.0)));
+    P.v = clamp((p.y - (glo.y + ci.y * cell.y)) / cell.y, 0.0, 1.0);
+  }
+}
+Pane frame(vec2 p){
+  Pane P = Pane(1.0, 0.0, 0.0, 1e3, 0.5);
+  float W = uWin.x * 0.5, H = uWin.y * 0.5, fw = uFW, sw = uFW * 0.8;
+  float so = sdOpen(p);
+  P.m = aa(so - fw);                                       // outer frame (head, jambs, sill)
+  vec2 lo = vec2(-W + fw, -H + fw), hi = vec2(W - fw, H - fw);
+  if (uStyle == 0) sash(p, lo, hi, 0.0, 0.0, uCols, uRows, 1.0, P);
+  else if (uStyle == 1){
+    float mid = 0.5 * (lo.y + hi.y), ov = sw * 0.5, d = uOpen * (hi.y - mid) * 0.92;
+    sash(p, vec2(lo.x, mid - ov), hi, sw, sw * 0.7, uCols, uRows, 1.0, P);
+    sash(p, vec2(lo.x, lo.y + d), vec2(hi.x, mid + ov + d), sw, sw * 1.7, uCols2, uRows2, 2.0, P);
+  } else if (uStyle == 2){
+    sash(p, lo, hi, sw, sw * 1.3, 1, 1, 1.0, P);
+    vec2 glo = lo + vec2(sw, sw * 1.3), ghi = hi - vec2(sw);
+    float b = uBorder;
+    float dx = min(abs(p.x - (glo.x + b)), abs(p.x - (ghi.x - b))), dy = min(abs(p.y - (glo.y + b)), abs(p.y - (ghi.y - b)));
+    float bar = aa(min(dx, dy) - uBW * 0.5) ;
+    float inG = aa(rdist(p, glo, ghi));
+    P.m *= 1.0 - inG * (1.0 - bar); P.g *= mix(1.0, bar, inG);
+    P.edge = min(P.edge, max(min(dx, dy) - uBW * 0.5, 0.0));
+    P.id = floor((p.x - glo.x) / b) + 7.0 * floor((p.y - glo.y) / b);
+  } else if (uStyle == 3 || uStyle == 4){
+    float kick = uStyle == 4 ? 0.22 * uWin.y : sw * 1.2, s2 = uStyle == 4 ? max(sw, 0.09) : sw;
+    float mull = uStyle == 4 ? 0.0 : fw * 0.5;
+    sash(p, lo, vec2(-mull, hi.y), s2, kick, uCols, uRows, 1.0, P);
+    sash(p, vec2(mull, lo.y), hi, s2, kick, uCols, uRows, 2.0, P);
+    P.m *= aa(abs(p.x) - mull);                                   // mullion or astragal between the leaves
+  } else if (uStyle == 5){
+    // steel sections; a 2 × 2 pivot vent near the middle can swing open about its horizontal axis
+    vec2 cell = (hi - lo) / vec2(float(uCols), float(uRows));
+    int vc = max(uCols / 2 - 1, 0), vr = max(uRows / 2 - 1, 0);
+    vec2 vlo = lo + cell * vec2(float(vc), float(vr)), vhi = vlo + cell * vec2(float(min(2, uCols)), float(min(2, uRows)));
+    Pane F = P; sash(p, lo, hi, 0.0, 0.0, uCols, uRows, 1.0, F);
+    float inV = uOpen > 0.0 ? aa(rdist(p, vlo + uBW * 0.5, vhi - uBW * 0.5)) : 0.0;
+    P.m = mix(F.m, P.m, inV); P.g = mix(F.g, 0.0, inV); P.id = F.id; P.edge = F.edge; P.v = F.v;
+    if (uOpen > 0.0){
+      float al = uOpen * 0.9, yc = 0.5 * (vlo.y + vhi.y);
+      float k = cos(al) - sin(al) * uSunW.y / uSunW.z;
+      if (k > 0.05){
+        float yv = (p.y - yc) / k;
+        vec2 q = vec2(p.x + yv * sin(al) * uSunW.x / uSunW.z, yc + yv);
+        Pane V = Pane(1.0, 0.0, 0.0, 1e3, 0.5);
+        sash(q, vlo + uBW * 0.25, vhi - uBW * 0.25, uBW * 0.9, uBW * 0.9, min(2, uCols), min(2, uRows), 3.0, V);
+        P.m *= V.m; P.g += V.g; if (V.g > 0.0){ P.id = V.id; P.edge = min(P.edge, V.edge); P.v = V.v; }
+      }
+    }
+  } else if (uStyle == 6){
+    // lead came in a diamond lattice, with round iron saddle bars every ~40 cm
+    sash(p, lo, hi, sw * 0.5, sw * 0.6, 1, 1, 1.0, P);
+    vec2 glo = lo + vec2(sw * 0.5, sw * 0.6), ghi = hi - vec2(sw * 0.5);
+    float dw = (ghi.x - glo.x) / float(uCols), dh = dw * (1.0 + 0.25 * float(uRows));
+    vec2 q = (p - vec2(0.0, glo.y)) / vec2(dw, dh);
+    float a1 = abs(fract(q.x + q.y + 0.5) - 0.5), a2 = abs(fract(q.x - q.y + 0.5) - 0.5);
+    float sc = 1.0 / length(vec2(1.0 / dw, 1.0 / dh));
+    float came = min(a1, a2) * sc - uBW * 0.5;
+    float nb = max(1.0, floor((ghi.y - glo.y) / 0.4));
+    float sb = abs(fract((p.y - glo.y) / (ghi.y - glo.y) * (nb + 1.0) + 0.5) - 0.5) * (ghi.y - glo.y) / (nb + 1.0);
+    float inG = aa(rdist(p, glo, ghi));
+    float ok = aa(came) * mix(1.0, aa(sb - 0.006), step(0.04, rdist(p, glo, ghi)));
+    P.m *= 1.0 - inG * (1.0 - ok); P.g *= mix(1.0, ok, inG);
+    P.edge = min(P.edge, max(came, 0.0));
+    P.id = floor(q.x + q.y) * 31.0 + floor(q.x - q.y);
+    P.v = fract(q.y);
+  } else if (uStyle == 7){
+    // arched head: lites below the spring line, a sunburst fanlight above it
+    vec2 c = vec2(0.0, H - W); float R = W - fw - sw * 0.6;
+    if (p.y < c.y) sash(p, lo, vec2(hi.x, c.y), sw, sw * 1.3, uCols, uRows, 1.0, P);
+    else {
+      vec2 d = p - c; float r = length(d), th = atan(d.y, d.x);
+      int n = uCols + 1; float seg = PI / float(n), hubR = R * 0.32;
+      float k = floor(th / seg + 0.5), dth = abs(th - k * seg);
+      float ray = (k > 0.0 && k < float(n) && r > hubR) ? r * sin(dth) - uBW * 0.5 : 1e3;
+      float hub = abs(r - hubR) - uBW * 0.5;
+      float inG = aa(R - r), ok = aa(min(ray, hub));
+      P.m *= inG * ok; P.g += inG * ok;
+      P.edge = min(P.edge, max(min(min(ray, hub), R - r), 0.0));
+      P.id = 50.0 + k + (r > hubR ? 10.0 : 0.0);
+      P.v = clamp(r / R, 0.0, 1.0);
+    }
+  } else if (uStyle == 8){
+    float R = min(W, H) - fw, r = length(p), th = atan(p.y, p.x);
+    int n = max(uCols, 1) * 4; float seg = TAU / float(n);
+    float dth = abs(th - floor(th / seg + 0.5) * seg);
+    float ray = r * sin(dth) - uBW * 0.5;
+    float ring = uRows > 0 ? abs(r - R * 0.45) - uBW * 0.5 : 1e3;
+    if (uRows >= 2 && r < R * 0.45) ray = 1e3;
+    float inG = aa(R - r), ok = aa(min(ray, ring));
+    P.m *= inG * ok; P.g += inG * ok;
+    P.edge = min(P.edge, max(min(min(ray, ring), R - r), 0.0));
+    P.id = floor(th / seg) + (r > R * 0.45 ? 20.0 : 0.0);
+    P.v = clamp(0.5 + p.y / (2.0 * R), 0.0, 1.0);
+  } else {
+    float d = uOpen * (hi.x - lo.x) * 0.46, mid = 0.5 * (lo.x + hi.x);
+    sash(p, lo, vec2(mid + sw * 0.5, hi.y), sw, sw, uCols, uRows, 1.0, P);
+    sash(p, vec2(mid - sw * 0.5 - d, lo.y), vec2(hi.x - d, hi.y), sw, sw, uCols, uRows, 2.0, P);
+  }
+  P.m *= aa(so);
+  P.g = min(P.g, 2.0);
+  return P;
+}
+`;
+/* Pass 1: the layers drawn in the window plane. Out 0: frame mask, glass,
+   blinds, curtains (direct transmission). Out 1: glass coverage, light
+   turned diffuse (for the soft glow it throws). */
+const FS_WINL = HEAD + `
+layout(location = 0) out vec4 oA;
+layout(location = 1) out vec4 oB;
+uniform vec2 uRes;
+` + COMMON.split('uniform vec2 uRes;')[1] + WIN_GLSL + `
+uniform float uDm, uDist, uTp, uDistort, uGrime, uSmudge, uSpots, uRain, uFog, uScreenT, uT;
+uniform int uGlass, uScreen, uBlind, uCurt;
+uniform float uTilt, uLower, uImperf, uCOpen, uFull, uBreeze;
+uniform vec3 uBF;
+// glass relief (m) for the caustic calculation
+float relief(vec2 p, float id){
+  vec2 o = vec2(id * 3.17, id * 1.71);
+  if (uGlass == 1) return 1.4e-5 * uDistort * (fbm(vec2(p.x * 9.0, p.y * 38.0) + o, 4, 21u) - 0.5) + 0.25e-5 * uDistort * (fbm(vec2(p.x * 30.0, p.y * 90.0) + o, 2, 22u) - 0.5);
+  if (uGlass == 0 || uGlass == 2 || uGlass == 6) return 1.5e-6 * uDistort * sin(p.y * 21.0 + 3.0 * fbm(p * 3.0, 2, 23u));
+  return 0.0;
+}
+float dropField(vec2 p, float cs, float prob, float rmin, float rmax, uint s, out float ring){
+  vec2 c = floor(p / cs); float best = 0.0; ring = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+    vec2 cc = c + vec2(i, j);
+    if (h2(cc, s) > prob) continue;
+    vec2 ctr = (cc + vec2(h2(cc, s + 1u), h2(cc, s + 2u))) * cs;
+    float r = mix(rmin, rmax, pow(h2(cc, s + 3u), 2.0));
+    vec2 d = (p - ctr) / vec2(1.0, 1.15);
+    float q = length(d) / r;
+    if (q < 1.0){ best = max(best, 1.0 - q); ring = max(ring, smoothstep(0.55, 0.95, q) * (1.0 - smoothstep(0.95, 1.0, q))); }
+  }
+  return best;
+}
+float glassT(vec2 p, Pane P, out float scat){
+  scat = 0.0;
+  float T = pow(uTp, P.g);
+  // caustics from thickness ripples: intensity = 1 / |det(I + L (n-1) Hessian)|
+  if (uGlass <= 2 || uGlass == 6){
+    float e = max(uPx, 0.0012), k = uDist * 0.52 / (e * e);
+    float h0 = relief(p, P.id);
+    float hxx = relief(p + vec2(e, 0), P.id) + relief(p - vec2(e, 0), P.id) - 2.0 * h0;
+    float hyy = relief(p + vec2(0, e), P.id) + relief(p - vec2(0, e), P.id) - 2.0 * h0;
+    float hxy = 0.25 * (relief(p + vec2(e, e), P.id) - relief(p + vec2(e, -e), P.id) - relief(p + vec2(-e, e), P.id) + relief(p - vec2(e, e), P.id));
+    float a = 1.0 + k * hxx, b = k * hxy, d = 1.0 + k * hyy;
+    float det = a * d - b * b, F = max(abs(k * hxx), abs(k * hyy));
+    float over = smoothstep(1.5, 4.0, F);
+    float I = clamp(1.0 / max(abs(det), 0.18), 0.0, 5.0);
+    T *= mix(I, 0.0, over); scat += over * 0.9;
+  }
+  if (uGlass == 2){ float rg; float b = dropField(p, 0.007, 0.22 * uDistort + 0.08, 0.0003, 0.0012, 31u, rg); T *= 1.0 - 0.8 * step(0.001, b); }
+  if (uGlass == 6){
+    vec2 w = abs(fract(p / 0.0127 + 0.5) - 0.5) * 0.0127;
+    T *= aa(min(w.x, w.y) - 0.00025);
+  }
+  // dust and grime: settles in corners and along the bottom of each pane
+  if (uGrime > 0.0){
+    float n1 = fbm(p * 7.0 + P.id, 4, 41u), n2 = fbm(p * 85.0, 3, 42u);
+    float e = exp(-P.edge / 0.02) * (0.55 + 0.9 * smoothstep(0.4, 0.0, P.v));
+    float a = uGrime * (0.07 * smoothstep(0.35, 0.85, n1) + 0.05 * n2 + 0.42 * e * (0.35 + n2) + 0.05);
+    a = clamp(a, 0.0, 0.92); T *= 1.0 - a; scat += 0.7 * a;
+  }
+  // hand smears and circular wipe marks, mostly at reaching height
+  if (uSmudge > 0.0){
+    float cs = 0.32, a = 0.0; vec2 c = floor(p / cs);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+      vec2 cc = c + vec2(i, j);
+      vec2 ctr = (cc + vec2(h2(cc, 51u), h2(cc, 52u))) * cs;
+      float r = 0.07 + 0.16 * h2(cc, 53u), dd = length(p - ctr);
+      float ang = atan(p.y - ctr.y, p.x - ctr.x), a0 = h2(cc, 54u) * TAU;
+      float arc = (1.0 - smoothstep(0.004, 0.012, abs(dd - r))) * smoothstep(0.2, 0.9, 0.5 + 0.5 * cos(ang - a0)) * step(h2(cc, 55u), 0.6);
+      float blob = (1.0 - smoothstep(0.02, 0.055, length((p - ctr - vec2(0.05, -0.08)) / vec2(1.0, 1.5)))) * step(0.55, h2(cc, 56u));
+      a += arc * (0.5 + 0.5 * fbm(p * 140.0, 2, 57u)) + blob * (0.4 + 0.6 * fbm(p * 220.0, 2, 58u));
+    }
+    a *= uSmudge * 0.2 * (0.4 + 0.6 * smoothstep(0.6, -0.2, p.y));
+    T *= 1.0 - a; scat += 0.8 * a;
+  }
+  if (uSpots > 0.0){
+    float rg, b = dropField(p, 0.011, 0.55 * uSpots, 0.0008, 0.003, 61u, rg);
+    float a = 0.55 * rg + 0.08 * step(0.001, b); T *= 1.0 - a; scat += 0.5 * a;
+  }
+  if (uRain > 0.0){
+    // each drop is a small plano-convex lens: dark rim, focused bright centre
+    float rg, b = dropField(p, 0.008, 0.6 * uRain, 0.0005, 0.0012 + 0.0016 * uRain, 71u, rg);
+    float inD = step(0.001, b);
+    float lens = mix(1.0, 0.25 + 1.1 * smoothstep(0.55, 1.0, b), inD);
+    T *= lens; scat += 0.5 * inD;
+    // rivulets
+    float col = floor(p.x / 0.03);
+    if (h2(vec2(col, 3), 72u) < 0.45 * uRain){
+      float x0 = (col + 0.2 + 0.6 * h2(vec2(col, 4), 72u)) * 0.03;
+      float x = x0 + 0.004 * sin(p.y * 23.0 + col) + 0.002 * sin(p.y * 67.0 + 2.0 * col);
+      float y0 = (h2(vec2(col, 5), 72u) - 0.3) * uWin.y;
+      float on = step(p.y, y0) * (1.0 - smoothstep(0.0006, 0.0011, abs(p.x - x)));
+      T *= 1.0 - 0.5 * on; scat += 0.3 * on;
+    }
+  }
+  if (uFog > 0.0 && P.g > 0.0){
+    float top = uFog * (0.55 + 0.3 * (fbm(vec2(p.x * 6.0, 0.0) + P.id, 3, 81u) - 0.5));
+    float fog = smoothstep(top + 0.06, top - 0.06, P.v) * (0.75 + 0.25 * fbm(p * 400.0, 2, 82u));
+    float col = floor(p.x / 0.022), x0 = (col + 0.2 + 0.6 * h2(vec2(col, 1), 83u)) * 0.022;
+    float drip = step(h2(vec2(col, 2), 83u), 0.5) * (1.0 - smoothstep(0.0008, 0.0016, abs(p.x - x0 - 0.0015 * sin(p.y * 40.0 + col))));
+    fog *= 1.0 - drip;
+    T *= 1.0 - 0.85 * fog * min(P.g, 1.0); scat += 0.75 * fog * min(P.g, 1.0);
+  }
+  return T;
+}
+// slat shadow: a slat of width w and thickness t at height yk, tilted by ti, seen along the sun (sr = tan of profile angle)
+float slat(float y, float yk, float w, float t, float ti, float sr){
+  float h = 0.5 * w * abs(sin(ti) - cos(ti) * sr) + 0.5 * t * abs(cos(ti) + sin(ti) * sr);
+  return aa(abs(y - yk) - h);
+}
+float blinds(vec2 p, out float scat){
+  scat = 0.0;
+  if (uBlind == 0) return 1.0;
+  float W = uWin.x * 0.5 - 0.005, top = uWin.y * 0.5 - 0.004, H = uWin.y - 0.008;
+  float inX = aa(W - abs(p.x));
+  float T = 1.0;
+  if (uBlind == 1 || uBlind == 2){
+    bool wood = uBlind == 2;
+    float w = wood ? 0.05 : 0.025, pitch = wood ? 0.043 : 0.021, th = wood ? 0.003 : 0.0003, stk = wood ? 0.0065 : 0.0028;
+    float sr = uSunW.y / uSunW.z;
+    float head = 0.045, rail = 0.025;
+    float span = H - head - rail;
+    float yb = top - head - uLower * span - rail;          // bottom of the bottom rail
+    float nUp = floor((1.0 - uLower) * span / pitch);
+    float sTop = top - head - nUp * stk;                    // raised slats stack under the headrail
+    float hdr = aa(p.y - (top - head));
+    float stack = aa(p.y - sTop) * (1.0 - hdr);
+    float bot = aa(p.y - yb) * (1.0 - aa(p.y - yb - rail));
+    float tb = 1.0;
+    if (p.y > yb + rail - 0.02 && p.y < sTop + 0.02){
+      float k0 = floor((sTop - p.y) / pitch);
+      for (int j = -2; j <= 2; j++){
+        float k = k0 + float(j);
+        if (k < 0.0 || (sTop - (k + 0.5) * pitch) < yb + rail) continue;
+        float sag = uImperf * 0.002 * (1.0 - pow(p.x / W, 2.0)) + uImperf * 0.0015 * (h2(vec2(k, 9), 91u) - 0.5);
+        float ti = radians(uTilt) + uImperf * 0.12 * (h2(vec2(k, 1), 92u) - 0.5) + uImperf * 0.03 * (p.x / W) * (h2(vec2(k, 2), 92u) - 0.5);
+        tb *= slat(p.y, sTop - (k + 0.5) * pitch + sag, w, th, ti, sr);
+      }
+    }
+    T = tb * (1.0 - hdr) * (1.0 - stack) * (1.0 - bot);
+    // ladder cords (front and back) or cloth tapes, and lift cords
+    float n = max(2.0, floor(uWin.x / 0.55) + 1.0);
+    float zone = aa(p.y - yb) * (1.0 - aa(p.y - (top - head)));
+    for (int i = 0; i < 8; i++){
+      if (float(i) >= n) break;
+      float xl = -W + 0.09 + float(i) * (2.0 * W - 0.18) / (n - 1.0);
+      float off = w * cos(radians(uTilt)) * uSunW.x / uSunW.z;
+      if (wood){
+        float tape = (1.0 - aa(abs(p.x - xl) - 0.019)) ;
+        float tape2 = (1.0 - aa(abs(p.x - xl - off) - 0.019));
+        T *= 1.0 - zone * max(tape, tape2) * 0.9;
+      } else {
+        T *= 1.0 - zone * (1.0 - aa(abs(p.x - xl) - 0.0006)) * 0.9;
+        T *= 1.0 - zone * (1.0 - aa(abs(p.x - xl - off) - 0.0006)) * 0.9;
+      }
+      T *= 1.0 - zone * (1.0 - aa(abs(p.x - xl - 0.012) - 0.0008)) * 0.85;
+    }
+    T = mix(1.0, T, inX);
+  } else if (uBlind == 3){
+    float w = 0.089, pitch = 0.08, sr = uSunW.x / uSunW.z;
+    float head = 0.05, xr = -W + uLower * 2.0 * W;            // drawn from the left
+    float hdr = aa(p.y - (top - head));
+    float nStack = floor((1.0 - uLower) * 2.0 * W / pitch);
+    float stack = 1.0 - aa(p.x - (-W + nStack * 0.012));
+    float tb = 1.0;
+    float x0 = -W + nStack * 0.012;
+    if (p.x > x0 - 0.05 && p.x < xr + 0.05){
+      float k0 = floor((p.x - x0) / pitch);
+      for (int j = -2; j <= 2; j++){
+        float k = k0 + float(j), xk = x0 + (k + 0.5) * pitch;
+        if (k < 0.0 || xk > xr) continue;
+        float ti = radians(uTilt) + uImperf * 0.12 * (h2(vec2(k, 3), 93u) - 0.5);
+        tb *= mix(0.14, 1.0, slat(p.x, xk, w, 0.0008, ti, sr));
+      }
+      float chain = 1.0 - aa(abs(p.y - (-uWin.y * 0.5 + 0.04)) - 0.0012);
+      tb *= 1.0 - chain * step(p.x, xr) * 0.8;
+    }
+    T = tb * (1.0 - hdr) * mix(1.0, 0.0, stack * (1.0 - hdr));
+    scat = (1.0 - tb) * 0.3;
+  } else if (uBlind == 4){
+    // two shutter panels: stiles, rails, a divider rail and 63 mm louvres with a tilt rod
+    float st = 0.05, rl = 0.07, w = 0.063, pitch = 0.055, th = 0.009, sr = uSunW.y / uSunW.z;
+    float pw = W;
+    float px = abs(p.x) - pw * 0.5;                       // centred in each panel
+    float lx = pw * 0.5 - st;
+    float inL = aa(lx - abs(px));
+    float bands = aa(top - rl - p.y) * aa(p.y - (-top + rl)) * aa(abs(p.y) - 0.035);
+    float tb = 1.0;
+    float yref = p.y > 0.0 ? top - rl : -0.035;
+    float k0 = floor((yref - p.y) / pitch);
+    for (int j = -2; j <= 2; j++){
+      float k = k0 + float(j);
+      float ti = radians(uTilt) + uImperf * 0.06 * (h2(vec2(k, p.y > 0.0 ? 1.0 : 2.0), 94u) - 0.5);
+      tb *= slat(p.y, yref - (k + 0.5) * pitch, w, th, ti, sr);
+    }
+    float rod = 1.0 - aa(abs(px + 0.005 * sin(radians(uTilt))) - 0.006);
+    T = inL * bands * tb * (1.0 - rod * bands);
+  } else if (uBlind == 5){
+    float yb = top - 0.07 - uLower * (H - 0.07);
+    float inS = aa(p.y - yb) * aa(W - 0.012 - abs(p.x));
+    float hem = aa(p.y - yb) * (1.0 - aa(p.y - yb - 0.025));
+    float tube = aa(p.y - (top - 0.07));
+    float fab = 0.045 * (0.85 + 0.3 * fbm(p * vec2(900.0, 900.0), 2, 95u));
+    T = mix(1.0, fab, inS) * (1.0 - hem * aa(W - 0.012 - abs(p.x))) * (1.0 - tube);
+    scat = inS * 0.35;
+  } else if (uBlind == 6){
+    float yb = top - 0.04 - uLower * (H - 0.04);
+    float inS = aa(p.y - yb) * aa(W - 0.006 - abs(p.x));
+    float head = aa(p.y - (top - 0.04));
+    float pl = abs(fract((p.y - yb) / 0.025) - 0.5);
+    float fab = 0.02 + 0.03 * smoothstep(0.05, 0.0, pl);
+    float n = max(2.0, floor(uWin.x / 0.45) + 1.0), hole = 0.0;
+    for (int i = 0; i < 8; i++){
+      if (float(i) >= n) break;
+      float xl = -W + 0.08 + float(i) * (2.0 * W - 0.16) / (n - 1.0);
+      vec2 d = vec2(p.x - xl, (fract((p.y - yb) / 0.025) - 0.5) * 0.025);
+      hole = max(hole, (1.0 - aa(length(d) - 0.0016)) * aa(abs(p.x - xl) - 0.0007));
+    }
+    T = mix(1.0, mix(fab, 0.6, hole), inS) * (1.0 - head);
+    scat = inS * 0.3;
+  }
+  return T;
+}
+// gathered fabric: folds whose depth comes from the fullness, drifting and billowing in the breeze
+float curtains(vec2 p, out float scat){
+  scat = 0.0;
+  if (uCurt == 0) return 1.0;
+  float W = uWin.x * 0.5, H = uWin.y * 0.5;
+  bool cafe = uCurt == 5;
+  float rodY = cafe ? 0.0 : H + 0.17, botY = cafe ? -H - 0.03 : -H - 0.35;
+  float ext = W + 0.22;
+  float cov = cafe ? ext + 0.02 : ext * (1.0 - 0.8 * uCOpen) + 0.02;
+  float side = sign(p.x + 1e-6);
+  float s = cov - (ext - abs(p.x));                                    // 0 at the leading edge, cov at the outer edge
+  float fabricW = ext * uFull;
+  float N = max(3.0, floor(fabricW / 0.2 + 0.5));
+  float lam = cov / N;
+  float amp = min((lam / PI) * sqrt(max(fabricW / cov - 1.0, 0.0)), 0.1);
+  float dy = clamp((rodY - p.y) / (rodY - botY), 0.0, 1.0);
+  float w = uBreeze * pow(dy, 1.4);
+  float tt = uT;
+  float drift = w * (0.045 * sin(TAU * uBF.x * tt + 4.0 * dy + side) + 0.025 * sin(TAU * uBF.y * tt + 9.0 * s + 2.0 * side) + 0.012 * sin(TAU * uBF.z * tt + 23.0 * s - 6.0 * dy));
+  float T = 1.0, sc = 0.0;
+  // find the point on the cloth whose shadow lands here (fold depth shifts it along the sun)
+  float ss = s + drift;
+  for (int it = 0; it < 2; it++){
+    float ph = TAU * ss / lam + 1.3 * (fbm(vec2(ss / lam * 0.6, dy * 1.2 + side * 5.0), 3, 101u) - 0.5) * TAU * 0.35;
+    float z = amp * (1.0 + 0.3 * dy) * sin(ph);
+    ss = s + drift + z * uSunW.x / uSunW.z * side;
+  }
+  float ph = TAU * ss / lam + 1.3 * (fbm(vec2(ss / lam * 0.6, dy * 1.2 + side * 5.0), 3, 101u) - 0.5) * TAU * 0.35;
+  float A = amp * (1.0 + 0.3 * dy) * (1.0 + 0.6 * w);
+  float dzds = A * cos(ph) * TAU / lam;
+  float dzdy = amp * 0.3 * sin(ph) / (rodY - botY) + w * 0.4 * cos(TAU * uBF.x * tt + 3.0 * dy);
+  vec3 n = normalize(vec3(-dzds * side, dzdy, 1.0));
+  float c = max(abs(dot(n, uSunW)), 0.05);
+  float inC = aa(cov - ss) * aa(ss) * aa(rodY - p.y) * aa(p.y - botY);
+  float fu = ss * fabricW / cov, fv = p.y;                     // fabric coordinates
+  float tau;
+  if (uCurt == 1 || uCurt == 5) tau = 0.22 * (0.9 + 0.2 * fbm(vec2(fu * 40.0, fv * 600.0), 2, 102u));
+  else if (uCurt == 3) tau = 1.6 * (0.75 + 0.5 * fbm(vec2(fu * 25.0, fv * 900.0), 3, 103u));   // linen slubs
+  else if (uCurt == 4) tau = 9.0;
+  else {
+    // lace: open net with dense rosettes, connecting tendrils and a scalloped border
+    vec2 g = vec2(fu, fv) / 0.09; vec2 gi = floor(g + 0.5); vec2 l = (g - gi) * 0.09;
+    float r = length(l), a = atan(l.y, l.x);
+    float pet = 0.5 + 0.5 * cos(6.0 * a + gi.x);
+    float ros = (1.0 - aa(r - 0.03 * (0.55 + 0.45 * pet))) * aa(r - 0.006) + (1.0 - aa(abs(r - 0.038) - 0.0018));
+    vec2 l2 = (fract(g) - 0.5) * 0.09;
+    float tend = 1.0 - aa(min(abs(l2.x - l2.y), abs(l2.x + l2.y)) * 0.707 - 0.0012);
+    float border = aa(botY + 0.11 + 0.02 * abs(sin(fu / 0.06 * PI)) - p.y);
+    float dens = clamp(max(max(ros, tend * 0.8), border * 0.9), 0.0, 1.0);
+    float net = 0.55;
+    tau = -log(mix(1.0 - net, 0.1, dens));
+  }
+  float hemT = (1.0 - aa(p.y - botY - 0.07)) + (1.0 - aa(rodY - 0.09 - p.y)) + (1.0 - aa(ss - 0.03));
+  tau *= 1.0 + min(hemT, 1.0);
+  T = exp(-tau / c);
+  float rod = cafe ? 1.0 - aa(abs(p.y - rodY) - 0.008) : 0.0;
+  float tr = mix(1.0, T, inC) * (1.0 - rod);
+  float diff = uCurt == 4 ? 0.0 : uCurt == 3 ? 0.45 : 0.25;
+  scat = inC * (1.0 - T) * diff;
+  return tr;
+}
+uniform float uZB, uZC;
+void main(){
+  vec2 p = (gl_FragCoord.xy / uRes - 0.5) * uDm;
+  Pane P = frame(p);
+  float s1, s2, s3;
+  float g = glassT(p, P, s1);
+  // the screen (outside the glass) and its frame
+  float scr = 1.0;
+  if (uScreen > 0){
+    float so = sdOpen(p), topY = uScreen == 2 ? 0.0 : uWin.y * 0.5;
+    float inSc = aa(so - uFW * 0.5) * aa(topY - uFW * 0.5 - p.y);
+    float fr = aa(so - uFW * 0.5 - 0.022) * aa(topY - uFW * 0.5 - 0.022 - p.y);
+    scr = mix(1.0, uScreenT, fr) * (1.0 - (inSc - fr));
+  }
+  // blinds and curtains sit deeper: shift for their depth along the sun
+  vec2 pb = p, pc = p;
+  float b = blinds(pb, s2), c = curtains(pc, s3);
+  oA = vec4(P.m, g * scr, b, c);
+  oB = vec4(min(P.g, 1.0), P.m * (s1 * scr + g * scr * (s2 + s3)), 0.0, 1.0);
+}`;
+/* Pass 2: trace each gobo pixel back toward the sun through every layer. */
+const FS_WIN = COMMON + WIN_GLSL + `
+uniform sampler2D uL0, uL1, uTree;
+uniform vec3 uR, uU, uS;
+uniform vec2 uQ0; uniform float uCover, uDm, uZo, uZi, uFD, uZB, uZC, uDist, uSunR, uPxG, uSmear, uGlowLod, uGlowK, uTreeL;
+uniform int uTaps, uSmearDir, uTreeOn, uFDn; uniform float uTexel, uEave, uEaveY;
+// mip level that matches the spacing of the sun-disk samples on a layer this far from the lit surface
+float lodAt(float L){ return max(0.0, log2(max(2.0 * L * uSunR / sqrt(float(uTaps)) / uTexel, 1e-6)) - 0.3); }
+vec2 toWin(vec2 q, float z){ float t = (z - q.x * uR.z - q.y * uU.z) / uS.z; return vec2(q.x * uR.x + q.y * uU.x + t * uS.x, q.x * uR.y + q.y * uU.y + t * uS.y); }
+vec2 wuv(vec2 xy){ return xy / uDm + 0.5; }
+float aaG(float d){ return clamp(d / uPxG + 0.5, 0.0, 1.0); }
+void main(){
+  vec2 q = uQ0 + (gl_FragCoord.xy / uRes - 0.5) * uCover;
+  // light spread by reeded, textured or frosted glass, sampled around the central ray
+  float smear = 0.0;
+  if (uSmear > 0.0){
+    vec2 c0 = toWin(q, 0.0);
+    float ls = max(0.0, log2(uSmear * (uSmearDir == 1 ? 2.0 / 24.0 : 0.36) / uTexel));
+    for (int i = 0; i < 24; i++){
+      vec2 o;
+      if (uSmearDir == 1) o = vec2(((float(i) + 0.5) / 24.0 * 2.0 - 1.0) * uSmear, 0.0);
+      else { float rho = sqrt((float(i) + 0.5) / 24.0), th = float(i) * 2.39996; o = uSmear * rho * vec2(cos(th), sin(th)); }
+      vec2 x = c0 + o;
+      vec4 a = textureLod(uL0, wuv(x), ls); float gc = textureLod(uL1, wuv(x), ls).r;
+      smear += a.r * a.g * gc * aaG(sdOpen(x));
+    }
+    smear /= 24.0;
+  }
+  float acc = 0.0, ws = 0.0;
+  float lF = lodAt(uDist), lB = lodAt(uDist + uZB / uS.z), lC = lodAt(uDist + uZC / uS.z);
+  for (int i = 0; i < 256; i++){
+    if (i >= uTaps) break;
+    float rho = sqrt((float(i) + 0.5) / float(uTaps)), th = float(i) * 2.39996323;
+    vec2 d = uSunR * rho * vec2(cos(th), sin(th));
+    float w = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - rho * rho)));
+    ws += w;
+    // wall reveal: outer and inner faces
+    float v = aaG(sdOpen(toWin(q + (uDist + uZo / uS.z) * d, uZo))) * aaG(sdOpen(toWin(q + (uDist + uZi / uS.z) * d, uZi)));
+    // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
+    if (uEave > 0.0){ float ze = uZo + uEave; v *= aaG(uEaveY - toWin(q + (uDist + ze / uS.z) * d, ze).y); }
+    if (v <= 0.0) continue;
+    vec2 xg = toWin(q + uDist * d, 0.0);
+    // frame members have depth: their shadow is the union of their slices from front to back
+    vec4 c = textureLod(uL0, wuv(xg), lF);
+    float f1 = c.r, f2 = 1.0;
+    for (int k = 0; k < 8; k++){
+      if (k >= uFDn) break;
+      float z = uFD * (2.0 * (float(k) + 0.5) / float(uFDn) - 1.0);
+      f1 = min(f1, textureLod(uL0, wuv(toWin(q + (uDist + z / uS.z) * d, z)), lF).r);
+    }
+    float gl;
+    if (uSmear > 0.0){ float gc = texture(uL1, wuv(xg)).r; gl = min(f1, f2) * c.g * (1.0 - gc); }
+    else gl = min(f1, f2) * c.g;
+    float bl = textureLod(uL0, wuv(toWin(q + (uDist + uZB / uS.z) * d, uZB)), lB).b;
+    float cu = textureLod(uL0, wuv(toWin(q + (uDist + uZC / uS.z) * d, uZC)), lC).a;
+    acc += w * v * gl * bl * cu;
+  }
+  float T = acc / ws;
+  // light spread by the glass leaves it in all directions, so the window outline no longer crops it; blinds and curtains still do
+  if (uSmear > 0.0) T += smear * textureLod(uL0, wuv(toWin(q, uZB)), lodAt(uDist + uZB / uS.z) + 2.0).b * textureLod(uL0, wuv(toWin(q, uZC)), lodAt(uDist + uZC / uS.z) + 2.0).a;
+  // light turned diffuse by the glass, shades or curtains spreads into a broad glow
+  vec2 c0 = toWin(q, 0.0);
+  float glow = 0.0;
+  for (int i = 0; i < 6; i++){
+    float th = float(i) * 1.0472;
+    glow += textureLod(uL1, wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th))), uGlowLod).g;
+  }
+  T += glow / 6.0 * uGlowK * (1.0 - smoothstep(0.0, 0.35 * uDist, -sdOpen(c0)));
+  if (uTreeOn == 1) T *= texture(uTree, q / uTreeL + 0.5).r;
+  // the faint scattered glow fades out before the frame edge so the gobo has a clean black border
+  vec2 e2 = abs(gl_FragCoord.xy / uRes - 0.5);
+  T *= 1.0 - smoothstep(0.42, 0.5, max(e2.x, e2.y)) * smoothstep(0.35, 0.15, T);
+  fragColor = vec4(vec3(T), 1.0);
+}`;
+PR.winL = program(VS_FULL, FS_WINL, 'window layers');
+PR.win = program(VS_FULL, FS_WIN, 'window composite');
+
+function winMRT(name, w, h) {
+  let t = targets[name];
+  if (t && t.w === w && t.h === h) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
+  const a = makeTex(w, h, 'f16', true), b = makeTex(w, h, 'f16', true);
+  for (const x of [a, b]) {
+    gl.bindTexture(gl.TEXTURE_2D, x);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  t = targets[name] = {tex:a, tex2:b, fb, w, h};
+  return t;
+}
+const loopF = (f, tl) => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f;
+function renderWindows(P, res, t, tl) {
+  const Q = QUAL[S.quality];
+  const tt = tl.loop ? ((t % tl.len) + tl.len) % tl.len : t;
+  const e = clamp(P.sunElev, 1, 85) * DEG, a = clamp(P.sunAz, -80, 80) * DEG;
+  const s = [Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)];          // toward the sun, window coords (z out)
+  const B = basis(v3.mul(s, -1));
+  const sunR = Math.tan(0.2666 * DEG);
+  const D = P.recv;
+  // depths (z out of the wall): wall faces, frame, blinds in the reveal, curtains in the room
+  const zo = P.inset * P.wallT, zi = zo - P.wallT;
+  // half-depth of the frame members: lead came is shallow, steel sections thin, timber sashes deep
+  const fd = [0.022, 0.022, 0.022, 0.022, 0.024, 0.014, 0.003, 0.022, 0.02, 0.022][P.style | 0] || 0.022;
+  const bl = P.blind | 0, slatW = bl === 2 ? 0.05 : bl === 4 ? 0.063 : bl === 3 ? 0.089 : 0.025;
+  const zB = Math.min(-0.03, zi + 0.03 + slatW * 0.5);
+  const zC = zi - 0.1;
+  // framing: project the opening's corners (both wall faces) into light space
+  const W2 = P.W / 2, H2 = P.H / 2;
+  const qs = [];
+  for (const z of [0]) for (const [x, y] of [[-W2, -H2], [W2, -H2], [-W2, H2], [W2, H2]]) qs.push([v3.dot([x, y, z], B.r), v3.dot([x, y, z], B.u)]);
+  const xs = qs.map(q => q[0]), ys = qs.map(q => q[1]);
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const ext = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const smear = (P.glass === 3 ? 0.5 * D * 0.52 * 0.35 : P.glass === 4 ? 0.5 * D * 0.52 * 0.12 : P.glass === 5 ? D * 0.33 : 0) * ((P.glass === 3 || P.glass === 4) ? P.distort : 1);
+  const cover = (ext * 1.08 + 4 * D * sunR + 0.06 + 1.6 * smear) * P.zoom;
+  WIN.cover = cover;
+  // layer domain covers the opening plus the sideways shift of deep layers
+  const slope = Math.max(Math.abs(s[0]), Math.abs(s[1])) / s[2];
+  const Dm = Math.max(P.W, P.H) + 2 * (Math.abs(zC) + 0.12) * Math.min(slope, 3) + 0.12;
+  const LR = clamp(Math.round(Math.min(Dm / 0.0007, res * Q.ss * 1.5)), 512, 2048);
+  const Fp = 1 - fresnel(s[2], 1.52);
+  const Tp = Math.pow(Fp * Fp * 0.985, [1, 2, 3][P.glazing | 0]);
+  // insect screen: 18 × 16 mesh of 0.28 mm wire, thicker in projection at oblique angles
+  const sx = Math.abs(s[0] / s[2]), sy = Math.abs(s[1] / s[2]);
+  const scrT = Math.max(0, 1 - 0.28 / 1.41 * Math.sqrt(1 + sx * sx)) * Math.max(0, 1 - 0.28 / 1.59 * Math.sqrt(1 + sy * sy));
+  const L = winMRT('winL', LR, LR);
+  const st = WIN_STYLE_DEF[P.style | 0] ? P.style | 0 : 0;
+  pass(PR.winL, L, p => {
+    f2(p, 'uWin', P.W, P.H); f1(p, 'uFW', P.fw); f1(p, 'uBW', P.bw); f1(p, 'uBorder', P.border); f1(p, 'uOpen', P.open || 0); f1(p, 'uPx', Dm / LR);
+    i1(p, 'uStyle', st); i1(p, 'uCols', P.cols | 0); i1(p, 'uRows', P.rows | 0); i1(p, 'uCols2', P.cols2 | 0); i1(p, 'uRows2', P.rows2 | 0);
+    f3(p, 'uSunW', ...s); u1(p, 'uSeed', P.seed | 0);
+    f1(p, 'uDm', Dm); f1(p, 'uDist', D); f1(p, 'uTp', Tp); f1(p, 'uDistort', P.distort); f1(p, 'uGrime', P.grime); f1(p, 'uSmudge', P.smudge);
+    f1(p, 'uSpots', P.spots); f1(p, 'uRain', P.rain); f1(p, 'uFog', P.fog); f1(p, 'uScreenT', scrT); f1(p, 'uT', tt);
+    i1(p, 'uGlass', P.glass | 0); i1(p, 'uScreen', P.screen | 0); i1(p, 'uBlind', bl); i1(p, 'uCurt', P.curtain | 0);
+    f1(p, 'uTilt', P.tilt); f1(p, 'uLower', P.lower); f1(p, 'uImperf', P.imperf); f1(p, 'uCOpen', P.cOpen); f1(p, 'uFull', P.full); f1(p, 'uBreeze', P.breeze);
+    f3(p, 'uBF', loopF(0.21, tl), loopF(0.37, tl), loopF(0.83, tl));
+  });
+  gl.bindTexture(gl.TEXTURE_2D, L.tex); gl.generateMipmap(gl.TEXTURE_2D);
+  gl.bindTexture(gl.TEXTURE_2D, L.tex2); gl.generateMipmap(gl.TEXTURE_2D);
+  // trees outside: a real canopy rendered in the same light space, at its own distance
+  let treeTex = null, treeL = 3, tinfo = '';
+  if (P.trees) {
+    const pr = MODES.trees.presets.filter(x => !/white frame/.test(x.name))[(P.trees | 0) - 1];
+    if (pr) {
+      const Pt = {...DEFAULTS.trees, ...pr.v, seed:P.seed, framing:0, trunks:false, sunElev:Math.max(P.sunElev, 8), recvHeight:0, cover:P.treeCover, windSpeed:P.treeWind};
+      const depth = Pt.canopyDepth;
+      Pt.canopyTop = clamp((D + P.treeDist + depth * 0.5) * Math.sin(Math.max(P.sunElev, 8) * DEG), depth + 0.5, 40);
+      const keep = info;
+      const tOut = renderTrees(Pt, Math.min(res, 1024), t, tl);
+      info = keep;
+      treeTex = tOut.tex; treeL = Pt.tileSize;
+      tinfo = `Outside: ${pr.name.toLowerCase()} canopy ${P.treeDist.toFixed(1)} m out, its shadow edges soften by ${(2 * (D + P.treeDist) * sunR * 100).toFixed(1)} cm`;
+    }
+  }
+  const out = tgt('winOut', res, res, 'f16');
+  pass(PR.win, out, p => {
+    tex(p, 'uL0', L.tex, 0); tex(p, 'uL1', L.tex2, 1); tex(p, 'uTree', treeTex || L.tex, 2);
+    f3(p, 'uR', ...B.r); f3(p, 'uU', ...B.u); f3(p, 'uS', ...s);
+    f2(p, 'uQ0', cx, cy); f1(p, 'uCover', cover); f1(p, 'uDm', Dm);
+    i1(p, 'uFDn', clamp(Math.ceil(2 * fd * Math.hypot(s[0], s[1]) / s[2] / Math.max(P.bw * 0.6, 0.004)) + 1, 2, 8)); f1(p, 'uZo', zo); f1(p, 'uZi', zi); f1(p, 'uFD', fd); f1(p, 'uZB', zB); f1(p, 'uZC', zC); f1(p, 'uDist', D);
+    f1(p, 'uSunR', sunR); f1(p, 'uEave', P.eave || 0); f1(p, 'uEaveY', P.H / 2 + (P.eaveH ?? 0.3)); f1(p, 'uTexel', Dm / LR); f1(p, 'uPxG', cover / res); f1(p, 'uSmear', smear); i1(p, 'uSmearDir', P.glass === 3 ? 1 : 0);
+    f1(p, 'uGlowLod', Math.max(0, Math.log2(Math.max(D * 0.5 / Dm * LR, 1)))); f1(p, 'uGlowK', 0.5);
+    i1(p, 'uTaps', Q.treeTaps); i1(p, 'uTreeOn', treeTex ? 1 : 0); f1(p, 'uTreeL', treeL);
+    f2(p, 'uWin', P.W, P.H); f1(p, 'uFW', P.fw); i1(p, 'uStyle', st); f1(p, 'uPx', cover / res);
+  });
+  const blur = mm => (2 * mm * sunR * 1000).toFixed(0);
+  const az = P.sunAz;
+  info = [`${WIN_STYLES[st]} ${P.W.toFixed(2)} × ${P.H.toFixed(2)} m in a ${(P.wallT * 100).toFixed(0)} cm wall · light space: the gobo spans ${cover.toFixed(2)} m across the beam`,
+          `Sun ${P.sunElev.toFixed(1)}° up, ${Math.abs(az).toFixed(1)}° ${az >= 0 ? 'right' : 'left'} of square · ${(Tp * 100).toFixed(0)}% through the glass (${['one pane', 'two panes', 'three panes'][P.glazing | 0]} at ${(Math.acos(s[2]) / DEG).toFixed(0)}° incidence)`,
+          `Shadow edges soften with depth: frame ${blur(D)} mm${bl ? ' · blinds ' + blur(D + zB / s[2]) + ' mm' : ''}${P.curtain ? ' · curtains ' + blur(D + zC / s[2]) + ' mm' : ''} · wall reveal ${blur(D + zi / s[2])}–${blur(D + zo / s[2])} mm`,
+          ...(tinfo ? [tinfo] : []),
+          ...(P.eave > 0 ? [`Eave ${P.eave.toFixed(2)} m deep, ${(P.eaveH ?? 0.3).toFixed(2)} m above the window: its shadow edge softens by ${blur(D + (zo + P.eave) / s[2])} mm`] : []),
+          `Project along the sun: point the light ${P.sunElev.toFixed(1)}° down through the window${Math.abs(az) > 0.5 ? `, ${Math.abs(az).toFixed(1)}° off square` : ''}`,
+          ].join('\n') + (tl.loop && (P.curtain && P.breeze > 0 || P.trees) ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
+  return out;
+}
+
+/* =====================================================================
    FRAME (with shutter motion blur)
    ===================================================================== */
 function renderAt(t) {
   if (MODES[S.mode].kind === 'trees') return renderTrees(S.p[S.mode], S.res, t, TL());
+  if (MODES[S.mode].kind === 'windows') return renderWindows(S.p[S.mode], S.res, t, TL());
   return renderCaustics(S.p[S.mode], S.res, t, MODES[S.mode].target, TL());
 }
 function render() {
@@ -2155,15 +2949,63 @@ function display() {
 const FS_SCENE = COMMON + `
 uniform sampler2D uGobo;
 uniform vec3 uCamPos, uCamF, uCamR, uCamU; uniform float uTanF;
-uniform int uType, uShape, uSingle, uSphere, uGizmo;
+uniform int uType, uShape, uSingle, uSphere, uGizmo, uSet;
 uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
 uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
 uniform vec4 uSph;
 uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
-const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0;
+const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0, DY = 1.5;
+// ray / axis-aligned box
+float box(vec3 ro, vec3 rd, vec3 lo, vec3 hi, out vec3 n){
+  vec3 iv = 1.0 / rd, t0 = (lo - ro) * iv, t1 = (hi - ro) * iv, tn = min(t0, t1), tf = max(t0, t1);
+  float a = max(max(tn.x, tn.y), tn.z), b = min(min(tf.x, tf.y), tf.z);
+  if (b < max(a, 0.0) || a <= 0.0) return 1e9;
+  n = a == tn.x ? vec3(-sign(rd.x), 0, 0) : a == tn.y ? vec3(0, -sign(rd.y), 0) : vec3(0, 0, -sign(rd.z));
+  return a;
+}
+// vertical cylinder
+float cyl(vec3 ro, vec3 rd, vec2 c, float r, float y0, float y1, out vec3 n){
+  vec2 o = ro.xz - c, d = rd.xz;
+  float a = dot(d, d), b = dot(o, d), cc = dot(o, o) - r * r, h = b * b - a * cc;
+  if (h < 0.0 || a < 1e-8) return 1e9;
+  float t = (-b - sqrt(h)) / a; float y = ro.y + t * rd.y;
+  if (t <= 0.0 || y < y0 || y > y1) return 1e9;
+  n = normalize(vec3(o.x + t * d.x, 0.0, o.y + t * d.y));
+  return t;
+}
+// a timber dock: deck boards with gaps, joists, end caps and pilings
+float hitDock(vec3 ro, vec3 rd, out vec3 n){
+  float t = 1e9; vec3 nn;
+  if (abs(rd.y) > 1e-5){
+    float tt = (DY - ro.y) / rd.y; vec3 p = ro + tt * rd;
+    if (tt > 0.0 && p.x > -4.0 && p.x < 4.0 && p.z > -1.0 && p.z < 5.0 && fract((p.z + 1.0) / 0.148) > 0.055){ t = tt; n = vec3(0.0, -sign(rd.y), 0.0); }
+  }
+  for (int k = 0; k < 13; k++){
+    float x = -3.6 + 0.6 * float(k);
+    float tt = box(ro, rd, vec3(x - 0.025, DY - 0.2, -1.0), vec3(x + 0.025, DY, 5.0), nn);
+    if (tt < t){ t = tt; n = nn; }
+  }
+  for (int k = 0; k < 2; k++){
+    float z = k == 0 ? -0.92 : 4.92;
+    float tt = box(ro, rd, vec3(-4.0, DY - 0.28, z - 0.08), vec3(4.0, DY, z + 0.08), nn);
+    if (tt < t){ t = tt; n = nn; }
+    for (int j = 0; j < 3; j++){
+      float tc = cyl(ro, rd, vec2(-3.9 + 3.9 * float(j), z), 0.15, -2.0, DY + 0.25, nn);
+      if (tc < t){ t = tc; n = nn; }
+    }
+  }
+  float tc = cyl(ro, rd, vec2(-3.9, 2.0), 0.15, -2.0, DY, nn); if (tc < t){ t = tc; n = nn; }
+  tc = cyl(ro, rd, vec2(3.9, 2.0), 0.15, -2.0, DY, nn); if (tc < t){ t = tc; n = nn; }
+  return t;
+}
+float occl(vec3 p, vec3 l, float dl){
+  if (uSet != 2) return 1.0;
+  vec3 n; float t = hitDock(p + l * 2e-3, l, n);
+  return t < dl ? 0.0 : 1.0;
+}
 
 vec3 gobo(vec2 uv, float lod){
-  if (uSingle == 1 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(1.0);
+  if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return textureLod(uGobo, uv, lod).rgb;
   vec3 s = vec3(0.0);
   for (int i = 0; i < 12; i++){
@@ -2187,7 +3029,7 @@ vec3 lightAt(vec3 p, out vec3 l, float lod, float pixW){
     l = -uLF;
     vec2 q = vec2(dot(p - uAim, uLR), dot(p - uAim, uLU)) / uSunSize;
     lod = max(lod, log2(max(pixW / uSunSize * uGoboRes, 1e-6)));
-    return uI * uLCol * gobo(q + 0.5, lod) * sphShadow(p, l, 1e9, 0.00465);
+    return uI * uLCol * gobo(q + 0.5, lod) * sphShadow(p, l, 1e9, 0.00465) * occl(p, l, 1e9);
   }
   vec3 v = p - uLPos; float d2 = max(dot(v, v), 0.04), d = sqrt(d2);
   l = -v / d;
@@ -2202,12 +3044,21 @@ vec3 lightAt(vec3 p, out vec3 l, float lod, float pixW){
   vec2 uv = 0.5 + 0.5 * q * uRep;
   lod = max(lod, log2(max(pixW * uRep / (2.0 * z * uTanC) * uGoboRes, 1e-6)));
   float dl = d;
-  return uI * uLCol * m * gobo(uv, lod) / d2 * sphShadow(p, l, dl, uSrcR / max(d, 0.1));
+  return uI * uLCol * m * gobo(uv, lod) / d2 * sphShadow(p, l, dl, uSrcR / max(d, 0.1)) * occl(p, l, dl);
 }
 float hitScene(vec3 ro, vec3 rd, out vec3 n, out int id){
   float t = 1e9; id = -1;
-  if (rd.y < 0.0){ float tt = -ro.y / rd.y; vec3 p = ro + tt * rd; if (p.x > FX.x && p.x < FX.y && p.z > 0.0 && p.z < FZ){ t = tt; n = vec3(0, 1, 0); id = 0; } }
-  if (rd.z < 0.0){ float tt = -ro.z / rd.z; vec3 p = ro + tt * rd; if (tt < t && p.x > FX.x && p.x < FX.y && p.y > 0.0 && p.y < WY){ t = tt; n = vec3(0, 0, 1); id = 1; } }
+  if (rd.y < 0.0){
+    float tt = -ro.y / rd.y; vec3 p = ro + tt * rd;
+    if (uSet == 0 && max(abs(p.x), abs(p.z)) < 12.0){ t = tt; n = vec3(0, 1, 0); id = 0; }
+    if (uSet == 1 && p.x > FX.x && p.x < FX.y && p.z > 0.0 && p.z < FZ){ t = tt; n = vec3(0, 1, 0); id = 0; }
+    if (uSet >= 2 && max(abs(p.x), abs(p.z - 4.0)) < 40.0 && (uSet == 2 || p.z > 0.0)){ t = tt; n = vec3(0, 1, 0); id = 3; }
+  }
+  if ((uSet == 1 || uSet == 3) && rd.z < 0.0){
+    float tt = -ro.z / rd.z; vec3 p = ro + tt * rd;
+    if (tt < t && p.x > FX.x && p.x < FX.y && p.y > (uSet == 3 ? -1.0 : 0.0) && p.y < (uSet == 3 ? 4.0 : WY)){ t = tt; n = vec3(0, 0, 1); id = 1; }
+  }
+  if (uSet == 2){ vec3 nn; float tt = hitDock(ro, rd, nn); if (tt < t){ t = tt; n = nn; id = 4; } }
   if (uSphere == 1){
     vec3 oc = ro - uSph.xyz; float b = dot(oc, rd), c = dot(oc, oc) - uSph.w * uSph.w, h = b * b - c;
     if (h > 0.0){ float tt = -b - sqrt(h); if (tt > 0.0 && tt < t){ t = tt; n = normalize(ro + tt * rd - uSph.xyz); id = 2; } }
@@ -2216,8 +3067,9 @@ float hitScene(vec3 ro, vec3 rd, out vec3 n, out int id){
 }
 float ao(vec3 p, vec3 n, int id){
   float a = 1.0;
-  if (id == 0) a *= 1.0 - 0.45 * exp(-p.z / 0.35);
-  if (id == 1) a *= 1.0 - 0.45 * exp(-p.y / 0.35);
+  if (id == 0 && uSet == 1) a *= 1.0 - 0.45 * exp(-p.z / 0.35);
+  if (id == 1 && uSet == 1) a *= 1.0 - 0.45 * exp(-p.y / 0.35);
+  if (id == 4) a *= 0.5 + 0.5 * smoothstep(DY - 0.3, DY, p.y) * (0.6 + 0.4 * max(-n.y, 0.0));
   if (id == 2) a *= 0.55 + 0.45 * (0.5 + 0.5 * n.y);
   if (uSphere == 1 && id != 2){
     vec3 v = uSph.xyz - p; float d = length(v);
@@ -2234,14 +3086,22 @@ void main(){
   vec3 ro = uCamPos, n; int id;
   float t = hitScene(ro, rd, n, id);
   vec3 col;
-  if (id < 0) col = vec3(0.012, 0.013, 0.015) * (1.0 + 0.6 * rd.y);
-  else {
+  vec3 sky = uSet >= 2 ? vec3(0.55, 0.68, 0.85) * (0.4 + 2.5 * uAmb) : vec3(0.012, 0.013, 0.015);
+  if (id < 0) col = sky * (uSet >= 2 ? 0.7 + 0.5 * max(rd.y, 0.0) : 1.0 + 0.6 * rd.y);
+  else if (id == 3){
+    // open water: dark body, sky (or dock underside) seen in reflection
+    float c = max(-rd.y, 0.0), F = 0.02 + 0.98 * pow(1.0 - c, 5.0);
+    vec3 rr = reflect(rd, vec3(0, 1, 0)), nn; vec3 refl = sky;
+    if (uSet == 2){ vec3 pw = ro + t * rd; vec3 pd = pw + rr * (DY - pw.y) / max(rr.y, 1e-3); if (abs(pd.x) < 4.1 && pd.z > -1.1 && pd.z < 5.1) refl = vec3(0.03) * uAlb; }
+    col = mix(vec3(0.004, 0.012, 0.014) * (1.0 + 4.0 * uAmb), refl, F);
+  } else {
     vec3 p = ro + t * rd, l;
     // texture footprint for filtering the projected gobo
     float pixW = t * 2.0 * uTanF / uRes.y / max(abs(dot(n, rd)), 0.15);
     vec3 e = lightAt(p, l, 0.0, pixW);
     float ndl = max(dot(n, l), 0.0);
-    col = uAlb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
+    vec3 alb = id == 4 ? uAlb * vec3(1.0, 0.93, 0.84) : vec3(uAlb);
+    col = alb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
   }
   float tEnd = min(t, 30.0);
   // light gizmo
@@ -2273,16 +3133,46 @@ void main(){
 PR.scene = program(VS_FULL, FS_SCENE, 'scene preview');
 
 const SCENE_DEFAULTS = {
-  ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
+  set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
   dist:5, az:25, el:40, roll:0, ev:0, color:'#ffffff',
   aimX:0, aimY:0.8, aimZ:0.8,
-  sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0,
+  sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0, follow:true,
 };
-const CAM_DEFAULT = {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6};
-if (!S.scene) S.scene = {...SCENE_DEFAULTS};
-for (const k in SCENE_DEFAULTS) if (S.scene[k] === undefined) S.scene[k] = SCENE_DEFAULTS[k];
-if (!S.cam) S.cam = {...CAM_DEFAULT};
-const SC = () => S.scene;
+const SETS = ['Floor', 'Floor & wall', 'Dock, seen from below', 'Wall at the waterline'];
+const SET_CAMS = [
+  {az:30, el:38, dist:10, tx:0, ty:0, tz:0},
+  {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6},
+  {az:22, el:-4, dist:8.5, tx:0, ty:0.95, tz:2.0},
+  {az:32, el:10, dist:9, tx:0, ty:1.0, tz:0.6},
+];
+const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.01], [0, -9, 0, 0.01]];
+// each pattern gets a set and a light placed the way that pattern is used
+const MODE_SCENE = {
+  under:  {set:0, ltype:0, cone:90, dist:4, el:90, az:0, aimX:0, aimY:0, aimZ:0, sphere:true},
+  over:   {set:2, ltype:0, cone:90, dist:4, el:-68, az:0, aimX:0, aimY:1.5, aimZ:2, sphere:false, amb:0.1},
+  hull:   {set:3, ltype:0, cone:90, dist:4, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1},
+  trees:  {set:1, ltype:1, el:60, az:25, aimX:0, aimY:0.8, aimZ:0.8, sphere:true},
+  windows:{set:1, ltype:1, el:35, az:-28, aimX:0.3, aimY:0, aimZ:2.2, sphere:false, amb:0.06, color:'#fff4e6'},
+};
+// spotlights start with the gobo at its real size where they are aimed
+const MODE_CAMS = {windows:{az:24, el:32, dist:5.2, tx:0.2, ty:0.2, tz:2.0}};
+function camDefault(m) { const set = S.scenes[m].set | 0; return {...(MODE_CAMS[m] && MODE_SCENE[m].set === set ? MODE_CAMS[m] : SET_CAMS[set])}; }
+const sceneDefaults = m => {
+  const d = {...SCENE_DEFAULTS, ...(MODE_SCENE[m] || {})};
+  const tile = S.p[m] && S.p[m].tileSize;
+  if (d.ltype === 0 && tile && MODES[m].kind !== 'windows') d.rep = clamp(+(2 * d.dist * Math.tan(d.cone * 0.5 * DEG) / tile).toFixed(2), 1, 12);
+  return d;
+};
+const followsSun = () => SC().follow && SC().ltype === 1 && S.p[S.mode].sunElev !== undefined && MODES[S.mode].kind;
+if (!S.scenes) S.scenes = {};
+if (!S.cams) S.cams = {};
+for (const m of Object.keys(MODES)) {
+  S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
+  if (!S.cams[m]) S.cams[m] = camDefault(m);
+}
+
+const SC = () => S.scenes[S.mode];
+const CAM = () => S.cams[S.mode];
 const SCENE_GROUPS = () => {
   const sun = SC().ltype === 1;
   const light = [
@@ -2297,26 +3187,29 @@ const SCENE_GROUPS = () => {
     {k:'sunScale', l:'Pattern scale', min:0.25, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '× real size', h:'1× lays one tile over its true size in metres (as measured across the beam).'},
   );
   light.push(
-    {k:'blur', l:'Gobo blur', min:0, max:5, step:0.05, u:'%', h:'Defocus of the gobo image, as a percentage of the image width. Real projectors throw a slightly soft image; tree and water gobos already contain the sun\'s own blur.'},
+    {k:'blur', l:'Gobo blur', min:0, max:5, step:0.05, u:'%', h:'Defocus of the gobo image, as a percentage of the image width. Real projectors throw a slightly soft image; these gobos already contain the sun\'s own blur.'},
     {k:'roll', l:'Gobo rotation', min:-180, max:180, step:1, u:'°', h:'Rotates the image around the light\'s axis.'},
     {k:'ev', l:'Intensity', min:-6, max:6, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV', h:sun ? 'Irradiance in stops.' : 'Stops. At 0 EV the light gives an irradiance of 1 at 5 m; it falls off with the inverse square of distance.'},
     {k:'color', l:'Light colour', type:'color', h:'The gobo multiplies the light\'s colour, as when a texture is assigned to the light colour.'},
   );
   const place = [];
   if (!sun) place.push({k:'dist', l:'Distance to aim point', min:0.5, max:40, step:0.05, log:true, u:'m'});
+  const fol = sun && S.p[S.mode].sunElev !== undefined && MODES[S.mode].kind;
+  if (fol) place.push({k:'follow', l:'Use the pattern\'s sun angle', type:'chk', h:'Points the scene sun the way the pattern was made, so the shadow lands with its true shape.'});
   place.push(
-    {k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:-85, max:85, step:0.5, u:'°', h:'Around the aim point; 0° is straight out from the wall.'},
-    {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:2, max:90, step:0.5, u:'°', h:'Height of the light above the aim point, as an angle.'},
-    {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right along the wall.'},
-    {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor.'},
-    {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:0, max:8, step:0.05, u:'m', h:'Distance out from the wall.'},
+    ...(fol && SC().follow ? [] : [{k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:-85, max:85, step:0.5, u:'°', h:'Around the aim point; 0° is straight out from the wall.'},
+    {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:sun ? 2 : -89, max:90, step:0.5, u:'°', h:sun ? 'Height of the sun above the horizon.' : 'Angle of the light above the aim point; negative puts it below, pointing up (as for light reflected off water).'}]),
+    {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right.'},
+    {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor or water.'},
+    {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:-1, max:8, step:0.05, u:'m', h:'Distance out from the wall.'},
   );
   const set = [
+    {k:'set', l:'Set', opts:SETS},
     {k:'sphere', l:'Test sphere', type:'chk'},
     {k:'gizmo', l:'Show light', type:'chk'},
     {k:'haze', l:'Atmospheric haze', min:0, max:1, step:0.01, h:'Single scattering in the air, so the projected beam becomes visible.'},
     {k:'amb', l:'Fill light', min:0, max:1, step:0.01, h:'Soft ambient fill so unlit areas are not black.'},
-    {k:'alb', l:'Surface grey', min:0.05, max:0.9, step:0.01, h:'Albedo of floor, wall and sphere.'},
+    {k:'alb', l:'Surface grey', min:0.05, max:0.9, step:0.01, h:'Albedo of the set.'},
     {k:'expo', l:'Camera exposure', min:-4, max:4, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV'},
   ];
   return [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:'Set & camera', params:set}];
@@ -2334,49 +3227,61 @@ function basis(f, roll = 0) {
   if (roll) { const c = Math.cos(roll), s = Math.sin(roll); [r, u] = [v3.add(v3.mul(r, c), v3.mul(u, s)), v3.sub(v3.mul(u, c), v3.mul(r, s))]; }
   return {r, u};
 }
-const sceneTile = () => S.p[S.mode].tileSize || 3;
+const sceneTile = () => MODES[S.mode].kind === 'windows' ? (WIN.cover || 3) : (S.p[S.mode].tileSize || 3);
 function sceneLight() {
   const c = SC(), aim = [c.aimX, c.aimY, c.aimZ];
-  const az = c.az * DEG, el = c.el * DEG;
+  const P = S.p[S.mode], fol = followsSun();
+  const az = (fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? P.sunElev : c.el) * DEG;
   const dir = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];   // aim → light
   const pos = v3.add(aim, v3.mul(dir, c.dist));
   const f = v3.mul(dir, -1);
   return {aim, pos, f, ...basis(f, c.roll * DEG)};
 }
-function drawScene(fin) {
-  const c = SC(), L = sceneLight(), cam = S.cam;
+function camPos(cam) {
   const ca = cam.az * DEG, ce = cam.el * DEG;
-  const tgt0 = [cam.tx, cam.ty, cam.tz];
-  const cpos = v3.add(tgt0, v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], cam.dist));
-  const cf = v3.norm(v3.sub(tgt0, cpos)), cb = basis(cf);
+  const t0 = [cam.tx, cam.ty, cam.tz];
+  const p = v3.add(t0, v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], cam.dist));
+  p[1] = Math.max(p[1], 0.08);
+  return {p, t0};
+}
+function drawScene(fin) {
+  const c = SC(), L = sceneLight(), cam = CAM();
+  if (c.ltype === 1 && c.el < 2) c.el = 2;
+  const {p:cpos, t0} = camPos(cam);
+  const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
   const tanC = Math.tan(c.cone * 0.5 * DEG);
   const blur = c.blur / 100 * (c.ltype === 1 ? 1 : c.rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
-  const single = MODES[S.mode].kind === 'trees' && (S.p[S.mode].framing | 0) === 1;
+  const kind = MODES[S.mode].kind;
+  const single = kind === 'windows' ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   pass(PR.scene, null, p => {
     tex(p, 'uGobo', fin.tex, 0);
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
-    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single && c.ltype === 1 ? 1 : 0);
-    i1(p, 'uSphere', c.sphere ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single); i1(p, 'uSet', c.set | 0);
+    i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
     f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
     f3(p, 'uLCol', ...hex3(c.color));
     f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', c.rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
     f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sceneTile() * c.sunScale); f1(p, 'uSrcR', 0.04);
-    gl.uniform4f(p.u('uSph'), -1.3, 0.5, 1.7, 0.5);
+    gl.uniform4f(p.u('uSph'), ...SET_SPHERE[c.set | 0]);
     f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
   });
-  const tile = sceneTile();
+  const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
   if (c.ltype === 1) {
-    return [`Scene: sun at ${c.el.toFixed(1)}° elevation · one tile spans ${(tile * c.sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`];
+    return [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * c.sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`];
   }
   const width = 2 * c.dist * tanC;
   return [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${c.cone.toFixed(1)}° projection is ${width.toFixed(2)} m wide there`,
-          `One tile spans ${(width / c.rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(width / c.rep - tile) / tile < 0.03 ? ', matched' : ''})`];
+          `${what[0].toUpperCase() + what.slice(1)} spans ${(width / c.rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(width / c.rep - tile) / tile < 0.03 ? ', matched' : ''})`];
 }
 function matchScale() {
   const c = SC();
   if (c.ltype === 1) c.sunScale = 1;
-  else c.rep = clamp(+(2 * c.dist * Math.tan(c.cone * 0.5 * DEG) / sceneTile()).toFixed(2), 1, 12);
+  else {
+    const w = 2 * c.dist * Math.tan(c.cone * 0.5 * DEG), tile = sceneTile();
+    if (MODES[S.mode].kind === 'windows') c.cone = clamp(+(2 * Math.atan(tile / (2 * c.dist)) / DEG).toFixed(1), 5, 160), c.rep = 1;
+    else c.rep = clamp(+(w / tile).toFixed(2), 1, 12);
+  }
 }
 
 // camera: drag to orbit, right/shift-drag to pan, wheel to dolly, double-click to reset
@@ -2385,21 +3290,22 @@ function matchScale() {
   cv.addEventListener('contextmenu', e => { if (S.view === 'scene') e.preventDefault(); });
   cv.addEventListener('pointerdown', e => {
     if (S.view !== 'scene') return;
-    drag = {x:e.clientX, y:e.clientY, pan:e.button === 2 || e.shiftKey, cam:{...S.cam}};
+    drag = {x:e.clientX, y:e.clientY, pan:e.button === 2 || e.shiftKey, cam:{...CAM()}};
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e => {
     if (!drag) return;
+    const cam = CAM();
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y, k = 1 / cv.clientHeight;
     if (drag.pan) {
       const ca = drag.cam.az * DEG, ce = drag.cam.el * DEG;
       const f = v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], -1), b = basis(f);
       const s = 2 * Math.tan(20 * DEG) * drag.cam.dist * k;
       const m = v3.add(v3.mul(b.r, -dx * s), v3.mul(b.u, dy * s));
-      S.cam.tx = clamp(drag.cam.tx + m[0], -8, 8); S.cam.ty = clamp(drag.cam.ty + m[1], 0, 6); S.cam.tz = clamp(drag.cam.tz + m[2], 0, 10);
+      cam.tx = clamp(drag.cam.tx + m[0], -8, 8); cam.ty = clamp(drag.cam.ty + m[1], 0, 6); cam.tz = clamp(drag.cam.tz + m[2], -1, 10);
     } else {
-      S.cam.az = clamp(drag.cam.az - dx * k * 180, -85, 85);
-      S.cam.el = clamp(drag.cam.el + dy * k * 120, 1, 85);
+      cam.az = clamp(drag.cam.az - dx * k * 180, -85, 85);
+      cam.el = clamp(drag.cam.el + dy * k * 120, -40, 89);
     }
     viewDirty = true;
   });
@@ -2408,9 +3314,9 @@ function matchScale() {
   cv.addEventListener('wheel', e => {
     if (S.view !== 'scene') return;
     e.preventDefault();
-    S.cam.dist = clamp(S.cam.dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
+    CAM().dist = clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
   }, {passive:false});
-  cv.addEventListener('dblclick', () => { if (S.view === 'scene') { S.cam = {...CAM_DEFAULT}; viewDirty = true; save(); } });
+  cv.addEventListener('dblclick', () => { if (S.view === 'scene') { S.cams[S.mode] = camDefault(S.mode); viewDirty = true; save(); } });
 })();
 
 /* =====================================================================
@@ -2491,22 +3397,23 @@ function buildPanel() {
     const d = document.createElement('details'); d.className = 'grp'; d.open = open;
     const s = document.createElement('summary'); s.innerHTML = '<span class="sect-label"></span>'; s.firstChild.textContent = title;
     const c = document.createElement('div'); c.className = 'ctrls';
-    defs.forEach(def => c.append(control(def, st, S.mode + (st === store ? '' : '-post'), dflt, changed)));
+    const onCh = st === store && m.onParam ? k => { if (m.onParam(k, st)) buildPanel(); changed(); } : changed;
+    defs.forEach(def => c.append(control(def, st, S.mode + (st === store ? '' : '-post'), dflt, onCh)));
     d.append(s, c); groups.append(d);
   };
   if (S.view === 'scene') {
-    const onScene = k => { if (k === 'ltype') buildPanel(); viewDirty = true; save(); };
+    const onScene = k => { if (k === 'set') S.cams[S.mode] = camDefault(S.mode); if (k === 'ltype' || k === 'set' || k === 'follow') buildPanel(); viewDirty = true; save(); };
     SCENE_GROUPS().forEach((g, gi) => {
       const d = document.createElement('details'); d.className = 'grp scene'; d.open = gi < 2;
       const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label"></span>'; sm.firstChild.textContent = g.name;
       const c = document.createElement('div'); c.className = 'ctrls';
-      g.params.forEach(def => c.append(control(def, S.scene, 'scene', SCENE_DEFAULTS, onScene)));
+      g.params.forEach(def => c.append(control(def, SC(), 'scene', sceneDefaults(S.mode), onScene)));
       if (gi === 0) {
         const b = document.createElement('button'); b.className = 'pchip'; b.textContent = 'Match real scale';
         b.title = 'Size the gobo so one tile covers its true size in metres at the aim point.';
         b.onclick = () => { matchScale(); buildPanel(); viewDirty = true; save(); };
         const rb = document.createElement('button'); rb.className = 'pchip alt'; rb.textContent = 'Reset light';
-        rb.onclick = () => { S.scene = {...SCENE_DEFAULTS}; buildPanel(); viewDirty = true; save(); };
+        rb.onclick = () => { S.scenes[S.mode] = sceneDefaults(S.mode); S.cams[S.mode] = camDefault(S.mode); buildPanel(); viewDirty = true; save(); };
         const row = document.createElement('div'); row.className = 'chips'; row.append(b, rb); c.append(row);
       }
       d.append(sm, c); groups.append(d);
@@ -2611,15 +3518,15 @@ function updateHud(ms) {
   hud.innerHTML = '';
   const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
   if (S.view === 'scene') {
-    const c = S.scene;
+    const c = SC();
     add('Scene preview', 'ok');
-    add(c.ltype === 1 ? `Sun ${c.el.toFixed(0)}°` : `Spot ${c.cone.toFixed(0)}° · ${c.dist.toFixed(1)} m`);
+    add(c.ltype === 1 ? `Sun ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(0)}°` : `Spot ${c.cone.toFixed(0)}° · ${c.dist.toFixed(1)} m`);
     add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
     return;
   }
   add(`${S.res}²`);
   add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
-  add(m.tileable ? 'Seamless tile' : 'Tiles sideways', 'ok');
+  add(m.tileable ? 'Seamless tile' : m.kind === 'windows' ? 'Single frame' : 'Tiles sideways', 'ok');
   add(tl.loop ? `Loop ${fmtLen(tl.len)}` : `Sequence ${fmtLen(tl.len)}`, tl.loop ? 'ok' : '');
   if (tl.shutter > 0 && QUAL[S.quality].sub > 1) add(`${tl.shutter}° shutter`);
 }
@@ -2648,7 +3555,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
 requestAnimationFrame(tick);
 })();
 
