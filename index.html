@@ -122,7 +122,18 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .hint{color:var(--mute);font-size:11.5px;line-height:1.5;margin:0}
 .phint{grid-column:1 / -1;color:var(--mute);font-size:11px;line-height:1.45;margin:2px 0 0}
 
+.viewseg{position:absolute;right:10px;top:10px;padding:2px;background:rgba(10,12,15,.82)}
+.hud{right:150px}
+.viewseg .mode{padding:5px 12px;font-size:12px}
+.camhint{position:absolute;left:10px;bottom:8px;margin:0;font-size:11px;color:var(--mute);background:rgba(10,12,15,.7);padding:3px 8px;border-radius:4px;pointer-events:none;display:none}
+body.in-scene .camhint{display:block}
+body.in-scene .gobo-only{display:none}
+body.in-scene #cv{cursor:grab;touch-action:none;box-shadow:none}
+body.in-scene #cv:active{cursor:grabbing}
+details.grp.scene{border-color:#3a3226}
+input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);border-radius:5px;background:var(--raise);cursor:pointer}
 @media (max-width: 860px){
+  body.in-scene .plate{aspect-ratio:4/3}
   html,body{height:auto}
   .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto}
   .stage{min-height:auto}
@@ -149,6 +160,8 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
     <div class="plate" id="plate">
       <canvas id="cv" width="512" height="512" aria-label="Gobo preview"></canvas>
       <div class="hud" id="hud"></div>
+      <div class="modes viewseg" role="tablist" aria-label="Preview"><button class="mode" role="tab" id="vw-gobo">Gobo</button><button class="mode" role="tab" id="vw-scene">Scene</button></div>
+      <p class="camhint">Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets</p>
       <div class="err" id="err" hidden></div>
     </div>
     <div class="transport">
@@ -161,9 +174,9 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
     <div class="viewbar">
       <label>Preview <select id="vRes"><option value="512">512²</option><option value="1024">1024²</option><option value="2048">2048²</option></select></label>
       <label>Quality <select id="vQual"><option value="draft">Draft</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
-      <label>View <select id="vTiles"><option value="1">Single tile</option><option value="2">2 × 2 tiled</option><option value="3">3 × 3 tiled</option></select></label>
-      <label class="tog"><input type="checkbox" id="vHeat"> False color</label>
-      <label class="tog"><input type="checkbox" id="vSeams"> Tile borders</label>
+      <label class="gobo-only">View <select id="vTiles"><option value="1">Single tile</option><option value="2">2 × 2 tiled</option><option value="3">3 × 3 tiled</option></select></label>
+      <label class="tog gobo-only"><input type="checkbox" id="vHeat"> False color</label>
+      <label class="tog gobo-only"><input type="checkbox" id="vSeams"> Tile borders</label>
     </div>
   </section>
 
@@ -305,7 +318,7 @@ const MODES = {
     post:{...LEVELS},
   },
   trees: {
-    short:'Tree shadows', kind:'trees', tileable:true, tl:{loop:true, len:20, shutter:180},
+    short:'Tree shadows', kind:'trees', tileable:true, tl:{loop:true, len:30, shutter:180},
     groups:[
       {name:'Trees', params:[
         {k:'species', l:'Species', opts:SPECIES.map(s => s.name)},
@@ -315,6 +328,8 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
+        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it.'},
+        {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
         {k:'trunks', l:'Trunk shadows', type:'chk', h:'Off keeps only the canopy, as when you look up into the trees from beneath them.'},
       ]},
@@ -326,14 +341,17 @@ const MODES = {
       {name:'Wind', params:[
         {k:'windSpeed', l:'Wind speed', min:0, max:15, step:0.1, u:'m/s', h:'At canopy height. 1–3 light air to light breeze, 4–6 gentle to moderate breeze, 8+ fresh breeze.'},
         {k:'windDir', l:'Wind direction (to the sun)', min:0, max:360, step:1, u:'°'},
-        {k:'turb', l:'Gustiness', min:0.05, max:0.6, step:0.01, h:'Turbulence intensity (σu / U). Inside and above canopies it is typically 0.3–0.5.'},
+        {k:'gustAmt', l:'Gust strength', min:0, max:3, step:0.01, u:'×', h:'How hard each gust pushes. Gusts lean the canopy downwind and it rebounds as they pass.'},
+        {k:'gustRate', l:'Gusts per minute', min:0, max:15, step:0.5, h:'Measured in a breeze: about 5 per minute, irregularly spaced.'},
+        {k:'indep', l:'Branch independence', min:0, max:1, step:0.01, h:'How much each branch follows its own local eddies rather than the shared gusts.'},
+        {k:'turb', l:'Turbulence', min:0.05, max:0.6, step:0.01, h:'Turbulence intensity (σu / U). Inside and above canopies it is typically 0.3–0.5.'},
         {k:'swayBranch', l:'Branch sway', min:0, max:4, step:0.01, u:'×', h:'Slow motion of limbs and large branches, about 0.3–1 Hz. 1 is gentle.'},
         {k:'swayTwig', l:'Twig sway', min:0, max:4, step:0.01, u:'×', h:'Smaller, quicker motion of twigs and leaf sprays, about 1.5–3.5 Hz.'},
         {k:'flutter', l:'Leaf flutter', min:0, max:4, step:0.01, u:'×', h:'Individual leaves twisting on their stalks, about 2–4 Hz.'},
       ]},
     ],
     presets:[
-      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, swayBranch:1, swayTwig:1, flutter:1}},
+      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, framing:0, elemSize:0.35, gustAmt:1, gustRate:5, indep:0.5, swayBranch:1, swayTwig:1, flutter:1}},
       {name:'Round sun spots, tall canopy', v:{species:0, tileSize:3, cover:0.9, canopyTop:16, canopyDepth:5, leafDensity:0.85, sunElev:65}},
       {name:'Maple, park shade', v:{species:1, tileSize:3, cover:0.9, canopyTop:10, canopyDepth:4, sunElev:55}},
       {name:'Birch, light breeze', v:{species:2, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:50}},
@@ -341,6 +359,8 @@ const MODES = {
       {name:'Pine canopy', v:{species:4, tileSize:4, cover:0.9, canopyTop:14, canopyDepth:5, sunElev:50}},
       {name:'Palm, beach', v:{species:5, tileSize:9, cover:0.6, canopyTop:9, canopyDepth:3, windSpeed:4, sunElev:65}},
       {name:'One storey up', v:{species:1, tileSize:3, cover:1.0, canopyTop:4, canopyDepth:1.5, sunElev:50}},
+      {name:'Single branch, white frame', v:{species:1, tileSize:4, cover:1.0, canopyTop:5, canopyDepth:2.5, framing:1, elemSize:0.3, sunElev:60}},
+      {name:'Oak sprig, white frame', v:{species:0, tileSize:3, cover:1.0, canopyTop:4, canopyDepth:2, framing:1, elemSize:0.25, sunElev:55}},
       {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
@@ -367,7 +387,7 @@ for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v
 const small = Math.min(innerWidth, innerHeight) < 700 || matchMedia('(pointer:coarse)').matches;
 const S = {
   mode:'under', p:{}, post:{}, tl:{}, fps:24, t:0, playing:true,
-  res: small ? 512 : 1024, quality: small ? 'draft' : 'high', tiles:1, heat:false, seams:false,
+  res: small ? 512 : 1024, quality: small ? 'draft' : 'high', tiles:1, heat:false, seams:false, view:'gobo',
 };
 for (const m of Object.keys(MODES)) { S.p[m] = {...DEFAULTS[m]}; S.post[m] = {...MODES[m].post}; S.tl[m] = {...MODES[m].tl}; }
 const STORE = 'cucLab.v3';
@@ -379,7 +399,7 @@ try {
       if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
       if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
     }
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scene', 'cam']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'under';
   }
 } catch (e) {}
@@ -387,7 +407,7 @@ let saveTimer = 0;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scene:S.scene, cam:S.cam})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -601,13 +621,16 @@ layout(location=4) in float aNode;
 uniform sampler2D uDisp; uniform float uT, uLx, uLy, uCot, uSinE, uZr, uDS;
 out vec2 vUV; flat out int vSlice; flat out float vShape;
 
-uniform float uTwA; uniform vec3 uTwF;
-vec3 twigMove(int node, float w){
+uniform float uTwA, uGustE, uTwCoh; uniform vec3 uTwF; uniform int uWrap;
+vec3 twigMove(int node, float w, vec2 xy){
   if (w <= 0.0 || uTwA <= 0.0) return vec3(0.0);
   uint h = uint(node) * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
-  float p1 = float(h & 1023u) * (TAU / 1023.0), p2 = float((h >> 10) & 1023u) * (TAU / 1023.0), p3 = float((h >> 20) & 1023u) * (TAU / 1023.0);
-  float s1 = sin(TAU * uTwF.x * uT + p1), s2 = sin(TAU * uTwF.y * uT + p2), s3 = sin(TAU * uTwF.z * uT + p3);
-  return uTwA * w * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
+  // neighbouring twigs share part of their phase (the same eddy reaches them), the rest is their own
+  vec3 sp = TAU * vec3(dot(xy, vec2(0.41, 0.17)), dot(xy, vec2(-0.23, 0.38)), dot(xy, vec2(0.29, -0.33)));
+  vec3 rp = vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) * (TAU / 1023.0);
+  vec3 ph = mix(rp, sp, uTwCoh);
+  float s1 = sin(TAU * uTwF.x * uT + ph.x), s2 = sin(TAU * uTwF.y * uT + ph.y), s3 = sin(TAU * uTwF.z * uT + ph.z);
+  return uTwA * uGustE * w * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
 }
 vec3 rot(vec3 v, vec3 ax, float a){ return v * cos(a) + cross(ax, v) * sin(a) + ax * dot(ax, v) * (1.0 - cos(a)); }
 void main(){
@@ -615,8 +638,8 @@ void main(){
   vec2 c = (corner == 0) ? vec2(0.0, -0.5) : (corner == 1 || corner == 4) ? vec2(1.0, -0.5) : (corner == 2 || corner == 3) ? vec2(0.0, 0.5) : vec2(1.0, 0.5);
   int node = int(aNode + 0.5);
   vec4 dd = texelFetch(uDisp, ivec2(node % 1024, node / 1024), 0);
-  vec3 disp = dd.xyz + twigMove(node, dd.w);
-  float th = aFlut.w * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
+  vec3 disp = dd.xyz + twigMove(node, dd.w, aPos.xy);
+  float th = aFlut.w * uGustE * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
   vec3 ax = aAxis.xyz;
   vec3 n = rot(aNorm.xyz, ax, th);
   vec3 side = normalize(cross(ax, n));
@@ -625,9 +648,10 @@ void main(){
   // light space: project along the sun onto the receiver, then view perpendicular to the beam
   vec2 g = vec2((W.x - (W.z - uZr) * uCot) / uLx, W.y / uLy);
   vec2 gc = vec2((P.x - (P.z - uZr) * uCot) / uLx, P.y / uLy);
-  vec2 shift = -floor(gc);
+  vec2 shift = uWrap == 1 ? -floor(gc) : vec2(0.0);
   vec2 fc = gc + shift;
   int cp = gl_InstanceID % 4;
+  if (uWrap == 0 && cp != 0) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vUV = c; vShape = aPos.w;
   vSlice = clamp(int((P.z - uZr) / uSinE / uDS), 0, 7);
@@ -686,20 +710,23 @@ layout(location=0) in vec4 aA;  // xyz, radius
 layout(location=1) in vec4 aB;  // xyz, radius
 layout(location=2) in vec2 aN;  // node indices
 uniform sampler2D uDisp; uniform float uLx, uLy, uCot, uSinE, uZr, uDS, uPx, uTile, uT;
-uniform float uTwA; uniform vec3 uTwF;
-vec3 twigMove(int node, float w){
+uniform float uTwA, uGustE, uTwCoh; uniform vec3 uTwF; uniform int uWrap;
+vec3 twigMove(int node, float w, vec2 xy){
   if (w <= 0.0 || uTwA <= 0.0) return vec3(0.0);
   uint h = uint(node) * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13;
-  float p1 = float(h & 1023u) * (TAU / 1023.0), p2 = float((h >> 10) & 1023u) * (TAU / 1023.0), p3 = float((h >> 20) & 1023u) * (TAU / 1023.0);
-  float s1 = sin(TAU * uTwF.x * uT + p1), s2 = sin(TAU * uTwF.y * uT + p2), s3 = sin(TAU * uTwF.z * uT + p3);
-  return uTwA * w * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
+  // neighbouring twigs share part of their phase (the same eddy reaches them), the rest is their own
+  vec3 sp = TAU * vec3(dot(xy, vec2(0.41, 0.17)), dot(xy, vec2(-0.23, 0.38)), dot(xy, vec2(0.29, -0.33)));
+  vec3 rp = vec3(float(h & 1023u), float((h >> 10) & 1023u), float((h >> 20) & 1023u)) * (TAU / 1023.0);
+  vec3 ph = mix(rp, sp, uTwCoh);
+  float s1 = sin(TAU * uTwF.x * uT + ph.x), s2 = sin(TAU * uTwF.y * uT + ph.y), s3 = sin(TAU * uTwF.z * uT + ph.z);
+  return uTwA * uGustE * w * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
 }
 out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out int vSlice;
-vec3 dsp(float n){ int i = int(n + 0.5); vec4 d = texelFetch(uDisp, ivec2(i % 1024, i / 1024), 0); return d.xyz + twigMove(i, d.w); }
+vec3 dsp(float n, vec2 xy){ int i = int(n + 0.5); vec4 d = texelFetch(uDisp, ivec2(i % 1024, i / 1024), 0); return d.xyz + twigMove(i, d.w, xy); }
 void main(){
   int corner = gl_VertexID;
   vec2 c = (corner == 0) ? vec2(0.0, -1.0) : (corner == 1 || corner == 4) ? vec2(1.0, -1.0) : (corner == 2 || corner == 3) ? vec2(0.0, 1.0) : vec2(1.0, 1.0);
-  vec3 A = aA.xyz + dsp(aN.x), B = aB.xyz + dsp(aN.y);
+  vec3 A = aA.xyz + dsp(aN.x, aA.xy), B = aB.xyz + dsp(aN.y, aB.xy);
   vec2 ga = vec2((A.x - (A.z - uZr) * uCot) / uLx, A.y / uLy), gb = vec2((B.x - (B.z - uZr) * uCot) / uLx, B.y / uLy);
   vec2 t = gb - ga; float tl = length(t);
   vec2 td = tl > 1e-7 ? t / tl : vec2(1.0, 0.0); vec2 nd = vec2(-td.y, td.x);
@@ -707,9 +734,10 @@ void main(){
   float pad = max(wa, wb) + 1.5 * uPx;
   vec2 P = mix(ga - td * pad, gb + td * pad, c.x) + nd * c.y * pad;
   vec2 gc = 0.5 * (ga + gb);
-  vec2 shift = -floor(gc);
+  vec2 shift = uWrap == 1 ? -floor(gc) : vec2(0.0);
   vec2 fc = gc + shift;
   int cp = gl_InstanceID % 4;
+  if (uWrap == 0 && cp != 0) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vP = P; vSeg = vec4(ga, gb); vW = vec2(wa, wb);
   float zm = 0.5 * (A.z + B.z);
@@ -1228,7 +1256,7 @@ function growSC(sp, r, B, tree, bx, by, H, R, P) {
   const env = u => sp.env === 'dome' ? Math.sqrt(Math.max(0, 1 - ((u - 0.42) / 0.62) ** 2))
                  : sp.env === 'ovoid' ? Math.sqrt(Math.max(0, 1 - ((u - 0.45) / 0.56) ** 2))
                  : Math.pow(Math.max(0, Math.sin(Math.PI * Math.min(u, 1))), 0.85) * (1 - 0.25 * u);
-  const nAtt = Math.round(sp.attract * 1.9 * clamp(R * R / (sp.R * sp.R), 0.5, 2));
+  const nAtt = Math.round(sp.attract * 1.9 * clamp(R * R / (sp.R * sp.R), 0.04, 2));
   const AX = [], AY = [], AZ = [];
   for (let tries = 0; AX.length < nAtt && tries < nAtt * 40; tries++) {
     const x = (r() * 2 - 1) * R * 1.3, y = (r() * 2 - 1) * R * 1.3, u = r();
@@ -1716,6 +1744,32 @@ function genTrees(P) {
   const sp = SPECIES[P.species | 0];
   const sinE = Math.sin(Math.max(P.sunElev, 5) * DEG);
   const L = P.tileSize, Lx = L / sinE, Ly = L;
+  if ((P.framing | 0) === 1) {
+    const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 11);
+    const B = newBuilder();
+    const G = {g1:[], g2:[], ng1:[], ng2:[], ns1:[], ns2:[]};
+    const zt = P.canopyTop, zbE = Math.max(0.3, zt - P.canopyDepth), zm = 0.5 * (zt + zbE), zr = P.recvHeight || 0;
+    const cot = 1 / Math.tan(Math.max(P.sunElev, 5) * DEG);
+    const bx = 0.5 * Lx + (zm - zr) * cot, by = 0.5 * Ly;
+    if (sp.kind === 'palm') {
+      growPalm(sp, r0, B, 0, bx - (zt - zr) * cot * 0, by, zt, sp.R * clamp(P.elemSize * 2, 0.3, 1.5), P);
+      B.treeH.push(zt); B.treeInfo.push({x:bx, y:by, H:zt, R:sp.R});
+    } else {
+      const R = clamp(P.elemSize, 0.05, 1) * L * 0.5;
+      const k = clamp(R / 2.5, 0.3, 1);
+      const sp2 = {...sp, base:clamp(zbE / zt, 0.05, 0.85), seg:sp.seg * k, infl:sp.infl * k, kill:sp.kill * k, cluster:sp.cluster * Math.sqrt(k), lai:sp.lai * 1.8};
+      growSC(sp2, r0, B, 0, bx, by, zt, R, P);
+      B.treeH.push(zt); B.treeInfo.push({x:bx, y:by, H:zt, R});
+    }
+    hierarchy(B, 0, B.x.length, G);
+    // how much of the frame the element covers (light space)
+    let mu = 0, mv = 0;
+    for (let i = 0; i < B.leaves.length; i += 13) {
+      const u = (B.leaves[i] - (B.leaves[i + 2] - zr) * cot) / Lx, v = B.leaves[i + 1] / Ly;
+      mu = Math.max(mu, Math.abs(u - 0.5)); mv = Math.max(mv, Math.abs(v - 0.5));
+    }
+    return {B, G, sp, nTrees:1, Lx, Ly, single:true, extent:2 * Math.max(mu, mv)};
+  }
   if (sp.kind !== 'palm') {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 5);
     const B = newBuilder();
@@ -1759,9 +1813,25 @@ function genTrees(P) {
 
 function uploadTrees(T, P) {
   const {B} = T;
-  const nL = B.leaves.length / 13;
+  const F = null;
+  TR.frame = T.single ? {extent:T.extent} : null;
+  const src = B.leaves;
+  const kept = [];
+  if (F) {
+    const e = Math.max(P.sunElev, 5) * DEG, cot = 1 / Math.tan(e), zr = P.recvHeight || 0;
+    for (let i = 0; i < src.length; i += 13) {
+      if (!F.keep[src[i + 12]]) continue;
+      // unwrap each leaf next to the element centre so the element never splits across the frame edge
+      const u = (src[i] - (src[i + 2] - zr) * cot) / T.Lx, v = src[i + 1] / T.Ly;
+      const ox = -Math.round(u - F.u0) * T.Lx, oy = -Math.round(v - F.v0) * T.Ly;
+      const row = Array.prototype.slice.call(src, i, i + 13);
+      row[0] += F.dx + ox; row[1] += F.dy + oy;
+      kept.push(...row);
+    }
+  }
+  const nL = F ? kept.length / 13 : src.length / 13;
   const geo = new Float32Array(nL * 13);
-  geo.set(B.leaves);
+  geo.set(F ? kept : src);
   if (!TR.leafVAO) { TR.leafVAO = gl.createVertexArray(); TR.leafBuf = gl.createBuffer(); TR.flutBuf = gl.createBuffer(); TR.segVAO = gl.createVertexArray(); TR.segBuf = gl.createBuffer(); }
   gl.bindVertexArray(TR.leafVAO);
   gl.bindBuffer(gl.ARRAY_BUFFER, TR.leafBuf);
@@ -1774,11 +1844,18 @@ function uploadTrees(T, P) {
   attr(3, 4, 0, 16, TR.flutBuf);
   // segments
   const segs = [];
+  const e2 = Math.max(P.sunElev, 5) * DEG, cot2 = 1 / Math.tan(e2), zr2 = P.recvHeight || 0;
   for (let i = 0; i < B.x.length; i++) {
     const p = B.par[i]; if (p < 0) continue;
+    let ox = 0, oy = 0;
+    if (F) {
+      if (!F.keep[i]) continue;
+      const u = (B.x[i] - (B.z[i] - zr2) * cot2) / T.Lx, v = B.y[i] / T.Ly;
+      ox = F.dx - Math.round(u - F.u0) * T.Lx; oy = F.dy - Math.round(v - F.v0) * T.Ly;
+    }
     if (B.rad[i] < 0.0014 && B.rad[p] < 0.0014) continue;
-    if (!P.trunks && B.trunk[i] && B.trunk[p]) continue;
-    segs.push(B.x[p], B.y[p], B.z[p], B.rad[p], B.x[i], B.y[i], B.z[i], B.rad[i], p, i);
+    if ((!P.trunks || T.single) && B.trunk[i] && B.trunk[p]) continue;
+    segs.push(B.x[p] + ox, B.y[p] + oy, B.z[p], B.rad[p], B.x[i] + ox, B.y[i] + oy, B.z[i], B.rad[i], p, i);
   }
   const sg = new Float32Array(segs);
   gl.bindVertexArray(TR.segVAO);
@@ -1817,28 +1894,64 @@ function windSetup(T, P, tl) {
   const palm = sp.kind === 'palm';
   G.g1.forEach(g => groups.push({lvl:1, x:g.x, y:g.y, size:g.len, fn:clamp(1.4 / Math.sqrt(Math.max(g.len, 0.5)), 0.5, 3), z:0.08, target:(palm ? 0.025 : 0.02 * clamp(g.len / 3, 0.4, 2)) * U5 * P.swayBranch, vert:0.5}));
   G.g2.forEach(g => groups.push({lvl:2, x:g.x, y:g.y, size:g.len, fn:clamp(2.2 / Math.sqrt(Math.max(g.len, 0.3)), 1, 5), z:0.12, target:0.012 * U5 * P.swayTwig, vert:0.6}));
-  const nF = fs.length;
+  // Gusts: discrete gust events (measured ~5 per minute in a breeze, each rising in ~1 s and
+  // dying over a few seconds) make an intermittent wind-speed envelope e(t). Drag goes as e², so
+  // the canopy leans and rebounds with each gust. The envelope is periodic over the sequence, so
+  // loops stay seamless; the gust front rolls across the canopy at the wind speed.
+  const TL0 = tl.len, M = 1024;
+  const env = new Float64Array(M).fill(1);
+  const nG = P.gustAmt > 0 ? Math.round((P.gustRate || 0) / 60 * TL0 + (r() < ((P.gustRate || 0) / 60 * TL0) % 1 ? 0.5 : 0)) : 0;
+  for (let k = 0; k < nG; k++) {
+    const t0 = (k + 0.15 + 0.7 * r()) / nG * TL0, A = 0.9 * P.gustAmt * Math.exp(0.4 * gauss(r));
+    const tr = 0.7 + 0.8 * r(), td = 1.8 + 3.0 * r();
+    for (let m = 0; m < M; m++) {
+      let dt = m / M * TL0 - t0; dt = ((dt % TL0) + TL0) % TL0;
+      for (let w = 0; w < 3; w++) { const d = dt + w * TL0; env[m] += A * (1 - Math.exp(-d / tr)) * Math.exp(-d / td); }
+    }
+  }
+  let emean = 0; for (let m = 0; m < M; m++) emean += env[m]; emean /= M;
+  const K = nG ? Math.min(Math.floor(3.5 * TL0), 200) : 0;
+  const gc = [];     // Fourier coefficients of the drag fluctuation e² − mean
+  for (let k = 1; k <= K; k++) {
+    let re = 0, im = 0;
+    for (let m = 0; m < M; m++) { const v = (env[m] / emean) ** 2; const a = -2 * Math.PI * k * m / M; re += v * Math.cos(a); im += v * Math.sin(a); }
+    gc.push([k / TL0, 2 * Math.hypot(re, im) / M, Math.atan2(im, re)]);
+  }
+  fs = fs.concat(gc.map(c => c[0]));
+  const nT = fs.length - gc.length, nF = fs.length;
   const coef = new Float32Array(groups.length * nF * 6);
+  const turbW = (0.35 + 0.65 * (P.indep ?? 0.6)) * (P.turb / 0.35);
   groups.forEach((g, gi) => {
+    g.fn *= 0.75 + 0.5 * r();                 // every branch has its own natural frequency
+    const resp = f => { const rr = f / g.fn, re = 1 - rr * rr, im = 2 * g.z * rr; return [1 / Math.hypot(re, im), Math.atan2(im, re)]; };
+    // independent turbulence: each branch sees its own eddies
     let ms = 0;
-    for (let i = 0; i < nF; i++) {
-      const f = fs[i], rr = f / g.fn;
-      const re = 1 - rr * rr, im = 2 * g.z * rr;
-      const Hm = 1 / Math.hypot(re, im), arg = Math.atan2(im, re);
-      const delay = 2 * Math.PI * f * (g.x * wx + g.y * wy) / U;
-      const eps = (r() * 2 - 1) * Math.PI * Math.min(1, f * Math.max(g.size, 0.5) * 1.5 / U);
-      const a = amp[i] * Hm;
-      const o = (gi * nF + i) * 6;
-      coef[o] = a; coef[o + 1] = phi[i] - delay + eps - arg;
-      coef[o + 2] = a * 0.55; coef[o + 3] = r() * Math.PI * 2;
+    for (let i = 0; i < nT; i++) {
+      const [Hm, arg] = resp(fs[i]);
+      const a = amp[i] * Hm, o = (gi * nF + i) * 6;
+      coef[o] = a; coef[o + 1] = r() * Math.PI * 2 - arg;
+      coef[o + 2] = a * 0.6; coef[o + 3] = r() * Math.PI * 2;
       coef[o + 4] = a * g.vert; coef[o + 5] = r() * Math.PI * 2;
       ms += a * a / 2;
     }
-    const s = ms > 0 ? g.target / Math.sqrt(ms) : 0;
-    for (let i = 0; i < nF; i++) { const o = (gi * nF + i) * 6; coef[o] *= s; coef[o + 2] *= s; coef[o + 4] *= s; }
+    const s = ms > 0 ? g.target * turbW / Math.sqrt(ms) : 0;
+    for (let i = 0; i < nT; i++) { const o = (gi * nF + i) * 6; coef[o] *= s; coef[o + 2] *= s; coef[o + 4] *= s; }
+    // coherent gust response, delayed by the gust front's travel time to this branch
+    let mg = 0;
+    const tau = (g.x * wx + g.y * wy) / U;
+    for (let k = 0; k < gc.length; k++) {
+      const [f, c, ph] = gc[k], [Hm, arg] = resp(f);
+      const a = c * Hm, o = (gi * nF + nT + k) * 6;
+      coef[o] = a; coef[o + 1] = ph - 2 * Math.PI * f * tau - arg;
+      coef[o + 2] = a * 0.25; coef[o + 3] = ph - 2 * Math.PI * f * tau - arg + 1.3;
+      coef[o + 4] = a * g.vert * 0.5; coef[o + 5] = ph - 2 * Math.PI * f * tau - arg + 0.7;
+      mg += a * a / 2;
+    }
+    const sg = mg > 0 ? g.target * 1.6 * P.gustAmt / Math.sqrt(mg) : 0;
+    for (let k = 0; k < gc.length; k++) { const o = (gi * nF + nT + k) * 6; coef[o] *= sg; coef[o + 2] *= sg; coef[o + 4] *= sg; }
   });
   // per-leaf flutter (flutter frequency depends only weakly on wind speed)
-  const nL = B.leaves.length / 13;
+  const nL = TR.nLeaves;
   const fl = new Float32Array(nL * 4);
   const famp = sp.flutAmp * P.flutter * smooth(0.2, 3, U) * (0.6 + 0.4 * clamp(U / 6, 0, 1.5));
   const q = f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f;
@@ -1858,22 +1971,29 @@ function windSetup(T, P, tl) {
     w[i * 3 + 1] = g1 >= 0 ? Math.pow(clamp(G.ns1[i] / Math.max(G.g1[g1].len, 0.1), 0, 1), 1.5) : 0;
     w[i * 3 + 2] = g2 >= 0 ? Math.pow(clamp(G.ns2[i] / Math.max(G.g2[g2].len, 0.1), 0, 1), 1.5) : 0;
   }
-  const twF = [1.7, 2.6, 3.4].map(f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f);
-  const twA = 0.004 * Math.pow(U / 2, 1.5) * P.swayTwig;
-  TR.wind = {twF, twA, fs, coef, groups, w, wx, wy, nTree:B.treeInfo.length, nG1:G.g1.length, famp, fnTree:groups[0].fn, rmsTop:groups[0].target};
+  const twF = [1.2, 1.9, 2.7].map(f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f);
+  const twA = 0.003 * Math.pow(U / 2, 1.5) * P.swayTwig;
+  TR.wind = {env:Float32Array.from(env, v => v / emean), T:TL0, nG, nT, twF, twA, fs, coef, groups, w, wx, wy, nTree:B.treeInfo.length, nG1:G.g1.length, famp, fnTree:groups[0].fn, rmsTop:groups[0].target};
+}
+function gustAt(t) {
+  const W = TR.wind; if (!W || !W.nG) return 1;
+  const M = W.env.length, x = ((((t % W.T) + W.T) % W.T) / W.T) * M, i = Math.floor(x) % M, f = x - Math.floor(x);
+  return W.env[i] * (1 - f) + W.env[(i + 1) % M] * f;
 }
 function windEval(T, t) {
   const {B, G} = T, W = TR.wind;
   const nF = W.fs.length, ng = W.groups.length;
   const gd = new Float32Array(ng * 3);
   const om = W.fs.map(f => 2 * Math.PI * f * t);
+  const gf = Math.pow(gustAt(t), 1.5), nTb = W.nT ?? nF;
   for (let g = 0; g < ng; g++) {
     let a = 0, c = 0, v = 0;
     for (let i = 0; i < nF; i++) {
+      const sc = i < nTb ? gf : 1;
       const o = (g * nF + i) * 6;
-      a += W.coef[o] * Math.cos(om[i] + W.coef[o + 1]);
-      c += W.coef[o + 2] * Math.cos(om[i] + W.coef[o + 3]);
-      v += W.coef[o + 4] * Math.cos(om[i] + W.coef[o + 5]);
+      a += sc * W.coef[o] * Math.cos(om[i] + W.coef[o + 1]);
+      c += sc * W.coef[o + 2] * Math.cos(om[i] + W.coef[o + 3]);
+      v += sc * W.coef[o + 4] * Math.cos(om[i] + W.coef[o + 5]);
     }
     gd[g * 3] = a * W.wx - c * W.wy; gd[g * 3 + 1] = a * W.wy + c * W.wx; gd[g * 3 + 2] = v;
   }
@@ -1907,14 +2027,14 @@ function sunTaps(P, n) {
   return tapsCache;
 }
 function treesFor(P) {
-  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, Math.round(P.sunElev * 2) / 2].join('|');
+  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, Math.round(P.sunElev * 2) / 2].join('|');
   if (sig !== TR.sig) {
     TR.data = genTrees(P);
     uploadTrees(TR.data, P);
     TR.sig = sig; TR.windSig = '';
   }
   const tl = S.tl.trees;
-  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, tl.loop, tl.len].join('|');
+  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.gustRate, P.indep, tl.loop, tl.len].join('|');
   if (ws !== TR.windSig) { windSetup(TR.data, P, tl); TR.windSig = ws; }
   return TR.data;
 }
@@ -1932,7 +2052,7 @@ function renderTrees(P, res, t, tl) {
   gl.clearBufferfv(gl.COLOR, 0, [1, 1, 1, 1]); gl.clearBufferfv(gl.COLOR, 1, [1, 1, 1, 1]);
   gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
-  const common = p => { f1(p, 'uT', tt); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds); };
+  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 1 - 0.8 * (P.indep ?? 0.5)); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds); };
   if (P.woody) {
     const p = PR.seg; gl.useProgram(p.p); gl.bindVertexArray(TR.segVAO);
     common(p); f1(p, 'uPx', 1 / res); f1(p, 'uTile', P.tileSize);
@@ -1966,10 +2086,12 @@ function renderTrees(P, res, t, tl) {
   const zBot = T.patch ? Math.max(0.3, P.canopyTop - P.canopyDepth) : zTop * 0.8;
   const dMean = Math.max(0.5 * (zTop + zBot) - zr, 0.1) / sinE;
   const dLo = Math.max(zBot - zr, 0.05) / sinE, dHi = Math.max(zTop - zr, 0.05) / sinE;
-  info = (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
+  const fr = TR.frame ? `Single element filling ${(TR.frame.extent * 100).toFixed(0)}% of the frame` + (TR.frame.extent > 0.95 ? ' (it touches the edges: raise Tile size or lower Element size)' : '') + '\n' : '';
+  info = fr + (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
          `Light space: the tile is ${P.tileSize.toFixed(1)} m square across the beam. Project it along the sun and the renderer stretches it ${(1 / sinE).toFixed(2)}× on flat ground\n` +
          `Foliage ${zBot.toFixed(1)}–${zTop.toFixed(1)} m above the lit surface: shadow edges soften by ${(2 * dLo * Math.tan(th) * 100).toFixed(1)}–${(2 * dHi * Math.tan(th) * 100).toFixed(1)} cm (real sun Ø ${P.sunDisk.toFixed(2)}°); gaps throw round sun spots that size\n` +
-         `Branch sway ${W.fnTree.toFixed(2)} Hz, ±${(W.rmsTop * 100 * 1.4).toFixed(1)} cm · twigs ±${(W.twA * 1000 * 1.4).toFixed(1)} mm at 2–3 Hz · leaf flutter ≈ ${T.sp.flutHz.toFixed(1)} Hz` +
+         `Branch sway ${W.fnTree.toFixed(2)} Hz, ±${(W.rmsTop * 100 * 1.4).toFixed(1)} cm · twigs ±${(W.twA * 1000 * 1.4).toFixed(1)} mm at 1–3 Hz · leaf flutter ≈ ${T.sp.flutHz.toFixed(1)} Hz` +
+         `\n${W.nG ? W.nG + ' gust' + (W.nG > 1 ? 's' : '') + ' roll across the canopy every ' + fmtLen(tl.len) : 'No gusts: steady breeze'} · each branch has its own natural frequency and eddies` +
          (tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
 }
@@ -2010,10 +2132,286 @@ function render() {
     f1(p, 'uContrast', Pp.contrast); f1(p, 'uFloor', Pp.floor); i1(p, 'uInv', Pp.invert ? 1 : 0);
   });
   mips(fin);
+  goboInfo = info;
+}
+let goboInfo = '';
+function display() {
+  const fin = targets.final;
+  if (!fin) return;
+  if (S.view === 'scene') { info = goboInfo + '\n' + drawScene(fin).join('\n'); return; }
+  info = goboInfo;
   pass(PR.disp, null, p => {
     tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0);
   });
 }
+
+/* =====================================================================
+   SCENE PREVIEW
+   A small ray-traced set (grey floor, back wall, optional test sphere)
+   lit by one light that carries the current gobo, the way a texture is
+   assigned to a light's colour in a renderer. The gobo used is the exact
+   output-levels image shown in the Gobo view.
+   ===================================================================== */
+const FS_SCENE = COMMON + `
+uniform sampler2D uGobo;
+uniform vec3 uCamPos, uCamF, uCamR, uCamU; uniform float uTanF;
+uniform int uType, uShape, uSingle, uSphere, uGizmo;
+uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
+uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
+uniform vec4 uSph;
+uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
+const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0;
+
+vec3 gobo(vec2 uv, float lod){
+  if (uSingle == 1 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(1.0);
+  if (uBlur <= 0.0) return textureLod(uGobo, uv, lod).rgb;
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 12; i++){
+    float rho = sqrt((float(i) + 0.5) / 12.0), th = float(i) * 2.39996323;
+    s += textureLod(uGobo, uv + uBlur * rho * vec2(cos(th), sin(th)), max(lod, uBlurLod)).rgb;
+  }
+  return s / 12.0;
+}
+// distance along the shadow ray to the sphere's silhouette, softened by the source size
+float sphShadow(vec3 p, vec3 l, float dl, float srcAng){
+  if (uSphere == 0) return 1.0;
+  vec3 oc = uSph.xyz - p; float tca = dot(oc, l);
+  if (tca <= 0.0 || tca > dl) return 1.0;
+  float d = sqrt(max(dot(oc, oc) - tca * tca, 0.0));
+  float pen = max(tca * srcAng, 0.002);
+  return smoothstep(uSph.w - pen, uSph.w + pen, d);
+}
+// light arriving at p (before the cosine): rgb irradiance on a surface facing the light
+vec3 lightAt(vec3 p, out vec3 l, float lod, float pixW){
+  if (uType == 1){
+    l = -uLF;
+    vec2 q = vec2(dot(p - uAim, uLR), dot(p - uAim, uLU)) / uSunSize;
+    lod = max(lod, log2(max(pixW / uSunSize * uGoboRes, 1e-6)));
+    return uI * uLCol * gobo(q + 0.5, lod) * sphShadow(p, l, 1e9, 0.00465);
+  }
+  vec3 v = p - uLPos; float d2 = max(dot(v, v), 0.04), d = sqrt(d2);
+  l = -v / d;
+  float z = dot(v, uLF);
+  if (z <= 1e-4) return vec3(0.0);
+  vec2 q = vec2(dot(v, uLR), dot(v, uLU)) / (z * uTanC);
+  float m;
+  float s = max(uSoft, 1e-3);
+  if (uShape == 0) m = 1.0 - smoothstep(1.0 - s, 1.0, length(q));
+  else m = (1.0 - smoothstep(1.0 - s, 1.0, abs(q.x))) * (1.0 - smoothstep(1.0 - s, 1.0, abs(q.y)));
+  if (m <= 0.0) return vec3(0.0);
+  vec2 uv = 0.5 + 0.5 * q * uRep;
+  lod = max(lod, log2(max(pixW * uRep / (2.0 * z * uTanC) * uGoboRes, 1e-6)));
+  float dl = d;
+  return uI * uLCol * m * gobo(uv, lod) / d2 * sphShadow(p, l, dl, uSrcR / max(d, 0.1));
+}
+float hitScene(vec3 ro, vec3 rd, out vec3 n, out int id){
+  float t = 1e9; id = -1;
+  if (rd.y < 0.0){ float tt = -ro.y / rd.y; vec3 p = ro + tt * rd; if (p.x > FX.x && p.x < FX.y && p.z > 0.0 && p.z < FZ){ t = tt; n = vec3(0, 1, 0); id = 0; } }
+  if (rd.z < 0.0){ float tt = -ro.z / rd.z; vec3 p = ro + tt * rd; if (tt < t && p.x > FX.x && p.x < FX.y && p.y > 0.0 && p.y < WY){ t = tt; n = vec3(0, 0, 1); id = 1; } }
+  if (uSphere == 1){
+    vec3 oc = ro - uSph.xyz; float b = dot(oc, rd), c = dot(oc, oc) - uSph.w * uSph.w, h = b * b - c;
+    if (h > 0.0){ float tt = -b - sqrt(h); if (tt > 0.0 && tt < t){ t = tt; n = normalize(ro + tt * rd - uSph.xyz); id = 2; } }
+  }
+  return t;
+}
+float ao(vec3 p, vec3 n, int id){
+  float a = 1.0;
+  if (id == 0) a *= 1.0 - 0.45 * exp(-p.z / 0.35);
+  if (id == 1) a *= 1.0 - 0.45 * exp(-p.y / 0.35);
+  if (id == 2) a *= 0.55 + 0.45 * (0.5 + 0.5 * n.y);
+  if (uSphere == 1 && id != 2){
+    vec3 v = uSph.xyz - p; float d = length(v);
+    a *= 1.0 - clamp(uSph.w * uSph.w / (d * d) * max(dot(n, v / d), 0.0), 0.0, 1.0);
+  }
+  return a;
+}
+vec3 aces(vec3 x){ return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c){ return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+float h12(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main(){
+  vec2 s = (gl_FragCoord.xy * 2.0 - uRes) / uRes.y;
+  vec3 rd = normalize(uCamF + uTanF * (s.x * uCamR + s.y * uCamU));
+  vec3 ro = uCamPos, n; int id;
+  float t = hitScene(ro, rd, n, id);
+  vec3 col;
+  if (id < 0) col = vec3(0.012, 0.013, 0.015) * (1.0 + 0.6 * rd.y);
+  else {
+    vec3 p = ro + t * rd, l;
+    // texture footprint for filtering the projected gobo
+    float pixW = t * 2.0 * uTanF / uRes.y / max(abs(dot(n, rd)), 0.15);
+    vec3 e = lightAt(p, l, 0.0, pixW);
+    float ndl = max(dot(n, l), 0.0);
+    col = uAlb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
+  }
+  float tEnd = min(t, 30.0);
+  // light gizmo
+  if (uGizmo == 1 && uType == 0){
+    vec3 oc = ro - uLPos; float b = dot(oc, rd), c = dot(oc, oc) - 0.0064, h = b * b - c;
+    if (h > 0.0 && -b - sqrt(h) < t && -b - sqrt(h) > 0.0){
+      float k = max(dot(normalize(ro + (-b - sqrt(h)) * rd - uLPos), uLF), 0.0);
+      col = mix(vec3(0.08), uLCol * 6.0, smoothstep(0.3, 0.8, k)); tEnd = -b - sqrt(h);
+    }
+  }
+  // atmospheric haze: single scattering through the beam
+  if (uHaze > 0.0){
+    float sig = uHaze * 0.12, Tr = 1.0; vec3 ins = vec3(0.0);
+    const int NS = 48;
+    float dt = tEnd / float(NS), j = h12(gl_FragCoord.xy + fract(uT) * 91.0);
+    for (int i = 0; i < NS; i++){
+      vec3 p = ro + rd * (float(i) + j) * dt, l;
+      vec3 e = lightAt(p, l, uBlurLod + 1.0, 0.0);
+      float g = 0.45, mu = dot(rd, -l);
+      float ph = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
+      ins += Tr * sig * dt * e * ph * 4.0 + Tr * sig * dt * uAmb * 0.25;
+      Tr *= exp(-sig * dt);
+    }
+    col = col * Tr + ins;
+  }
+  col *= exp2(uExpo);
+  fragColor = vec4(srgb(aces(col)) + (h12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+PR.scene = program(VS_FULL, FS_SCENE, 'scene preview');
+
+const SCENE_DEFAULTS = {
+  ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
+  dist:5, az:25, el:40, roll:0, ev:0, color:'#ffffff',
+  aimX:0, aimY:0.8, aimZ:0.8,
+  sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0,
+};
+const CAM_DEFAULT = {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6};
+if (!S.scene) S.scene = {...SCENE_DEFAULTS};
+for (const k in SCENE_DEFAULTS) if (S.scene[k] === undefined) S.scene[k] = SCENE_DEFAULTS[k];
+if (!S.cam) S.cam = {...CAM_DEFAULT};
+const SC = () => S.scene;
+const SCENE_GROUPS = () => {
+  const sun = SC().ltype === 1;
+  const light = [
+    {k:'ltype', l:'Light', opts:['Spotlight', 'Sun (distant light)'], h:'A spotlight projects the gobo through its cone and falls off with distance. The sun is a parallel light: the gobo is laid across the set at its real-world size.'},
+  ];
+  if (!sun) light.push(
+    {k:'cone', l:'Projection angle', min:5, max:160, step:0.5, u:'°', h:'Full angle the gobo is projected across (the cone angle). The square image fills this angle edge to edge.'},
+    {k:'shape', l:'Beam shape', opts:['Round cone', 'Square (whole image)'], h:'Round: the cone trims the gobo to a circle inscribed in the image, as most spotlights do. Square: the full image is projected.'},
+    {k:'soft', l:'Edge softness', min:0, max:1, step:0.01, h:'Fraction of the beam radius over which the cone edge fades out.'},
+    {k:'rep', l:'Gobo tiling', min:1, max:12, step:0.05, fmt:v => v.toFixed(2) + '×', h:'How many copies of the tile fit across the projection. Use "Match real scale" to make one tile its real-world size at the aim point.'},
+  ); else light.push(
+    {k:'sunScale', l:'Pattern scale', min:0.25, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '× real size', h:'1× lays one tile over its true size in metres (as measured across the beam).'},
+  );
+  light.push(
+    {k:'blur', l:'Gobo blur', min:0, max:5, step:0.05, u:'%', h:'Defocus of the gobo image, as a percentage of the image width. Real projectors throw a slightly soft image; tree and water gobos already contain the sun\'s own blur.'},
+    {k:'roll', l:'Gobo rotation', min:-180, max:180, step:1, u:'°', h:'Rotates the image around the light\'s axis.'},
+    {k:'ev', l:'Intensity', min:-6, max:6, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV', h:sun ? 'Irradiance in stops.' : 'Stops. At 0 EV the light gives an irradiance of 1 at 5 m; it falls off with the inverse square of distance.'},
+    {k:'color', l:'Light colour', type:'color', h:'The gobo multiplies the light\'s colour, as when a texture is assigned to the light colour.'},
+  );
+  const place = [];
+  if (!sun) place.push({k:'dist', l:'Distance to aim point', min:0.5, max:40, step:0.05, log:true, u:'m'});
+  place.push(
+    {k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:-85, max:85, step:0.5, u:'°', h:'Around the aim point; 0° is straight out from the wall.'},
+    {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:2, max:90, step:0.5, u:'°', h:'Height of the light above the aim point, as an angle.'},
+    {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right along the wall.'},
+    {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor.'},
+    {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:0, max:8, step:0.05, u:'m', h:'Distance out from the wall.'},
+  );
+  const set = [
+    {k:'sphere', l:'Test sphere', type:'chk'},
+    {k:'gizmo', l:'Show light', type:'chk'},
+    {k:'haze', l:'Atmospheric haze', min:0, max:1, step:0.01, h:'Single scattering in the air, so the projected beam becomes visible.'},
+    {k:'amb', l:'Fill light', min:0, max:1, step:0.01, h:'Soft ambient fill so unlit areas are not black.'},
+    {k:'alb', l:'Surface grey', min:0.05, max:0.9, step:0.01, h:'Albedo of floor, wall and sphere.'},
+    {k:'expo', l:'Camera exposure', min:-4, max:4, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV'},
+  ];
+  return [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:'Set & camera', params:set}];
+};
+const hex3 = h => { const n = parseInt((h || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)); };
+const v3 = {
+  sub:(a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], add:(a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  mul:(a, s) => [a[0] * s, a[1] * s, a[2] * s], dot:(a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross:(a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  norm:a => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; },
+};
+function basis(f, roll = 0) {
+  const up = Math.abs(f[1]) > 0.995 ? [0, 0, -1] : [0, 1, 0];
+  let r = v3.norm(v3.cross(f, up)), u = v3.cross(r, f);
+  if (roll) { const c = Math.cos(roll), s = Math.sin(roll); [r, u] = [v3.add(v3.mul(r, c), v3.mul(u, s)), v3.sub(v3.mul(u, c), v3.mul(r, s))]; }
+  return {r, u};
+}
+const sceneTile = () => S.p[S.mode].tileSize || 3;
+function sceneLight() {
+  const c = SC(), aim = [c.aimX, c.aimY, c.aimZ];
+  const az = c.az * DEG, el = c.el * DEG;
+  const dir = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];   // aim → light
+  const pos = v3.add(aim, v3.mul(dir, c.dist));
+  const f = v3.mul(dir, -1);
+  return {aim, pos, f, ...basis(f, c.roll * DEG)};
+}
+function drawScene(fin) {
+  const c = SC(), L = sceneLight(), cam = S.cam;
+  const ca = cam.az * DEG, ce = cam.el * DEG;
+  const tgt0 = [cam.tx, cam.ty, cam.tz];
+  const cpos = v3.add(tgt0, v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], cam.dist));
+  const cf = v3.norm(v3.sub(tgt0, cpos)), cb = basis(cf);
+  const tanC = Math.tan(c.cone * 0.5 * DEG);
+  const blur = c.blur / 100 * (c.ltype === 1 ? 1 : c.rep);
+  const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
+  const single = MODES[S.mode].kind === 'trees' && (S.p[S.mode].framing | 0) === 1;
+  pass(PR.scene, null, p => {
+    tex(p, 'uGobo', fin.tex, 0);
+    f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
+    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single && c.ltype === 1 ? 1 : 0);
+    i1(p, 'uSphere', c.sphere ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+    f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
+    f3(p, 'uLCol', ...hex3(c.color));
+    f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', c.rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
+    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sceneTile() * c.sunScale); f1(p, 'uSrcR', 0.04);
+    gl.uniform4f(p.u('uSph'), -1.3, 0.5, 1.7, 0.5);
+    f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
+  });
+  const tile = sceneTile();
+  if (c.ltype === 1) {
+    return [`Scene: sun at ${c.el.toFixed(1)}° elevation · one tile spans ${(tile * c.sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`];
+  }
+  const width = 2 * c.dist * tanC;
+  return [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${c.cone.toFixed(1)}° projection is ${width.toFixed(2)} m wide there`,
+          `One tile spans ${(width / c.rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(width / c.rep - tile) / tile < 0.03 ? ', matched' : ''})`];
+}
+function matchScale() {
+  const c = SC();
+  if (c.ltype === 1) c.sunScale = 1;
+  else c.rep = clamp(+(2 * c.dist * Math.tan(c.cone * 0.5 * DEG) / sceneTile()).toFixed(2), 1, 12);
+}
+
+// camera: drag to orbit, right/shift-drag to pan, wheel to dolly, double-click to reset
+(() => {
+  let drag = null;
+  cv.addEventListener('contextmenu', e => { if (S.view === 'scene') e.preventDefault(); });
+  cv.addEventListener('pointerdown', e => {
+    if (S.view !== 'scene') return;
+    drag = {x:e.clientX, y:e.clientY, pan:e.button === 2 || e.shiftKey, cam:{...S.cam}};
+    cv.setPointerCapture(e.pointerId);
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y, k = 1 / cv.clientHeight;
+    if (drag.pan) {
+      const ca = drag.cam.az * DEG, ce = drag.cam.el * DEG;
+      const f = v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], -1), b = basis(f);
+      const s = 2 * Math.tan(20 * DEG) * drag.cam.dist * k;
+      const m = v3.add(v3.mul(b.r, -dx * s), v3.mul(b.u, dy * s));
+      S.cam.tx = clamp(drag.cam.tx + m[0], -8, 8); S.cam.ty = clamp(drag.cam.ty + m[1], 0, 6); S.cam.tz = clamp(drag.cam.tz + m[2], 0, 10);
+    } else {
+      S.cam.az = clamp(drag.cam.az - dx * k * 180, -85, 85);
+      S.cam.el = clamp(drag.cam.el + dy * k * 120, 1, 85);
+    }
+    viewDirty = true;
+  });
+  const end = () => { if (drag) { drag = null; save(); } };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('wheel', e => {
+    if (S.view !== 'scene') return;
+    e.preventDefault();
+    S.cam.dist = clamp(S.cam.dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
+  }, {passive:false});
+  cv.addEventListener('dblclick', () => { if (S.view === 'scene') { S.cam = {...CAM_DEFAULT}; viewDirty = true; save(); } });
+})();
 
 /* =====================================================================
    UI
@@ -2039,6 +2437,11 @@ function control(def, store, idPrefix, dflt, onChange) {
     sel.value = store[def.k];
     sel.onchange = () => { store[def.k] = +sel.value; onChange(def.k); };
     row.append(sel);
+  } else if (def.type === 'color') {
+    const ci = document.createElement('input'); ci.type = 'color'; ci.id = id; ci.value = store[def.k] || '#ffffff'; ci.className = 'swatch';
+    ci.oninput = () => { store[def.k] = ci.value; onChange(def.k); };
+    lab.ondblclick = () => { if (dflt && dflt[def.k] !== undefined) { ci.value = dflt[def.k]; ci.oninput(); } };
+    row.append(ci);
   } else if (def.type === 'chk') {
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = !!store[def.k];
     cb.onchange = () => { store[def.k] = cb.checked; onChange(def.k); };
@@ -2091,6 +2494,24 @@ function buildPanel() {
     defs.forEach(def => c.append(control(def, st, S.mode + (st === store ? '' : '-post'), dflt, changed)));
     d.append(s, c); groups.append(d);
   };
+  if (S.view === 'scene') {
+    const onScene = k => { if (k === 'ltype') buildPanel(); viewDirty = true; save(); };
+    SCENE_GROUPS().forEach((g, gi) => {
+      const d = document.createElement('details'); d.className = 'grp scene'; d.open = gi < 2;
+      const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label"></span>'; sm.firstChild.textContent = g.name;
+      const c = document.createElement('div'); c.className = 'ctrls';
+      g.params.forEach(def => c.append(control(def, S.scene, 'scene', SCENE_DEFAULTS, onScene)));
+      if (gi === 0) {
+        const b = document.createElement('button'); b.className = 'pchip'; b.textContent = 'Match real scale';
+        b.title = 'Size the gobo so one tile covers its true size in metres at the aim point.';
+        b.onclick = () => { matchScale(); buildPanel(); viewDirty = true; save(); };
+        const rb = document.createElement('button'); rb.className = 'pchip alt'; rb.textContent = 'Reset light';
+        rb.onclick = () => { S.scene = {...SCENE_DEFAULTS}; buildPanel(); viewDirty = true; save(); };
+        const row = document.createElement('div'); row.className = 'chips'; row.append(b, rb); c.append(row);
+      }
+      d.append(sm, c); groups.append(d);
+    });
+  }
   m.groups.forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
   mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
 }
@@ -2115,9 +2536,20 @@ const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHe
 vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
 vRes.onchange = () => { S.res = +vRes.value; changed(); };
 vQual.onchange = () => { S.quality = vQual.value; changed(); };
-vTiles.onchange = () => { S.tiles = +vTiles.value; changed(); };
-vHeat.onchange = () => { S.heat = vHeat.checked; dirty = true; };
-vSeams.onchange = () => { S.seams = vSeams.checked; dirty = true; };
+vTiles.onchange = () => { S.tiles = +vTiles.value; viewDirty = true; save(); };
+vHeat.onchange = () => { S.heat = vHeat.checked; viewDirty = true; };
+vSeams.onchange = () => { S.seams = vSeams.checked; viewDirty = true; };
+function setView(v) {
+  S.view = v;
+  for (const k of ['gobo', 'scene']) $('vw-' + k).setAttribute('aria-selected', k === v);
+  document.body.classList.toggle('in-scene', v === 'scene');
+  cv.setAttribute('aria-label', v === 'scene' ? 'Scene preview: the gobo projected through a light onto a grey set' : 'Gobo preview');
+  buildPanel(); fit(); viewDirty = true; save(); updateHud(0);
+}
+$('vw-gobo').onclick = () => setView('gobo');
+$('vw-scene').onclick = () => setView('scene');
+document.body.classList.toggle('in-scene', S.view === 'scene');
+for (const k of ['gobo', 'scene']) $('vw-' + k).setAttribute('aria-selected', k === S.view);
 
 // transport
 const playBtn = $('play'), scrub = $('scrub'), tc = $('tc');
@@ -2154,11 +2586,21 @@ function updateTransport() {
 const plate = $('plate');
 function fit() {
   const r = plate.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  if (S.view === 'scene') {
+    const w = Math.max(120, Math.floor(r.width - 2)), h = Math.max(120, Math.floor(r.height - 2));
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    const k = Math.min(dpr, 1600 / Math.max(w, h));
+    const pw = Math.round(w * k), ph = Math.round(h * k);
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    viewDirty = true;
+    return;
+  }
   const css = Math.max(120, Math.floor(Math.min(r.width, r.height) - 24));
   cv.style.width = css + 'px'; cv.style.height = css + 'px';
-  const px = Math.min(2048, Math.round(css * (window.devicePixelRatio || 1)));
-  if (cv.width !== px) { cv.width = px; cv.height = px; }
-  dirty = true;
+  const px = Math.min(2048, Math.round(css * dpr));
+  if (cv.width !== px || cv.height !== px) { cv.width = px; cv.height = px; }
+  viewDirty = true;
 }
 new ResizeObserver(fit).observe(plate);
 
@@ -2168,6 +2610,13 @@ function updateHud(ms) {
   const m = MODES[S.mode], tl = TL();
   hud.innerHTML = '';
   const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
+  if (S.view === 'scene') {
+    const c = S.scene;
+    add('Scene preview', 'ok');
+    add(c.ltype === 1 ? `Sun ${c.el.toFixed(0)}°` : `Spot ${c.cone.toFixed(0)}° · ${c.dist.toFixed(1)} m`);
+    add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
+    return;
+  }
   add(`${S.res}²`);
   add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
   add(m.tileable ? 'Seamless tile' : 'Tiles sideways', 'ok');
@@ -2179,26 +2628,27 @@ function updateHud(ms) {
 /* =====================================================================
    LOOP
    ===================================================================== */
-let dirty = true, last = performance.now(), msAvg = 0, hudTimer = 0;
+let dirty = true, viewDirty = false, last = performance.now(), msAvg = 0, hudTimer = 0;
 function tick(now) {
   const dt = clamp((now - last) / 1000, 0, 0.1); last = now;
   const len = TL().len;
   if (S.playing) { S.t = (S.t + dt) % len; dirty = true; }
-  if (dirty) {
-    dirty = false;
+  if (dirty || viewDirty) {
+    const full = dirty;
+    dirty = false; viewDirty = false;
     const t0 = performance.now();
-    try { render(); } catch (e) { console.error(e); showErr(String(e && e.stack || e)); }
-    updateTransport();
+    try { if (full) render(); display(); } catch (e) { console.error(e); showErr(String(e && e.stack || e)); }
+    if (full) updateTransport();
     $('info').textContent = info;
     const cost = performance.now() - t0;
-    msAvg = msAvg ? msAvg * 0.85 + cost * 0.15 : cost;
+    if (full) msAvg = msAvg ? msAvg * 0.85 + cost * 0.15 : cost;
   }
   if (now - hudTimer > 500) { hudTimer = now; updateHud(S.playing ? msAvg : 0); }
   requestAnimationFrame(tick);
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {S, render: () => { render(); $('info').textContent = info; }, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
 requestAnimationFrame(tick);
 })();
 
