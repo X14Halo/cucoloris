@@ -615,6 +615,8 @@ const POST = [
   {k:'invert', l:'Invert', type:'chk'},
 ];
 
+// nothing loops by default: every simulation runs forward with exact physics
+for (const m of Object.keys(MODES)) MODES[m].tl = {...MODES[m].tl, loop:false, len:Math.max(MODES[m].tl.len, 60)};
 const DEFAULTS = {};
 for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v};
 
@@ -637,8 +639,8 @@ try {
       if (!(saved.ver >= 4) && m === 'trees') S.p[m].gustAmt = 0;
       if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
       if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
-      // v6: trees run their wind simulation live instead of looping
-      if (!(saved.ver >= 6) && m === 'trees') S.tl[m] = {...MODES.trees.tl};
+      // v7: nothing loops by default
+      if (!(saved.ver >= 7)) S.tl[m] = {...S.tl[m], loop:false, len:Math.max(S.tl[m].len, 60)};
     }
     S.savedVer = saved.ver;
     for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams']) if (saved[k] !== undefined) S[k] = saved[k];
@@ -650,7 +652,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:6})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:7})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
