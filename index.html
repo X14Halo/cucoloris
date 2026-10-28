@@ -127,6 +127,7 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .viewseg .mode{padding:5px 12px;font-size:12px}
 .camhint{position:absolute;left:10px;bottom:8px;margin:0;font-size:11px;color:var(--mute);background:rgba(10,12,15,.7);padding:3px 8px;border-radius:4px;pointer-events:none;display:none}
 body.in-scene .camhint{display:block}
+.brushring{position:absolute;border:1.5px solid rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.6);border-radius:50%;pointer-events:none}
 body.in-scene .gobo-only{display:none}
 body.in-scene #cv{cursor:grab;touch-action:none;box-shadow:none}
 body.in-scene #cv:active{cursor:grabbing}
@@ -161,6 +162,7 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
       <canvas id="cv" width="512" height="512" aria-label="Gobo preview"></canvas>
       <div class="hud" id="hud"></div>
       <div class="modes viewseg" role="tablist" aria-label="Preview"><button class="mode" role="tab" id="vw-gobo">Gobo</button><button class="mode" role="tab" id="vw-scene">Scene</button></div>
+      <div class="brushring" id="brush" hidden></div>
       <p class="camhint">Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets</p>
       <div class="err" id="err" hidden></div>
     </div>
@@ -281,7 +283,7 @@ const MODES = {
       {name:'Shallows, 25 cm', v:{tileSize:1.5, wavelength:0.13, slope:0.07, tail:0.2, peak:1.3, directional:0.35, opposing:0.1, ripple:0, depth:0.25, sunElev:55, waterType:4}},
       {name:'Indoor pool, lamps', v:{tileSize:3, wavelength:0.35, slope:0.04, tail:0.2, opposing:0.7, depth:1.6, sunElev:80, sunDisk:3}},
       {name:'Tropical shallows', v:{tileSize:6, wavelength:0.8, slope:0.065, tail:0.35, peak:2.5, directional:0.6, opposing:0.1, ripple:0.004, depth:2.2, waterType:1}},
-      {name:'Reef at 6 m', v:{tileSize:12, wavelength:2.4, slope:0.08, tail:0.45, peak:2.5, directional:0.5, opposing:0, ripple:0.003, depth:6, waterType:2}},
+      {name:'Reef at 6 m', v:{tileSize:12, wavelength:2.4, slope:0.08, tail:0.45, peak:2.5, directional:0.5, opposing:0, ripple:0.003, depth:6, waterType:1, distRate:0}},
     ],
     post:{...LEVELS},
   },
@@ -354,7 +356,7 @@ const MODES = {
       {name:'Wind', params:[
         {k:'windSpeed', l:'Wind speed', min:0, max:15, step:0.1, u:'m/s', h:'At canopy height. 1–3 light air to light breeze, 4–6 gentle to moderate breeze, 8+ fresh breeze.'},
         {k:'windDir', l:'Wind direction (to the sun)', min:0, max:360, step:1, u:'°'},
-        {k:'gustAmt', l:'Gust strength', min:0, max:3, step:0.01, u:'×', h:'How hard each gust pushes. Gusts lean the canopy downwind and it rebounds as they pass.'},
+        {k:'gustAmt', l:'Gusts', min:0, max:3, step:0.01, u:'×', h:'Occasional stronger gusts on top of the steady breeze. 0 is a steady light wind; gusts lean the canopy downwind and it rebounds as they pass.'},
         {k:'gustRate', l:'Gusts per minute', min:0, max:15, step:0.5, h:'Measured in a breeze: about 5 per minute, irregularly spaced.'},
         {k:'indep', l:'Branch independence', min:0, max:1, step:0.01, h:'How much each branch follows its own local eddies rather than the shared gusts.'},
         {k:'turb', l:'Turbulence', min:0.05, max:0.6, step:0.01, h:'Turbulence intensity (σu / U). Inside and above canopies it is typically 0.3–0.5.'},
@@ -364,7 +366,7 @@ const MODES = {
       ]},
     ],
     presets:[
-      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, framing:0, elemSize:0.35, poolSize:0.9, poolSoft:0.55, gustAmt:1, gustRate:5, indep:0.5, swayBranch:1, swayTwig:1, flutter:1}},
+      {name:'Oak canopy overhead', v:{seed:3, species:0, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, leafDensity:1, leafScale:1, woody:true, trunks:false, sunElev:60, sunDisk:0.53, recvHeight:0, windSpeed:2, windDir:20, turb:0.35, framing:0, elemSize:0.35, poolSize:0.9, poolSoft:0.55, gustAmt:0, gustRate:4, indep:0.5, swayBranch:1, swayTwig:1, flutter:1}},
       {name:'Round sun spots, tall canopy', v:{species:0, tileSize:3, cover:0.9, canopyTop:16, canopyDepth:5, leafDensity:0.85, sunElev:65}},
       {name:'Maple, park shade', v:{species:1, tileSize:3, cover:0.9, canopyTop:10, canopyDepth:4, sunElev:55}},
       {name:'Birch, light breeze', v:{species:2, tileSize:3, cover:1.0, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:50}},
@@ -381,6 +383,30 @@ const MODES = {
   },
 };
 
+// Controls in order of importance: what sets up the shot first, then the look, then the fine detail.
+for (const m of ['under', 'over', 'hull']) {
+  const all = {};
+  MODES[m].groups.forEach(g => g.params.forEach(d => { all[d.k] = d; }));
+  const pick = ks => ks.filter(k => all[k]).map(k => all[k]);
+  MODES[m].groups = [
+    {name:'Shot setup', params:pick(['waterType', 'depth', 'tileSize', 'sunElev', 'sunAz', 'lean'])},
+    {name:'Waves', params:pick(['wavelength', 'slope', 'tail', 'chop', 'peak', 'directional', 'windDir', 'opposing', 'ripple', 'ripPatch'])},
+    IMPERF,
+    {name:'Optics', params:pick(['scatterK', 'sunDisk', 'dispersion', 'bakeColor'])},
+    MOTION,
+  ];
+}
+{
+  const TG = MODES.trees.groups, all = {};
+  TG.forEach(g => g.params.forEach(d => { all[d.k] = d; }));
+  MODES.trees.onParam = k => k === 'framing';
+  Object.defineProperty(MODES.trees, 'groups', {get() {
+    const fr = (S.p.trees.framing | 0);
+    const top = [all.framing, ...(fr === 1 ? [all.elemSize] : fr === 2 ? [all.poolSize, all.poolSoft] : []),
+                 all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.woody, all.trunks];
+    return [{name:'Trees', params:top}, ...TG.slice(1)];
+  }});
+}
 /* ---------- Windows: sunlight through a real window ---------- */
 const WIN_STYLES = ['Picture window', 'Double-hung sash', 'Prairie (border lites)', 'Casement pair', 'French doors', 'Industrial steel', 'Leaded diamonds', 'Arched sunburst', 'Round oculus', 'Sliding'];
 // per style: size, frame, glazing bar and pane layout (upper / lower sash for double-hung)
@@ -493,24 +519,40 @@ MODES.windows = {
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
 };
 
-/* ---------- Shapes: abstract light-breakup patterns for adding interest to lights ---------- */
-const SHAPES = ['Light shafts (fan)', 'Curtain shafts', 'Parallel beams', 'Ragged streaks', 'Breakup splotches', 'Cucoloris board', 'Water reflection shimmer', 'Soft spots', 'Art deco fan'];
-const SHAPE_SEAMLESS = [false, false, false, true, true, true, true, true, false];
+/* ---------- Shapes: breakup patterns for adding interest to lights ---------- */
+// index = shader id; the dropdown lists the organic family first
+const SHAPES = ['Light shafts (fan)', 'Curtain shafts', 'Parallel beams', 'Ragged streaks', 'Splotches', 'Cucoloris board', 'Water reflection shimmer', 'Soft spots', 'Art deco fan',
+                'Organic breakup', 'Leafy breakup', 'Soft mottling', 'Dappled holes', 'Branches & leaves', 'Paint your own'];
+const SHAPE_ORDER = [9, 10, 11, 12, 13, 14, 4, 5, 7, 3, 6, 0, 1, 2, 8];
+const SHAPE_SEAMLESS = [false, false, false, true, true, true, true, true, false, true, true, true, true, true, true];
+const ORGANIC = new Set([9, 10, 11, 12, 13]);
 const DIRS = ['Vertical', 'Diagonal ╲', 'Horizontal', 'Diagonal ╱'];
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
-  onParam(k) { return k === 'shape' || k === 'framing'; },
+  onParam(k) { return k === 'shape' || k === 'framing' || k === 'stretch'; },
   get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
-    const fan = sh === 0 || sh === 1, beams = sh === 2, noise = sh >= 3 && sh <= 6;
+    const fan = sh === 0 || sh === 1, beams = sh === 2, org = ORGANIC.has(sh), paint = sh === 14;
     const g = [
-      {k:'shape', l:'Shape', opts:SHAPES},
       {k:'framing', l:'Framing', opts:['As designed' + (SHAPE_SEAMLESS[sh] ? ' (seamless tile)' : ''), 'Light pool, dark edges'], h:'A light pool lets light through only in the middle of the frame; shadows thicken toward the edges and the frame ends in black.'},
+      {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER},
     ];
     if ((P.framing | 0) === 1) g.push({k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01});
-    g.push({k:'tileSize', l:'Real-world size', min:0.3, max:20, step:0.1, u:'m', h:'How wide the gobo is where the light lands, for the scene preview and matching scale.'});
+    g.push({k:'blur', l:'Blur', min:0, max:15, step:0.05, u:'%', h:'Defocus of the whole gobo, as a percentage of its width. A few percent turns hard breakup into the soft organic light shapes lighters use most.'});
     const look = [];
+    if (org) {
+      look.push(
+        {k:'scale', l:'Feature size', min:1, max:24, step:1, fmt:v => v + ' across', h:'How many main shapes fit across the tile. Whole numbers keep it seamless.'},
+        {k:'amount', l:sh === 12 ? 'Hole size' : 'Light coverage', min:0.05, max:0.95, step:0.01, h:'How much of the frame lets light through.'},
+        {k:'soft', l:'Edge softness', min:0, max:1, step:0.01},
+        {k:'brk', l:'Edge detail', min:0, max:1, step:0.01, h:'Fine raggedness along the edges of the shapes.'},
+        {k:'warp', l:'Flow', min:0, max:1.5, step:0.01, h:'Swirls the shapes into flowing, organic forms.'},
+        {k:'clump', l:'Clumping', min:0, max:1.5, step:0.01, h:'Gathers the breakup into clusters with larger open gaps between them.'},
+        {k:'stretch', l:'Stretch', min:1, max:5, step:1, fmt:v => v + '×'},
+      );
+      if ((P.stretch || 1) > 1) look.push({k:'dir', l:'Stretch direction', opts:DIRS});
+    }
     if (fan || beams) look.push(
       {k:'count', l:fan ? 'Number of shafts' : 'Number of beams', min:1, max:40, step:1},
       ...(fan ? [{k:'spread', l:'Fan angle', min:5, max:150, step:0.5, u:'°'}, {k:'apexX', l:'Source position', min:-0.6, max:0.6, step:0.01, h:'Where the light comes from, left to right above the frame.'}, {k:'apexY', l:'Source height above frame', min:0, max:2, step:0.01, h:'0 puts the source at the top edge; larger values make the shafts more parallel.'}] : [{k:'angle', l:'Angle', min:-90, max:90, step:0.5, u:'°'}]),
@@ -520,7 +562,7 @@ MODES.shapes = {
       {k:'fall', l:'Fade along length', min:0, max:1, step:0.01},
       {k:'brk', l:'Breakup', min:0, max:1, step:0.01, h:'Streaky texture inside each shaft, as dust and haze give real light shafts.'},
     );
-    if (noise) look.push(
+    if (sh >= 3 && sh <= 6) look.push(
       ...(sh === 3 ? [{k:'dir', l:'Direction', opts:DIRS}] : []),
       {k:'scale', l:'Feature count', min:1, max:24, step:1, h:'Features across the tile (whole numbers keep it seamless).'},
       {k:'amount', l:sh === 5 ? 'Holes (open area)' : 'Light coverage', min:0.05, max:0.95, step:0.01},
@@ -529,23 +571,31 @@ MODES.shapes = {
     );
     if (sh === 7) look.push({k:'scale', l:'Spots across', min:1, max:24, step:1}, {k:'amount', l:'Spot size', min:0.05, max:0.95, step:0.01}, {k:'wVar', l:'Size variation', min:0, max:1, step:0.01}, {k:'soft', l:'Edge softness', min:0, max:1, step:0.01});
     if (sh === 8) look.push({k:'count', l:'Rays', min:2, max:16, step:1}, {k:'width', l:'Bar width', min:0.05, max:0.6, step:0.01}, {k:'soft', l:'Edge softness', min:0, max:1, step:0.01});
-    const mo = [{k:'motion', l:'Motion', min:0, max:1, step:0.01, h:sh === 6 ? 'Drift and shimmer of the reflected light.' : 'Slow drift, sway and flicker. Every motion loops seamlessly.'}];
-    return [{name:'Shape', params:g}, {name:'Look', params:look}, {name:'Motion', params:mo}];
+    const out = [{name:'Shape', params:g}];
+    if (paint) out.push({name:'Paint', params:paintDefs()});
+    if (look.length) out.push({name:'Look', params:look});
+    if (!paint) out.push({name:'Motion', params:[{k:'motion', l:'Motion', min:0, max:1, step:0.01, h:sh === 6 ? 'Drift and shimmer of the reflected light.' : 'Slow drift and evolution of the shapes. Every motion loops seamlessly.'}]});
+    out.push({name:'Real-world size', params:[{k:'tileSize', l:'Width where it lands', min:0.3, max:20, step:0.1, u:'m', h:'For the scene preview and for matching scale.'}]});
+    return out;
   },
   presets:[
-    {name:'Light shafts, wide fan', v:{seed:4, shape:0, framing:0, poolSize:0.9, poolSoft:0.5, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, dir:0, scale:6, amount:0.5, motion:0.3}},
-    {name:'Light shafts, narrow', v:{shape:0, count:6, spread:28, apexY:0.05, width:0.5, wVar:0.5, soft:0.35, fall:0.4, brk:0.35}},
-    {name:'Shafts from the side', v:{shape:0, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6}},
-    {name:'Curtain shafts', v:{shape:1, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6}},
-    {name:'Parallel beams', v:{shape:2, count:6, angle:20, width:0.4, wVar:0.4, soft:0.3, fall:0.3, brk:0.4}},
-    {name:'Bars', v:{shape:2, count:7, angle:0, width:0.55, wVar:0, soft:0.06, fall:0, brk:0}},
-    {name:'Ragged streaks', v:{shape:3, dir:1, scale:3, amount:0.5, soft:0.35, brk:0.7}},
-    {name:'Soft breakup', v:{shape:4, scale:4, amount:0.5, soft:0.7, brk:0.5}},
-    {name:'Leafy breakup pool', v:{shape:4, framing:1, poolSize:0.9, poolSoft:0.6, scale:7, amount:0.45, soft:0.35, brk:0.8}},
-    {name:'Cucoloris board', v:{shape:5, scale:4, amount:0.4, soft:0.15, brk:0.4}},
-    {name:'Water reflection shimmer', v:{shape:6, scale:3, amount:0.5, soft:0.4, brk:0.6, motion:0.5}},
-    {name:'Soft spots', v:{shape:7, scale:6, amount:0.4, wVar:0.7, soft:0.7}},
-    {name:'Art deco fan', v:{shape:8, count:6, width:0.12, soft:0.1}},
+    {name:'Leafy breakup, soft', v:{seed:4, shape:10, framing:0, poolSize:0.9, poolSoft:0.55, blur:3, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.6, soft:0.3, fall:0.55, brk:0.7, dir:0, scale:5, amount:0.5, motion:0, warp:0.6, clump:0.5, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true}},
+    {name:'Leafy pool of light', v:{shape:10, framing:1, poolSize:0.95, poolSoft:0.6, blur:4, scale:6, amount:0.62, soft:0.3, brk:0.8, warp:0.6, clump:0.6}},
+    {name:'Organic breakup', v:{shape:9, blur:2, scale:4, amount:0.5, soft:0.25, brk:0.6, warp:0.8, clump:0.5}},
+    {name:'Big soft blobs', v:{shape:9, blur:6, scale:2, amount:0.55, soft:0.6, brk:0.3, warp:1.0, clump:0.3}},
+    {name:'Fine dapple', v:{shape:10, blur:1.5, scale:10, amount:0.58, soft:0.2, brk:0.8, warp:0.5, clump:0.6}},
+    {name:'Soft mottling', v:{shape:11, blur:2, scale:3, amount:0.5, soft:0.3, brk:0.6, warp:0.7, clump:0.6}},
+    {name:'Dappled holes', v:{shape:12, blur:2, scale:4, amount:0.4, soft:0.4, warp:0.6, clump:0.6}},
+    {name:'Branches & leaves', v:{shape:13, blur:2.5, scale:3, amount:0.55, soft:0.3, brk:0.6, warp:0.6, clump:0.4}},
+    {name:'Stretched streaky breakup', v:{shape:9, blur:3, scale:4, amount:0.5, soft:0.35, brk:0.6, warp:0.5, clump:0.4, stretch:3, dir:1}},
+    {name:'Paint your own', v:{shape:14, blur:2}},
+    {name:'Light shafts', v:{shape:0, blur:0, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.3}},
+    {name:'Shafts from the side', v:{shape:0, blur:0, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6}},
+    {name:'Curtain shafts', v:{shape:1, blur:0, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6}},
+    {name:'Parallel beams', v:{shape:2, blur:0, count:6, angle:20, width:0.4, wVar:0.4, soft:0.3, fall:0.3, brk:0.4}},
+    {name:'Cucoloris board', v:{shape:5, blur:0.5, scale:4, amount:0.4, soft:0.15, brk:0.4}},
+    {name:'Water reflection shimmer', v:{shape:6, blur:0, scale:3, amount:0.5, soft:0.4, brk:0.6, motion:0.5}},
+    {name:'Soft spots', v:{shape:7, blur:0, scale:6, amount:0.4, wVar:0.7, soft:0.7}},
   ],
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
 };
@@ -579,9 +629,12 @@ try {
   if (saved) {
     for (const m of Object.keys(MODES)) {
       if (saved.p && saved.p[m]) Object.assign(S.p[m], saved.p[m]);
+      // v4: trees default to a steady breeze without gust events
+      if (saved.ver !== 4 && m === 'trees') S.p[m].gustAmt = 0;
       if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
       if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
     }
+    S.savedVer = saved.ver;
     for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'under';
   }
@@ -590,7 +643,7 @@ let saveTimer = 0;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:4})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -845,7 +898,7 @@ void main(){
   vec4 dd = texelFetch(uDisp, ivec2(node % 1024, node / 1024), 0);
   vec3 disp = dd.xyz + twigMove(node, dd.w, aPos.xy);
   // leaves flutter when a gust reaches their spray and settle when it passes
-  float th = aFlut.w * smoothstep(0.6, 2.0, nodeE(dd.w)) * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
+  float th = aFlut.w * (0.5 + 0.5 * smoothstep(0.5, 1.6, nodeE(dd.w))) * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
   vec3 ax = aAxis.xyz;
   vec3 n = rot(aNorm.xyz, ax, th);
   vec3 side = normalize(cross(ax, n));
@@ -2170,8 +2223,8 @@ function windSetup(T, P, tl) {
   const gain = () => Math.exp(0.45 * gauss(r));   // some limbs are springier or more exposed than others
   B.treeInfo.forEach(t => groups.push({lvl:0, x:t.x, y:t.y, zz:t.H * 0.75, size:t.R, fn:sp.fn * Math.pow(11 / t.H, 0.8), z:0.09, target:Math.min(0.022 * (t.H / 10) * U5 * P.swayBranch, 0.06 * t.H) * (T.patch ? 0.3 : 1), vert:0}));
   const palm = sp.kind === 'palm';
-  G.g1.forEach(g => groups.push({lvl:1, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(1.4 / Math.sqrt(Math.max(g.len, 0.5)), 0.5, 3), z:0.08, target:(palm ? 0.025 : 0.036 * clamp(g.len / 3, 0.4, 2)) * U5 * P.swayBranch, vert:0.5}));
-  G.g2.forEach(g => groups.push({lvl:2, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(2.2 / Math.sqrt(Math.max(g.len, 0.3)), 1, 5), z:0.12, target:0.02 * U5 * P.swayTwig, vert:0.6}));
+  G.g1.forEach(g => groups.push({lvl:1, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(1.4 / Math.sqrt(Math.max(g.len, 0.5)), 0.5, 3), z:0.08, target:(palm ? 0.03 : 0.05 * clamp(g.len / 3, 0.4, 2)) * U5 * P.swayBranch, vert:0.5}));
+  G.g2.forEach(g => groups.push({lvl:2, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(2.2 / Math.sqrt(Math.max(g.len, 0.3)), 1, 5), z:0.12, target:0.03 * U5 * P.swayTwig, vert:0.6}));
   groups.forEach(g => { g.hz = 1; g.gain = g.lvl === 0 ? 1 : gain(); });   // height attenuation is applied per node
   // Local eddies: a field of gust patches 1–4 m across, carried downwind. Each spray responds to
   // the patch it sits in, so neighbouring branches move at different times and strengths.
@@ -2186,7 +2239,8 @@ function windSetup(T, P, tl) {
     ed.push([kx, ky, om, r() * 2 * Math.PI]);
   }
   const eAmp = Math.sqrt(2 / Math.max(ed.length, 1)), eCon = 0.55 + 0.6 * (P.indep ?? 0.5);
-  const eRaw = (x, y, t) => { let v = 0; for (const e of ed) v += Math.cos(e[0] * x + e[1] * y - e[2] * t + e[3]); return Math.pow(Math.max(0, 1 + eCon * eAmp * v), 1.6); };
+  // the breeze never stops: local eddies only make it a little stronger here and a little weaker there
+  const eRaw = (x, y, t) => { let v = 0; for (const e of ed) v += Math.cos(e[0] * x + e[1] * y - e[2] * t + e[3]); return clamp(1 + 0.4 * eCon * eAmp * v, 0.45, 1.8); };
   let eMean = 0; { const r3 = rng(99); for (let i = 0; i < 400; i++) eMean += eRaw(r3() * Lx, r3() * Ly, r3() * 50); eMean /= 400; }
   const eddy = (x, y, t) => eRaw(x, y, t) / eMean;
   // Gusts: discrete gust events (measured ~5 per minute in a breeze, each rising in ~1 s and
@@ -2268,7 +2322,7 @@ function windSetup(T, P, tl) {
     w[i * 3 + 2] = g2 >= 0 ? Math.pow(clamp(G.ns2[i] / Math.max(G.g2[g2].len, 0.1), 0, 1), 1.5) : 0;
   }
   const twF = [1.2, 1.9, 2.7].map(f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f);
-  const twA = 0.0018 * Math.pow(U / 2, 1.5) * P.swayTwig;
+  const twA = 0.0035 * Math.pow(U / 2, 1.5) * P.swayTwig;
   const nzh = new Float32Array(n); for (let i = 0; i < n; i++) nzh[i] = hz(B.z[i]);
   TR.wind = {env:Float32Array.from(env, v => v / emean), T:TL0, nG, nT, twF, twA, fs, coef, groups, w, wx, wy, eddy, nzh, nTree:B.treeInfo.length, nG1:G.g1.length, famp, fnTree:groups[0].fn, rmsTop:groups[0].target};
 }
@@ -2432,7 +2486,7 @@ float sdOpen(vec2 p){
   }
   return min(min(p.x + W, W - p.x), min(p.y + H, H - p.y));
 }
-struct Pane { float m; float g; float id; float edge; float v; };
+struct Pane { float m; float g; float id; float edge; float v; vec2 e2; };
 // distance to the nearest interior glazing bar of an n-way division
 float barD(float u, int n, float cell){ if (n < 2) return 1e3; float k = clamp(floor(u + 0.5), 1.0, float(n - 1)); return abs(u - k) * cell; }
 // a sash: stiles and top rail sw, bottom rail rb, glass split into cols × rows lites
@@ -2450,11 +2504,14 @@ void sash(vec2 p, vec2 lo, vec2 hi, float sw, float rb, int cols, int rows, floa
     vec2 ci = clamp(floor(u), vec2(0.0), vec2(float(cols - 1), float(rows - 1)));
     P.g += gl; P.id = pid * 97.0 + ci.x + ci.y * 13.0;
     P.edge = min(P.edge, min(max(dG, 0.0), max(db, 0.0)));
+    // distance to the pane's sides (x) and to its top and bottom (y), for dirt that collects in corners
+    vec2 dR = min(p - glo, ghi - p);
+    P.e2 = min(P.e2, max(vec2(min(dR.x, barD(u.x, cols, cell.x) - uBW * 0.5), min(dR.y, barD(u.y, rows, cell.y) - uBW * 0.5)), 0.0));
     P.v = clamp((p.y - (glo.y + ci.y * cell.y)) / cell.y, 0.0, 1.0);
   }
 }
 Pane frame(vec2 p){
-  Pane P = Pane(1.0, 0.0, 0.0, 1e3, 0.5);
+  Pane P = Pane(1.0, 0.0, 0.0, 1e3, 0.5, vec2(1e3));
   float W = uWin.x * 0.5, H = uWin.y * 0.5, fw = uFW, sw = uFW * 0.8;
   float so = sdOpen(p);
   P.m = aa(so - fw);                                       // outer frame (head, jambs, sill)
@@ -2494,7 +2551,7 @@ Pane frame(vec2 p){
       if (k > 0.05){
         float yv = (p.y - yc) / k;
         vec2 q = vec2(p.x + yv * sin(al) * uSunW.x / uSunW.z, yc + yv);
-        Pane V = Pane(1.0, 0.0, 0.0, 1e3, 0.5);
+        Pane V = Pane(1.0, 0.0, 0.0, 1e3, 0.5, vec2(1e3));
         sash(q, vlo + uBW * 0.25, vhi - uBW * 0.25, uBW * 0.9, uBW * 0.9, min(2, uCols), min(2, uRows), 3.0, V);
         P.m *= V.m; P.g += V.g; if (V.g > 0.0){ P.id = V.id; P.edge = min(P.edge, V.edge); P.v = V.v; }
       }
@@ -2551,6 +2608,7 @@ Pane frame(vec2 p){
   }
   P.m *= aa(so);
   P.g = min(P.g, 2.0);
+  P.e2 = min(P.e2, vec2(P.edge));
   return P;
 }
 `;
@@ -2562,7 +2620,7 @@ layout(location = 0) out vec4 oA;
 layout(location = 1) out vec4 oB;
 uniform vec2 uRes;
 ` + COMMON.split('uniform vec2 uRes;')[1] + WIN_GLSL + `
-uniform float uDm, uDist, uTp, uDistort, uGrime, uSmudge, uSpots, uRain, uFog, uScreenT, uT;
+uniform float uDm, uDist, uTp, uDistort, uGrime, uSmudge, uSpots, uRain, uFog, uScreenT, uT, uLoopT;
 uniform int uGlass, uScreen, uBlind, uCurt;
 uniform float uTilt, uLower, uImperf, uCOpen, uFull, uBreeze;
 uniform vec3 uBF;
@@ -2609,10 +2667,15 @@ float glassT(vec2 p, Pane P, out float scat){
   }
   // dust and grime: settles in corners and along the bottom of each pane
   if (uGrime > 0.0){
-    float n1 = fbm(p * 7.0 + P.id, 4, 41u), n2 = fbm(p * 85.0, 3, 42u);
-    float e = exp(-P.edge / 0.02) * (0.55 + 0.9 * smoothstep(0.4, 0.0, P.v));
-    float a = uGrime * (0.07 * smoothstep(0.35, 0.85, n1) + 0.05 * n2 + 0.42 * e * (0.35 + n2) + 0.05);
-    a = clamp(a, 0.0, 0.92); T *= 1.0 - a; scat += 0.7 * a;
+    float n1 = fbm(p * 7.0 + P.id, 4, 41u), n2 = fbm(p * 85.0, 3, 42u), n3 = fbm(vec2(p.x * 55.0, p.y * 2.5) + P.id, 3, 44u);
+    float g = uGrime, w = 0.01 + 0.055 * g * (0.7 + 0.6 * n1);
+    vec2 e2 = P.e2;
+    float ex = exp(-e2.x / w), ey = exp(-e2.y / (w * (P.v < 0.5 ? 1.8 : 1.0)));
+    float corner = ex * ey, bottom = smoothstep(0.35, 0.0, P.v) * ey;
+    float a = g * (0.06 + 0.22 * smoothstep(0.3, 0.8, n1) + 0.1 * n2)          // film over the whole pane
+            + g * (0.45 * max(ex, ey) + 1.3 * corner + 0.6 * bottom) * (0.45 + n2)   // packed into edges and corners
+            + g * g * 0.25 * smoothstep(0.55, 0.85, n3);                           // streaks washed down by rain
+    a = clamp(a, 0.0, 0.985); T *= 1.0 - a; scat += 0.25 * a;
   }
   // hand smears and circular wipe marks, mostly at reaching height
   if (uSmudge > 0.0){
@@ -2633,21 +2696,59 @@ float glassT(vec2 p, Pane P, out float scat){
     float rg, b = dropField(p, 0.011, 0.55 * uSpots, 0.0008, 0.003, 61u, rg);
     float a = 0.55 * rg + 0.08 * step(0.001, b); T *= 1.0 - a; scat += 0.5 * a;
   }
-  if (uRain > 0.0){
-    // each drop is a small plano-convex lens: dark rim, focused bright centre
-    float rg, b = dropField(p, 0.008, 0.6 * uRain, 0.0005, 0.0012 + 0.0016 * uRain, 71u, rg);
-    float inD = step(0.001, b);
-    float lens = mix(1.0, 0.25 + 1.1 * smoothstep(0.55, 1.0, b), inD);
-    T *= lens; scat += 0.5 * inD;
-    // rivulets
-    float col = floor(p.x / 0.03);
-    if (h2(vec2(col, 3), 72u) < 0.45 * uRain){
-      float x0 = (col + 0.2 + 0.6 * h2(vec2(col, 4), 72u)) * 0.03;
-      float x = x0 + 0.004 * sin(p.y * 23.0 + col) + 0.002 * sin(p.y * 67.0 + 2.0 * col);
-      float y0 = (h2(vec2(col, 5), 72u) - 0.3) * uWin.y;
-      float on = step(p.y, y0) * (1.0 - smoothstep(0.0006, 0.0011, abs(p.x - x)));
-      T *= 1.0 - 0.5 * on; scat += 0.3 * on;
+  if (uRain > 0.0 && P.g > 0.0){
+    // Raindrops are tiny lenses: each throws a dark rim with a bright focused core.
+    float top = uWin.y * 0.5 + 0.05, span = uWin.y + 0.1;
+    float loopT = uLoopT > 0.0 ? uLoopT : 20.0;
+    // running drops: they grow until they break loose, then slide down in stick-slip jerks,
+    // meandering and leaving a wet trail of little beads that they sweep the glass clean along
+    float sp = 0.035 / (0.4 + uRain), clear = 0.0, run = 1.0, runS = 0.0;
+    float c0 = floor(p.x / sp);
+    for (int j = -1; j <= 1; j++){
+      float c = c0 + float(j);
+      if (h2(vec2(c, 11), 91u) > 0.35 + 0.55 * uRain) continue;
+      float n = floor(1.0 + 2.5 * h2(vec2(c, 12), 91u));            // passes per loop
+      float ph = h2(vec2(c, 13), 91u);
+      float s = fract(uT * n / loopT + ph);
+      float m = floor(3.0 + 5.0 * h2(vec2(c, 14), 91u));
+      s = s + 0.85 * sin(TAU * m * s) / (TAU * m);                     // stick-slip: stops and lurches
+      float yD = top - s * span;
+      float fx = 0.006 * sin(p.y * 17.0 + c * 3.1) + 0.003 * sin(p.y * 43.0 + c * 1.7);
+      float x0 = (c + 0.25 + 0.5 * h2(vec2(c, 15), 91u)) * sp;
+      float dx = p.x - (x0 + fx);
+      float rD = 0.0018 + 0.0018 * h2(vec2(c, 16), 91u) * (0.5 + uRain);
+      vec2 q = vec2(dx, (p.y - yD) * 0.7) / rD;
+      float dd = length(q);
+      if (dd < 1.0) { run *= 0.25 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd); runS += 0.4; }
+      // trail behind it (above): a thin wet line that breaks into beads and slowly dries
+      if (p.y > yD){
+        float age = (p.y - yD) / (span * n / loopT);
+        float fade = exp(-age / 4.0);
+        clear = max(clear, (1.0 - smoothstep(rD * 1.4, rD * 2.2, abs(dx))) * exp(-age / 12.0));
+        float bead = fract((p.y - yD) / 0.0055 + h2(vec2(c, 17), 91u));
+        float bR = 0.0006 * step(0.45, h2(vec2(c, floor((p.y - yD) / 0.0055)), 92u));
+        float bd = length(vec2(dx, (bead - 0.5) * 0.0055));
+        float line = 1.0 - smoothstep(0.0003, 0.0007, abs(dx));
+        float bb = 1.0 - smoothstep(bR * 0.6, bR, bd);
+        run *= mix(1.0, 0.6 + 0.4 * (1.0 - line) , fade) * mix(1.0, 0.35, bb * fade);
+      }
     }
+    // beaded drops from new impacts appear all the time and stay until a runner sweeps them away
+    float cs = 0.006, best = 0.0; vec2 cc0 = floor(p / cs);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+      vec2 cc = cc0 + vec2(i, j);
+      if (h2(cc, 93u) > 0.7 * uRain) continue;
+      float born = h2(cc, 94u), life = 0.3 + 0.6 * h2(cc, 95u);
+      float a = fract(uT / loopT - born);
+      if (a > life) continue;
+      vec2 ctr = (cc + vec2(h2(cc, 96u), h2(cc, 97u))) * cs;
+      float r = (0.0004 + 0.0014 * pow(h2(cc, 98u), 2.0)) * (0.6 + uRain);
+      float q = length((p - ctr) / vec2(1.0, 1.1)) / r;
+      if (q < 1.0) best = max(best, 1.0 - q);
+    }
+    float inB = step(0.001, best) * (1.0 - clear);
+    T *= mix(1.0, 0.3 + 1.1 * smoothstep(0.45, 1.0, best), inB) * run;
+    scat += 0.35 * inB + runS;
   }
   if (uFog > 0.0 && P.g > 0.0){
     float top = uFog * (0.55 + 0.3 * (fbm(vec2(p.x * 6.0, 0.0) + P.id, 3, 81u) - 0.5));
@@ -2813,9 +2914,9 @@ float curtains(vec2 p, out float scat){
   float inC = aa(cov - ss) * aa(ss) * aa(rodY - p.y) * aa(p.y - botY);
   float fu = ss * fabricW / cov, fv = p.y;                     // fabric coordinates
   float tau;
-  if (uCurt == 1 || uCurt == 5) tau = 0.22 * (0.9 + 0.2 * fbm(vec2(fu * 40.0, fv * 600.0), 2, 102u));
-  else if (uCurt == 3) tau = 1.6 * (0.75 + 0.5 * fbm(vec2(fu * 25.0, fv * 900.0), 3, 103u));   // linen slubs
-  else if (uCurt == 4) tau = 9.0;
+  if (uCurt == 1 || uCurt == 5) tau = 0.55 * (0.9 + 0.2 * fbm(vec2(fu * 40.0, fv * 600.0), 2, 102u));
+  else if (uCurt == 3) tau = 3.2 * (0.75 + 0.5 * fbm(vec2(fu * 25.0, fv * 900.0), 3, 103u));   // linen slubs
+  else if (uCurt == 4) tau = 14.0;
   else {
     // lace: open net with dense rosettes, connecting tendrils and a scalloped border
     vec2 g = vec2(fu, fv) / 0.09; vec2 gi = floor(g + 0.5); vec2 l = (g - gi) * 0.09;
@@ -2834,7 +2935,7 @@ float curtains(vec2 p, out float scat){
   T = exp(-tau / c);
   float rod = cafe ? 1.0 - aa(abs(p.y - rodY) - 0.008) : 0.0;
   float tr = mix(1.0, T, inC) * (1.0 - rod);
-  float diff = uCurt == 4 ? 0.0 : uCurt == 3 ? 0.45 : 0.25;
+  float diff = uCurt == 4 ? 0.0 : uCurt == 3 ? 0.08 : 0.12;
   scat = inC * (1.0 - T) * diff;
   return tr;
 }
@@ -2925,7 +3026,9 @@ void main(){
     float th = float(i) * 1.0472;
     glow += textureLod(uL1, wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th))), uGlowLod).g;
   }
-  T += glow / 6.0 * uGlowK * (1.0 - smoothstep(0.0, 0.35 * uDist, -sdOpen(c0)));
+  // diffused light only shows where the opening lets light through, so nothing appears outside the window
+  float open0 = aaG(sdOpen(toWin(q, uZo))) * aaG(sdOpen(toWin(q, uZi)));
+  T += glow / 6.0 * uGlowK * open0;
   if (uTreeOn == 1) T *= texture(uTree, q / uTreeL + 0.5).r;
   // the faint scattered glow fades out before the frame edge so the gobo has a clean black border
   vec2 e2 = abs(gl_FragCoord.xy / uRes - 0.5);
@@ -2989,7 +3092,7 @@ function renderWindows(P, res, t, tl) {
   const scrT = Math.max(0, 1 - 0.28 / 1.41 * Math.sqrt(1 + sx * sx)) * Math.max(0, 1 - 0.28 / 1.59 * Math.sqrt(1 + sy * sy));
   const L = winMRT('winL', LR, LR);
   // the layers only change with the settings, or every frame while curtains move in a breeze
-  const lsig = JSON.stringify([P, s, LR, Dm, D, (P.curtain && P.breeze > 0) ? tt : 0]);
+  const lsig = JSON.stringify([P, s, LR, Dm, D, ((P.curtain && P.breeze > 0) || P.rain > 0) ? tt : 0]);
   const st = WIN_STYLE_DEF[P.style | 0] ? P.style | 0 : 0;
   if (lsig !== WIN.lsig) {
     WIN.lsig = lsig;
@@ -2998,7 +3101,7 @@ function renderWindows(P, res, t, tl) {
       i1(p, 'uStyle', st); i1(p, 'uCols', P.cols | 0); i1(p, 'uRows', P.rows | 0); i1(p, 'uCols2', P.cols2 | 0); i1(p, 'uRows2', P.rows2 | 0);
       f3(p, 'uSunW', ...s); u1(p, 'uSeed', P.seed | 0);
       f1(p, 'uDm', Dm); f1(p, 'uDist', D); f1(p, 'uTp', Tp); f1(p, 'uDistort', P.distort); f1(p, 'uGrime', P.grime); f1(p, 'uSmudge', P.smudge);
-      f1(p, 'uSpots', P.spots); f1(p, 'uRain', P.rain); f1(p, 'uFog', P.fog); f1(p, 'uScreenT', scrT); f1(p, 'uT', tt);
+      f1(p, 'uSpots', P.spots); f1(p, 'uRain', P.rain); f1(p, 'uFog', P.fog); f1(p, 'uScreenT', scrT); f1(p, 'uT', tt); f1(p, 'uLoopT', tl.loop ? tl.len : 0);
       i1(p, 'uGlass', P.glass | 0); i1(p, 'uScreen', P.screen | 0); i1(p, 'uBlind', bl); i1(p, 'uCurt', P.curtain | 0);
       f1(p, 'uTilt', P.tilt); f1(p, 'uLower', P.lower); f1(p, 'uImperf', P.imperf); f1(p, 'uCOpen', P.cOpen); f1(p, 'uFull', P.full); f1(p, 'uBreeze', P.breeze);
       f3(p, 'uBF', loopF(0.21, tl), loopF(0.37, tl), loopF(0.83, tl));
@@ -3051,7 +3154,7 @@ function renderWindows(P, res, t, tl) {
    spots. The tiling ones are exactly periodic; all of them loop.
    ===================================================================== */
 const FS_SHAPE = COMMON + `
-uniform int uShape, uCount, uDir; uniform uint uSeed;
+uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint;
 uniform float uSpread, uAngle, uWidth, uWVar, uSoft, uFall, uBrk, uScale, uAmount, uMotion, uT, uLoopT;
 uniform vec2 uApex; uniform int uPz; uniform float uAim;
 float h1(int i, int k){ return rnd(ivec3(i, k, 5), uSeed); }
@@ -3132,6 +3235,79 @@ float thresh(float n, float amount, float soft){
   float t = 1.0 - amount, w = 0.02 + 0.25 * soft;
   return smoothstep(t - w, t + w, n);
 }
+// ---- organic breakup: warped, clumped multi-scale noise, all exactly periodic ----
+void lattice(int F, out ivec2 A, out ivec2 B){
+  int s = max(uStretch, 1);
+  if (uDir == 0){ A = ivec2(F * s, 0); B = ivec2(0, F); }
+  else if (uDir == 2){ A = ivec2(F, 0); B = ivec2(0, F * s); }
+  else if (uDir == 1){ A = ivec2(F * s, -F * s); B = ivec2(F, F); }
+  else { A = ivec2(F * s, F * s); B = ivec2(-F, F); }
+  if (s == 1){ A = ivec2(F, 0); B = ivec2(0, F); }
+}
+float orgField(vec2 uv, int F, uint sd){
+  ivec2 A, B; lattice(F, A, B);
+  int Fw = max(F, 1);
+  // domain warp makes flowing, organic forms instead of plain noise
+  vec2 w = vec2(fbmA(uv, ivec2(Fw, 0), ivec2(0, Fw), 3, sd + 1u), fbmA(uv, ivec2(Fw, 0), ivec2(0, Fw), 3, sd + 2u));
+  vec2 u2 = uv + uWarp * 0.45 * w / float(Fw);
+  int oct = 1 + int(uBrk * 5.0 + 0.5);
+  float n = fbmA(u2, A, B, oct, sd);
+  // clumping: a coarser field gathers the breakup into clusters with open gaps between
+  int Fc = max(F / 3, 1);
+  float c = fbmA(uv, ivec2(Fc, 0), ivec2(0, Fc), 2, sd + 5u);
+  return 0.5 + 0.5 * (n + uClump * 0.9 * c) / (0.6 + 0.5 * uClump);
+}
+float leafStamps(vec2 uv, int F, float field, float thr){
+  // little leaf shapes crowding the edges of the shadow masses
+  int G = F * 4; vec2 g = uv * float(G); vec2 gi = floor(g); float m = 0.0;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+    ivec2 c = ivec2(gi) + ivec2(i, j); ivec2 cw = ivec2(wrap1(c.x, G), wrap1(c.y, G));
+    vec2 ctr = vec2(c) + vec2(rnd(ivec3(cw, 11), uSeed), rnd(ivec3(cw, 12), uSeed));
+    float a = rnd(ivec3(cw, 13), uSeed) * PI, sz = 0.35 + 0.45 * rnd(ivec3(cw, 14), uSeed);
+    vec2 d = g - ctr; d = vec2(cos(a) * d.x + sin(a) * d.y, -sin(a) * d.x + cos(a) * d.y);
+    float e = length(d / vec2(sz, sz * 0.5));
+    float pr = smoothstep(0.22, 0.0, abs(field - thr) - 0.02) * step(rnd(ivec3(cw, 15), uSeed), 0.85);
+    m = max(m, (1.0 - smoothstep(0.85, 1.0, e)) * pr);
+  }
+  return m;
+}
+float organic(vec2 uv, int F){
+  float soft = uSoft;
+  if (uShape == 9){                          // organic breakup
+    return thresh(orgField(uv, F, 81u), uAmount, soft);
+  } else if (uShape == 10){                  // leafy breakup
+    float f = orgField(uv, F, 82u), thr = 1.0 - uAmount;
+    float L = thresh(f, uAmount, soft * 0.7);
+    return L * (1.0 - leafStamps(uv, F, f, thr) * (1.0 - 0.6 * soft));
+  } else if (uShape == 11){                  // soft mottling
+    float f = orgField(uv, F, 83u);
+    return clamp(0.5 + (f - (1.0 - uAmount)) * (1.2 + 3.0 * (1.0 - soft)), 0.0, 1.0);
+  } else if (uShape == 12){                  // dappled holes in a dark canopy
+    int G = F * 2;
+    // warp the cells so the holes come out irregular, not round
+    vec2 wv = vec2(fbmA(uv, ivec2(G, 0), ivec2(0, G), 3, 89u), fbmA(uv, ivec2(G, 0), ivec2(0, G), 3, 90u));
+    vec2 g = (uv + (0.2 + 0.5 * uWarp) * wv / float(G)) * float(G); vec2 gi = floor(g); float best = 0.0;
+    float cl = orgField(uv, max(F / 2, 1), 84u);
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
+      ivec2 c = ivec2(gi) + ivec2(i, j); ivec2 cw = ivec2(wrap1(c.x, G), wrap1(c.y, G));
+      vec2 ctr = vec2(c) + vec2(rnd(ivec3(cw, 21), uSeed), rnd(ivec3(cw, 22), uSeed));
+      ctr += uMotion * 0.06 * vec2(sin(TAU * qf(0.06) * uT + float(cw.x) * 1.3), cos(TAU * qf(0.09) * uT + float(cw.y) * 2.1));
+      float r = (0.15 + 0.5 * uAmount) * (0.4 + 0.9 * rnd(ivec3(cw, 23), uSeed)) * (0.5 + cl);
+      float wob = 1.0 + (0.2 + uWarp * 0.5) * fbmA(uv, ivec2(G * 3, 0), ivec2(0, G * 3), 3, 85u);
+      float d = length(g - ctr) * wob;
+      best = max(best, 1.0 - smoothstep(r * (1.0 - soft * 0.9), r + 0.02 + 0.3 * soft, d));
+    }
+    return best;
+  } else {                                   // branchy: twigs and leaf clusters
+    ivec2 A, B; lattice(F, A, B);
+    float n = fbmA(uv + uWarp * 0.03 * vec2(fbmA(uv, ivec2(F, 0), ivec2(0, F), 2, 86u)), A, B, 4, 87u);
+    float br = smoothstep(0.86 - 0.1 * uBrk, 0.97, 1.0 - abs(n * 2.2));
+    float f = orgField(uv, F * 2, 88u);
+    float leaves = 1.0 - thresh(f, uAmount, soft);
+    return (1.0 - max(br * (1.0 - soft * 0.6), leaves * 0.95));
+  }
+}
+
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
   float v = 0.0;
@@ -3175,7 +3351,7 @@ void main(){
       float d = length(g - ctr);
       v = max(v, (1.0 - smoothstep(rad * (1.0 - uSoft), rad + 0.02, d)) * (0.6 + 0.4 * rnd(ivec3(cw, 4), uSeed)));
     }
-  } else {
+  } else if (uShape == 8){
     // art deco fanlight: a half disc of radial lites
     vec2 p = (uv - vec2(0.5, 0.18)) / 0.42;
     float r = length(p), th = atan(p.y, p.x);
@@ -3187,6 +3363,10 @@ void main(){
     float hub = smoothstep(0.22 - sf, 0.22 + sf, r) * (1.0 - smoothstep(0.26 - sf, 0.26 + sf, r));
     float arc = smoothstep(0.62 - sf, 0.62 + sf, r) * (1.0 - smoothstep(0.62 + bw * 0.6 - sf, 0.62 + bw * 0.6 + sf, r));
     v = inside * smoothstep(bw * 0.5 - sf, bw * 0.5 + sf, bar) * (1.0 - hub) * (1.0 - arc) * smoothstep(bw * 0.4, bw * 0.4 + 2.0 * sf, p.y * 0.42);
+  } else if (uShape == 14){
+    v = texture(uPaint, uv).r;
+  } else {
+    v = organic(uv, F);
   }
   fragColor = vec4(vec3(v), 1.0);
 }`;
@@ -3207,7 +3387,11 @@ void main(){
 PR.shape = program(VS_FULL, FS_SHAPE, 'shapes');
 PR.pool = program(VS_FULL, FS_POOL, 'light pool');
 function renderShapes(P, res, t, tl) {
-  const out = tgt('shOut', res, res, 'f16');
+  const out = renderShapesRaw(P, res, t, tl, 'shOut');
+  return shapePost(P, res, tl, out);
+}
+function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
+  const out = tgt(name, res, res, 'f16', true);
   const tt = tl.loop ? ((t % tl.len) + tl.len) % tl.len : t;
   pass(PR.shape, out, p => {
     i1(p, 'uShape', P.shape | 0); i1(p, 'uCount', P.count | 0); i1(p, 'uDir', P.dir | 0); u1(p, 'uSeed', P.seed | 0);
@@ -3215,7 +3399,26 @@ function renderShapes(P, res, t, tl) {
     f1(p, 'uFall', P.fall); f1(p, 'uBrk', P.brk); f1(p, 'uScale', P.scale); f1(p, 'uAmount', P.amount); f1(p, 'uMotion', P.motion);
     f1(p, 'uT', tt); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f2(p, 'uApex', P.apexX, P.apexY); f1(p, 'uAim', Math.atan2(-P.apexX, 0.5 + P.apexY));
     i1(p, 'uPz', tl.loop ? Math.max(1, Math.round(P.motion * tl.len / 3)) : 1000);
+    i1(p, 'uStretch', Math.round(P.stretch || 1)); f1(p, 'uWarp', P.warp ?? 0.5); f1(p, 'uClump', P.clump ?? 0.4);
+    tex(p, 'uPaint', paintTex(), 1);
   });
+  return out;
+}
+function shapePost(P, res, tl, out) {
+  // defocus blur, as when the gobo sits further from focus: a disk kernel that wraps with the tile
+  if (P.blur > 0) {
+    gl.bindTexture(gl.TEXTURE_2D, out.tex); gl.generateMipmap(gl.TEXTURE_2D);
+    const r = P.blur / 100, Q = QUAL[S.quality];
+    const o2 = tgt('shBlur', res, res, 'f16');
+    pass(PR.disk, o2, p => {
+      tex(p, 'uSrc', out.tex, 0); f1(p, 'uRad', r); f1(p, 'uRad2', r); f1(p, 'uMix', 0); f1(p, 'uGain', 1); f1(p, 'uLimb', 0);
+      f1(p, 'uRadK', 0); f1(p, 'uSrcRes', res); i1(p, 'uClampY', 0); i1(p, 'uTaps', Q.taps); f1(p, 'uLod', lodFor(r, res, Q.taps, 1)); f1(p, 'uLod2', 0);
+    });
+    return finishShape(P, tl, o2);
+  }
+  return finishShape(P, tl, out);
+}
+function finishShape(P, tl, out) {
   const sh = P.shape | 0;
   info = `${SHAPES[sh]} · ${SHAPE_SEAMLESS[sh] && !(P.framing | 0) ? 'seamless tile' : 'single frame'} · ${P.tileSize.toFixed(1)} m across where it lands` +
          (P.motion > 0 && tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
@@ -3322,7 +3525,7 @@ float hitDock(vec3 ro, vec3 rd, out vec3 n){
   float t = 1e9; vec3 nn;
   if (abs(rd.y) > 1e-5){
     float tt = (DY - ro.y) / rd.y; vec3 p = ro + tt * rd;
-    if (tt > 0.0 && p.x > -4.0 && p.x < 4.0 && p.z > -1.0 && p.z < 5.0 && fract((p.z + 1.0) / 0.148) > 0.055){ t = tt; n = vec3(0.0, -sign(rd.y), 0.0); }
+    if (tt > 0.0 && p.x > -4.0 && p.x < 4.0 && p.z > -1.0 && p.z < 5.0){ t = tt; n = vec3(0.0, -sign(rd.y), 0.0); }
   }
   for (int k = 0; k < 2; k++){
     float z = k == 0 ? -0.92 : 4.92;
@@ -3344,7 +3547,8 @@ float occl(vec3 p, vec3 l, float dl){
 }
 
 vec3 gobo(vec2 uv, float lod){
-  if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
+  if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }   // tiles sideways only (hulls and walls)
+  else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return textureLod(uGobo, uv, lod).rgb;
   vec3 s = vec3(0.0);
   for (int i = 0; i < 12; i++){
@@ -3439,7 +3643,7 @@ void main(){
     float pixW = t * 2.0 * uTanF / uRes.y / max(abs(dot(n, rd)), 0.15);
     vec3 e = lightAt(p, l, 0.0, pixW);
     float ndl = max(dot(n, l), 0.0);
-    vec3 alb = id == 4 ? uAlb * vec3(1.0, 0.93, 0.84) * (n.y < -0.5 ? 0.88 + 0.24 * fract(sin(floor((p.z + 1.0) / 0.148) * 91.7) * 4375.5) : 1.0) : vec3(uAlb);
+    vec3 alb = id == 4 ? uAlb * vec3(1.0, 0.95, 0.88) : vec3(uAlb);
     col = alb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
   }
   float tEnd = min(t, 30.0);
@@ -3481,21 +3685,22 @@ const SETS = ['Floor', 'Floor & wall', 'Dock, seen from below', 'Wall at the wat
 const SET_CAMS = [
   {az:30, el:38, dist:10, tx:0, ty:0, tz:0},
   {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6},
-  {az:22, el:-4, dist:8.5, tx:0, ty:0.95, tz:2.0},
+  {az:18, el:-16, dist:4.2, tx:0, ty:1.35, tz:2.0},
   {az:32, el:10, dist:9, tx:0, ty:1.0, tz:0.6},
 ];
+const MODE_SPHERE = {windows:[0.5, 0.22, 1.25, 0.22]};
 const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.01], [0, -9, 0, 0.01]];
 // each pattern gets a set and a light placed the way that pattern is used
 const MODE_SCENE = {
   under:  {set:0, ltype:0, cone:90, dist:4, el:90, az:0, aimX:0, aimY:0, aimZ:0, sphere:true},
-  over:   {set:2, ltype:0, cone:90, dist:4, el:-68, az:0, aimX:0, aimY:1.5, aimZ:2, sphere:false, amb:0.1},
-  hull:   {set:3, ltype:0, cone:90, dist:4, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1},
-  trees:  {set:1, ltype:1, el:60, az:25, aimX:0, aimY:0.8, aimZ:0.8, sphere:true},
+  over:   {set:2, ltype:0, cone:90, dist:4, el:-68, az:0, aimX:0, aimY:1.5, aimZ:2, sphere:false, amb:0.08, ev:1.3},
+  hull:   {set:3, ltype:1, follow:true, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1, ev:0.5},
+  trees:  {set:1, ltype:0, cone:90, dist:5, el:60, az:25, aimX:0, aimY:0.8, aimZ:0.8, sphere:true},
   shapes: {set:1, ltype:0, cone:60, dist:5, el:35, az:15, aimX:0, aimY:1.0, aimZ:0, sphere:true},
-  windows:{set:1, ltype:1, el:35, az:-28, aimX:0.3, aimY:0, aimZ:2.2, sphere:false, amb:0.06, color:'#fff4e6'},
+  windows:{set:1, ltype:1, el:35, az:-28, aimX:0, aimY:0.12, aimZ:0.75, sphere:true, amb:0.06, color:'#fff4e6'},
 };
 // spotlights start with the gobo at its real size where they are aimed
-const MODE_CAMS = {windows:{az:24, el:32, dist:5.2, tx:0.2, ty:0.2, tz:2.0}};
+const MODE_CAMS = {windows:{az:24, el:22, dist:3.6, tx:0.15, ty:0.35, tz:0.75}};
 function camDefault(m) { const set = S.scenes[m].set | 0; return {...(MODE_CAMS[m] && MODE_SCENE[m].set === set ? MODE_CAMS[m] : SET_CAMS[set])}; }
 const sceneDefaults = m => {
   const d = {...SCENE_DEFAULTS, ...(MODE_SCENE[m] || {})};
@@ -3503,9 +3708,11 @@ const sceneDefaults = m => {
   if (d.ltype === 0 && tile && !['windows', 'shapes'].includes(MODES[m].kind)) d.rep = clamp(+(2 * d.dist * Math.tan(d.cone * 0.5 * DEG) / tile).toFixed(2), 1, 12);
   return d;
 };
-const followsSun = () => SC().follow && SC().ltype === 1 && S.p[S.mode].sunElev !== undefined && MODES[S.mode].kind;
-if (!S.scenes) S.scenes = {};
-if (!S.cams) S.cams = {};
+const canFollow = () => S.p[S.mode].sunElev !== undefined && (MODES[S.mode].kind || S.mode === 'hull');
+const followsSun = () => SC().follow && SC().ltype === 1 && canFollow();
+// v4 changed the default set-up of several scenes, so older saved scenes start fresh
+if (!S.scenes || S.savedVer !== 4) S.scenes = {};
+if (!S.cams || S.savedVer !== 4) S.cams = {};
 for (const m of Object.keys(MODES)) {
   S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
   if (!S.cams[m]) S.cams[m] = camDefault(m);
@@ -3534,11 +3741,11 @@ const SCENE_GROUPS = () => {
   );
   const place = [];
   if (!sun) place.push({k:'dist', l:'Distance to aim point', min:0.5, max:40, step:0.05, log:true, u:'m'});
-  const fol = sun && S.p[S.mode].sunElev !== undefined && MODES[S.mode].kind;
+  const fol = sun && canFollow();
   if (fol) place.push({k:'follow', l:'Use the pattern\'s sun angle', type:'chk', h:'Points the scene sun the way the pattern was made, so the shadow lands with its true shape.'});
   place.push(
     ...(fol && SC().follow ? [] : [{k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:-85, max:85, step:0.5, u:'°', h:'Around the aim point; 0° is straight out from the wall.'},
-    {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:sun ? 2 : -89, max:90, step:0.5, u:'°', h:sun ? 'Height of the sun above the horizon.' : 'Angle of the light above the aim point; negative puts it below, pointing up (as for light reflected off water).'}]),
+    {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:sun && S.mode !== 'hull' ? 2 : -89, max:90, step:0.5, u:'°', h:sun ? 'Height of the sun above the horizon.' : 'Angle of the light above the aim point; negative puts it below, pointing up (as for light reflected off water).'}]),
     {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right.'},
     {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor or water.'},
     {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:-1, max:8, step:0.05, u:'m', h:'Distance out from the wall.'},
@@ -3571,7 +3778,10 @@ const sceneTile = () => MODES[S.mode].kind === 'windows' ? (WIN.cover || 3) : (S
 function sceneLight() {
   const c = SC(), aim = [c.aimX, c.aimY, c.aimZ];
   const P = S.p[S.mode], fol = followsSun();
-  const az = (fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? P.sunElev : c.el) * DEG;
+  const hull = S.mode === 'hull' && fol;
+  // hulls and walls are lit by the sun mirrored in the water: from below, with the pattern starting at the waterline
+  const az = (fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? (hull ? -P.sunElev : P.sunElev) : c.el) * DEG;
+  if (hull) { aim[1] = 0.5 * sceneTile() * c.sunScale; aim[2] = 0; }
   const dir = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];   // aim → light
   const pos = v3.add(aim, v3.mul(dir, c.dist));
   const f = v3.mul(dir, -1);
@@ -3593,7 +3803,7 @@ function drawScene(fin) {
   const blur = c.blur / 100 * (c.ltype === 1 ? 1 : c.rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
   const kind = MODES[S.mode].kind;
-  const single = kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const single = S.mode === 'hull' ? 3 : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   pass(PR.scene, null, p => {
     tex(p, 'uGobo', fin.tex, 0);
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
@@ -3602,8 +3812,8 @@ function drawScene(fin) {
     f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
     f3(p, 'uLCol', ...hex3(c.color));
     f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', c.rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
-    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sceneTile() * c.sunScale); f1(p, 'uSrcR', 0.04);
-    gl.uniform4f(p.u('uSph'), ...SET_SPHERE[c.set | 0]);
+    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sceneTile() * c.sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1)); f1(p, 'uSrcR', 0.04);
+    gl.uniform4f(p.u('uSph'), ...(MODE_SPHERE[S.mode] && (MODE_SCENE[S.mode] || {}).set === (c.set | 0) ? MODE_SPHERE[S.mode] : SET_SPHERE[c.set | 0]));
     f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
   });
   const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
@@ -3688,6 +3898,11 @@ function control(def, store, idPrefix, dflt, onChange) {
     ci.oninput = () => { store[def.k] = ci.value; onChange(def.k); };
     lab.ondblclick = () => { if (dflt && dflt[def.k] !== undefined) { ci.value = dflt[def.k]; ci.oninput(); } };
     row.append(ci);
+  } else if (def.type === 'buttons') {
+    row.className = 'chips'; lab.remove();
+    def.items.forEach(([t, fn]) => { const b = document.createElement('button'); b.className = 'pchip'; b.textContent = t; b.onclick = fn; row.append(b); });
+  } else if (def.type === 'note') {
+    row.className = 'phint'; row.textContent = def.l;
   } else if (def.type === 'chk') {
     const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = id; cb.checked = !!store[def.k];
     cb.onchange = () => { store[def.k] = cb.checked; onChange(def.k); };
@@ -3872,6 +4087,180 @@ function updateHud(ms) {
   if (tl.shutter > 0 && QUAL[S.quality].sub > 1) add(S.playing && !S.mbPlay ? 'Motion blur when paused' : `${tl.shutter}° shutter`);
 }
 
+
+/* =====================================================================
+   PAINT YOUR OWN
+   A 1024² paint canvas that feeds the gobo directly. White lets light
+   through, black blocks it. Brushes wrap around the edges so a painted
+   gobo can still tile, and the Blur slider softens the whole thing.
+   ===================================================================== */
+const PAINT = {cv:null, ctx:null, tex:null, dirty:true, undo:[], last:null, saveT:0, N:1024};
+const PAINT_KEY = 'cucLab.paint';
+function paintCanvas() {
+  if (PAINT.cv) return PAINT;
+  const c = document.createElement('canvas'); c.width = c.height = PAINT.N;
+  PAINT.cv = c; PAINT.ctx = c.getContext('2d', {willReadFrequently:false});
+  PAINT.ctx.fillStyle = '#fff'; PAINT.ctx.fillRect(0, 0, PAINT.N, PAINT.N);
+  try {
+    const url = localStorage.getItem(PAINT_KEY);
+    if (url) { const im = new Image(); im.onload = () => { PAINT.ctx.drawImage(im, 0, 0, PAINT.N, PAINT.N); PAINT.dirty = true; dirty = true; }; im.src = url; }
+  } catch (e) {}
+  return PAINT;
+}
+function paintTex() {
+  paintCanvas();
+  if (!PAINT.tex) {
+    PAINT.tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, PAINT.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  }
+  if (PAINT.dirty) {
+    gl.bindTexture(gl.TEXTURE_2D, PAINT.tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, PAINT.cv);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    PAINT.dirty = false;
+  }
+  return PAINT.tex;
+}
+const PB = () => {
+  const P = S.p.shapes;
+  return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true};
+};
+function paintSave() {
+  clearTimeout(PAINT.saveT);
+  PAINT.saveT = setTimeout(() => { try { localStorage.setItem(PAINT_KEY, PAINT.cv.toDataURL('image/png')); } catch (e) {} }, 700);
+}
+function paintChanged() { PAINT.dirty = true; dirty = true; paintSave(); }
+function pushUndo() {
+  const c = document.createElement('canvas'); c.width = c.height = PAINT.N;
+  c.getContext('2d').drawImage(PAINT.cv, 0, 0);
+  PAINT.undo.push(c); if (PAINT.undo.length > 12) PAINT.undo.shift();
+}
+// one dab of the brush, repeated across the edges when wrapping so the gobo stays seamless
+function dab(x, y) {
+  const b = PB(), N = PAINT.N, ctx = PAINT.ctx, r = Math.max(1, b.size / 100 * N * 0.5);
+  const col = b.ink ? '255,255,255' : '0,0,0';
+  const offs = [[0, 0]];
+  if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -r * 1.6 && x + ox < N + r * 1.6 && y + oy > -r * 1.6 && y + oy < N + r * 1.6) offs.push([ox, oy]);
+  const rr = rng((PAINT.seed = (PAINT.seed || 1) + 1) * 7919);
+  for (const [ox, oy] of offs) {
+    const cx = x + ox, cy = y + oy;
+    ctx.save();
+    if (b.tool === 0) {
+      const g = ctx.createRadialGradient(cx, cy, r * (1 - b.soft) * 0.98, cx, cy, r);
+      g.addColorStop(0, `rgba(${col},${b.flow})`); g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fill();
+    } else if (b.tool === 1) {
+      // a spray of little leaves, each turned its own way
+      ctx.fillStyle = `rgba(${col},${Math.min(1, b.flow * 1.2)})`;
+      const n = 3 + Math.floor(rr() * 5);
+      for (let i = 0; i < n; i++) {
+        const a = rr() * 2 * Math.PI, d = Math.sqrt(rr()) * r, s = r * (0.14 + 0.22 * rr());
+        ctx.save(); ctx.translate(cx + Math.cos(a) * d, cy + Math.sin(a) * d); ctx.rotate(rr() * Math.PI);
+        ctx.beginPath(); ctx.moveTo(-s, 0); ctx.quadraticCurveTo(0, -s * 0.55, s, 0); ctx.quadraticCurveTo(0, s * 0.55, -s, 0); ctx.fill();
+        ctx.restore();
+      }
+    } else if (b.tool === 2) {
+      ctx.fillStyle = `rgba(${col},${b.flow})`;
+      const n = 6 + Math.floor(rr() * 10);
+      for (let i = 0; i < n; i++) {
+        const a = rr() * 2 * Math.PI, d = Math.sqrt(rr()) * r, s = r * (0.02 + 0.12 * Math.pow(rr(), 2));
+        ctx.beginPath(); ctx.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, s, 0, 2 * Math.PI); ctx.fill();
+      }
+    } else {
+      // soften: blur what is already painted under the brush
+      const x0 = Math.floor(cx - r), y0 = Math.floor(cy - r), w = Math.ceil(2 * r);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.clip();
+      ctx.filter = `blur(${Math.max(1, r * 0.18 * (0.3 + b.flow))}px)`;
+      ctx.drawImage(PAINT.cv, x0, y0, w, w, x0, y0, w, w);
+    }
+    ctx.restore();
+  }
+}
+function stroke(x, y) {
+  const b = PB(), N = PAINT.N, step = Math.max(1, b.size / 100 * N * 0.5 * (b.tool === 0 ? 0.25 : 0.6));
+  if (!PAINT.last) { dab(x, y); PAINT.last = [x, y]; return; }
+  let [lx, ly] = PAINT.last;
+  // take the short way across a wrapped edge
+  if (b.wrap) { if (x - lx > N / 2) lx += N; if (lx - x > N / 2) lx -= N; if (y - ly > N / 2) ly += N; if (ly - y > N / 2) ly -= N; }
+  const d = Math.hypot(x - lx, y - ly), n = Math.floor(d / step);
+  for (let i = 1; i <= n; i++) { const t = i / n; dab(lx + (x - lx) * t, ly + (y - ly) * t); }
+  if (n) PAINT.last = [x, y];
+}
+const paintOn = () => S.view === 'gobo' && S.mode === 'shapes' && (S.p.shapes.shape | 0) === 14;
+function paintAction(a) {
+  paintCanvas(); const ctx = PAINT.ctx, N = PAINT.N;
+  if (a === 'undo') { const c = PAINT.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
+  else {
+    pushUndo();
+    if (a === 'light' || a === 'shadow') { ctx.fillStyle = a === 'light' ? '#fff' : '#000'; ctx.fillRect(0, 0, N, N); }
+    else if (a === 'invert') { ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.globalCompositeOperation = 'source-over'; }
+    else if (a === 'breakup') {
+      // start from a generated leafy breakup, then paint over it
+      const P = {...S.p.shapes, shape:10, blur:0, framing:0, motion:0, scale:S.p.shapes.scale || 5, amount:S.p.shapes.amount ?? 0.5, soft:0.25, brk:0.7, warp:0.6, clump:0.5, stretch:1, seed:(S.p.shapes.seed | 0) + Math.floor(Math.random() * 999)};
+      const o = renderShapesRaw(P, N, 0, {loop:false, len:10});
+      const px = new Float32Array(N * N * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, o.fb); gl.readPixels(0, 0, N, N, gl.RGBA, gl.FLOAT, px);
+      const id = ctx.createImageData(N, N);
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const v = Math.round(clamp(px[((N - 1 - y) * N + x) * 4], 0, 1) * 255), k = (y * N + x) * 4;
+        id.data[k] = id.data[k + 1] = id.data[k + 2] = v; id.data[k + 3] = 255;
+      }
+      ctx.putImageData(id, 0, 0);
+    }
+  }
+  paintChanged();
+}
+function paintDefs() {
+  return [
+    {k:'pbTool', l:'Brush', opts:['Soft round', 'Leaf scatter', 'Splatter', 'Soften (blur)']},
+    {k:'pbInk', l:'Paint with', opts:['Shadow (blocks light)', 'Light (lets light through)']},
+    {k:'pbSize', l:'Brush size', min:0.5, max:40, step:0.1, u:'%'},
+    {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
+    {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01},
+    {k:'pbWrap', l:'Wrap at the edges (keeps it seamless)', type:'chk'},
+    {type:'buttons', items:[['Undo', () => paintAction('undo')], ['Fill with leafy breakup', () => paintAction('breakup')], ['Clear to light', () => paintAction('light')], ['Clear to shadow', () => paintAction('shadow')], ['Invert', () => paintAction('invert')]]},
+    {type:'note', l:'Paint straight onto the preview. White lets light through, black blocks it; Blur softens the whole gobo.'},
+  ];
+}
+// pointer painting on the preview
+(() => {
+  let down = false;
+  const ring = $('brush');
+  const toPx = e => {
+    const r = cv.getBoundingClientRect(), T = S.tiles || 1;
+    let u = (e.clientX - r.left) / r.width * T, v = (e.clientY - r.top) / r.height * T;
+    u -= Math.floor(u); v -= Math.floor(v);
+    return [u * PAINT.N, v * PAINT.N];
+  };
+  const showRing = e => {
+    if (!ring) return;
+    cv.style.cursor = paintOn() ? 'none' : '';
+    cv.style.touchAction = paintOn() ? 'none' : '';
+    if (!paintOn()) { ring.hidden = true; return; }
+    const r = cv.getBoundingClientRect(), pr = $('plate').getBoundingClientRect();
+    const d = PB().size / 100 * r.width / (S.tiles || 1);
+    ring.hidden = false;
+    ring.style.width = ring.style.height = d + 'px';
+    ring.style.left = (e.clientX - pr.left - d / 2) + 'px'; ring.style.top = (e.clientY - pr.top - d / 2) + 'px';
+  };
+  cv.addEventListener('pointerdown', e => {
+    if (!paintOn()) return;
+    paintCanvas(); pushUndo(); down = true; PAINT.last = null;
+    cv.setPointerCapture(e.pointerId);
+    stroke(...toPx(e)); paintChanged();
+  });
+  cv.addEventListener('pointermove', e => {
+    showRing(e);
+    if (!down || !paintOn()) return;
+    stroke(...toPx(e)); paintChanged();
+  });
+  const up = () => { down = false; PAINT.last = null; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('pointerleave', () => { if (ring) ring.hidden = true; });
+})();
 
 /* =====================================================================
    LOOP
