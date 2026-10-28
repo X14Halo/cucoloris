@@ -131,6 +131,8 @@ body.in-scene .camhint{display:block}
 body.in-scene .gobo-only{display:none}
 body.in-scene #cv{cursor:grab;touch-action:none;box-shadow:none}
 body.in-scene #cv:active{cursor:grabbing}
+.topctl{padding:10px 12px;border-color:var(--accent)}
+.topctl .row > label{font-weight:600}
 details.grp.scene{border-color:#3a3226}
 input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);border-radius:5px;background:var(--raise);cursor:pointer}
 @media (max-width: 860px){
@@ -183,6 +185,7 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
   </section>
 
   <aside class="rail" id="rail">
+    <div class="grp topctl ctrls" id="topctl" hidden></div>
     <div class="presets">
       <span class="sect-label">Presets</span>
       <div class="chips" id="presets"></div>
@@ -4010,7 +4013,16 @@ function buildPanel() {
       d.append(sm, c); groups.append(d);
     });
   }
-  m.groups.forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
+  // Framing is the first decision for a gobo, so it sits above everything else in the panel
+  const top = $('topctl'); top.innerHTML = ''; top.hidden = true;
+  const groupsNow = m.groups.map(g => ({...g, params:g.params.filter(d => d.k !== 'framing')}));
+  const fdef = m.groups.flatMap(g => g.params).find(d => d.k === 'framing');
+  if (fdef) {
+    top.hidden = false;
+    const onCh = k => { if (!m.onParam || m.onParam(k, store)) buildPanel(); changed(); };
+    top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
+  }
+  groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
   mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
 }
 function buildTimeline() {
