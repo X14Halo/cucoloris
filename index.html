@@ -565,21 +565,22 @@ const ORGANIC = new Set([9, 10, 11, 12, 13]);
 const SOFTNOISE = new Set([7, 9, 11, 15, 16, 17, 18, 19]);
 const DIRS = ['Vertical', 'Diagonal ╲', 'Horizontal', 'Diagonal ╱'];
 // quick starting points for the motion; each sets every motion control
-const MOTION_OFF = {sway:0, flutter:0, drift:0, gust:0, flow:0, morph:0, breath:0};
+const MOTION_OFF = {sway:0, flutter:0, drift:0, gust:0, flow:0, morph:0, breath:0, blend:0};
 const MOTION_LOOKS = [
   ['Still', {...MOTION_OFF}],
-  ['Slow breathing', {...MOTION_OFF, breath:0.5, breathT:10, morph:0.05, flow:0.15}],
-  ['Drifting', {...MOTION_OFF, drift:0.15, gust:0.3, morph:0.06}],
+  ['Slow morph', {...MOTION_OFF, blend:0.5, blendT:8, flow:0.1}],
+  ['Lively morph', {...MOTION_OFF, blend:0.8, blendT:3, flow:0.2, morph:0.1}],
+  ['Drifting', {...MOTION_OFF, drift:0.15, gust:0.3, blend:0.3, blendT:10}],
   ['Slow swirl', {...MOTION_OFF, flow:0.5, morph:0.06}],
-  ['Evolving', {...MOTION_OFF, morph:0.15, flow:0.2}],
-  ['Restless', {...MOTION_OFF, drift:0.1, gust:0.5, flow:0.35, morph:0.12, breath:0.35, breathT:7}],
+  ['Evolving', {...MOTION_OFF, morph:0.2, flow:0.2}],
 ];
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
-  onParam(k) { return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'breath' || k === 'pbTool'; },
+  onParam(k, P) { if (k === 'blend') { const on = (P.blend ?? 0) > 0, ch = on !== this._blendOn; this._blendOn = on; return ch; } return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'pbTool' || k === 'drift'; },
   get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
+    this._blendOn = (P.blend ?? 0) > 0;
     const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
     const g = [
       {k:'framing', l:'Framing', opts:['As designed' + (SHAPE_SEAMLESS[sh] ? ' (seamless tile)' : ''), 'Light pool, dark edges'], h:'A light pool lets light through only in the middle of the frame, fading softly to black toward the edges.'},
@@ -622,13 +623,13 @@ MODES.shapes = {
       {k:'shimSpd', l:'Shimmer speed', min:0.1, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '×'},
     ]});
     else {
-      const br = (P.breath ?? 0) > 0;
+      const bl = (P.blend ?? 0) > 0 && sh !== 17 && sh !== 7;
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
-        {k:'mSpeed', l:'Overall speed', min:0.1, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        {k:'breath', l:'Ebb & flow', min:0, max:1, step:0.01, h:'The light swells and pulls back, some areas opening while others close.'},
-        ...(br ? [{k:'breathT', l:'Ebb & flow period', min:2, max:30, step:0.1, u:'s'}] : []),
-        {k:'morph', l:'Shape change', min:0, max:1, step:0.01, h:sh === 17 ? 'The pools drift a little and fade in and out, each on its own time.' : 'The shapes themselves slowly evolve into new ones.'},
+        {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
+        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
+        {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
         {k:'drift', l:'Drift', min:0, max:3, step:0.01, u:'m/s', h:'The whole pattern travels slowly in one direction.'},
         ...((P.drift ?? 0) > 0 ? [{k:'windDir', l:'Drift direction', min:0, max:360, step:1, u:'°'}, {k:'gust', l:'Unevenness', min:0, max:1, step:0.01, h:'The drift speeds up and slows down, as moving air does.'}] : []),
@@ -638,16 +639,16 @@ MODES.shapes = {
     return out;
   },
   presets:[
-    {name:'Breathing light pool', v:{seed:4, shape:9, framing:1, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
+    {name:'Morphing light pool', v:{seed:4, shape:9, framing:1, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
       brk:0.4, rough:0.45, darkest:0.2, dir:0, scale:3, amount:0.55, motion:0.5, shimSpd:1, warp:0.9, clump:0.4, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true, pbScene:true, pbAngle:20, pbLen:6, pbStreak:0.5,
-      mSpeed:1, sway:0, swayHz:0.45, flutter:0, drift:0, windDir:0, gust:0, flow:0.25, morph:0.06, breath:0.6, breathT:9}},
-    {name:'Soft drifting clouds', v:{shape:15, framing:0, blur:6, scale:2, amount:0.5, soft:0.75, brk:0.5, rough:0.5, darkest:0.3, warp:0.6, clump:0.5, drift:0.15, gust:0.3, morph:0.06, flow:0.15, breath:0}},
-    {name:'Pools that come and go', v:{shape:17, framing:0, blur:5, scale:3, amount:0.5, soft:0.85, darkest:0.15, warp:0.5, wVar:0.6, morph:0.5, flow:0.15, breath:0}},
-    {name:'Subtle soft mottling', v:{shape:11, framing:0, blur:5, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.45, warp:0.7, clump:0.5, morph:0.08, flow:0.2, breath:0.3, breathT:11}},
-    {name:'Big soft blobs', v:{shape:9, framing:0, blur:8, scale:2, amount:0.55, soft:0.75, brk:0.3, rough:0.4, darkest:0.15, warp:1.0, clump:0.3, morph:0.06, flow:0.25, breath:0.4, breathT:10}},
+      mSpeed:1, sway:0, swayHz:0.45, flutter:0, drift:0, windDir:0, gust:0, flow:0.15, morph:0.04, breath:0, blend:0.5, blendT:8}},
+    {name:'Soft drifting clouds', v:{shape:15, framing:0, blur:6, scale:2, amount:0.5, soft:0.75, brk:0.5, rough:0.5, darkest:0.3, warp:0.6, clump:0.5, drift:0.15, gust:0.3, morph:0.06, flow:0.15, breath:0, blend:0.3, blendT:12}},
+    {name:'Wandering pools', v:{shape:17, framing:0, blur:5, scale:3, amount:0.5, soft:0.85, darkest:0.15, warp:0.5, wVar:0.6, morph:0.5, flow:0.15, breath:0}},
+    {name:'Subtle soft mottling', v:{shape:11, framing:0, blur:5, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.45, warp:0.7, clump:0.5, morph:0.08, flow:0.2, breath:0, blend:0.45, blendT:9}},
+    {name:'Big soft blobs', v:{shape:9, framing:0, blur:8, scale:2, amount:0.55, soft:0.75, brk:0.3, rough:0.4, darkest:0.15, warp:1.0, clump:0.3, morph:0.06, flow:0.25, breath:0, blend:0.45, blendT:9}},
     {name:'Billowy light', v:{shape:16, framing:0, blur:6, scale:3, amount:0.5, soft:0.85, brk:0.35, rough:0.5, darkest:0.2, warp:0.5, morph:0.08, flow:0.2, breath:0}},
-    {name:'Marbled flowing light', v:{shape:18, framing:0, blur:5, scale:2, amount:0.5, soft:0.8, brk:0.6, rough:0.5, darkest:0.25, warp:1.0, dir:1, flow:0.45, morph:0.06, breath:0}},
-    {name:'Gentle uneven wash', v:{shape:19, framing:0, blur:8, scale:2, amount:0.6, soft:0.6, brk:0.3, rough:0.45, darkest:0.4, warp:0.5, morph:0.05, flow:0.15, breath:0.3, breathT:12}},
+    {name:'Marbled flowing light', v:{blend:0.4, blendT:10, shape:18, framing:0, blur:5, scale:2, amount:0.5, soft:0.8, brk:0.6, rough:0.5, darkest:0.25, warp:1.0, dir:1, flow:0.45, morph:0.06, breath:0}},
+    {name:'Gentle uneven wash', v:{shape:19, framing:0, blur:8, scale:2, amount:0.6, soft:0.6, brk:0.3, rough:0.45, darkest:0.4, warp:0.5, morph:0.05, flow:0.15, breath:0, blend:0.45, blendT:9}},
     {name:'Soft streaks', v:{shape:15, framing:0, blur:5, scale:3, amount:0.5, soft:0.7, brk:0.5, rough:0.5, darkest:0.25, warp:0.4, clump:0.3, stretch:4, dir:1, drift:0.1, morph:0.05, breath:0}},
     {name:'Soft pool, slow swirl', v:{shape:15, framing:1, poolSize:1.0, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
     {name:'Soft spots, drifting', v:{shape:7, framing:0, blur:7, scale:4, amount:0.6, wVar:0.6, soft:0.85, darkest:0.15, drift:0.1, morph:0.3, breath:0}},
@@ -701,6 +702,8 @@ try {
       if (!(saved.ver >= 8) && m === 'shapes') S.p[m] = {...DEFAULTS[m]};
       // v9: framed gobos fill the image
       if (!(saved.ver >= 9) && S.p[m].poolSize !== undefined && S.p[m].poolSize < 1) S.p[m].poolSize = 1;
+      // v10: no more ebb & flow (brightness pumping); shapes morph instead
+      if (!(saved.ver >= 10) && m === 'shapes') { S.p[m].breath = 0; if (!(S.p[m].blend > 0)) S.p[m].blend = DEFAULTS[m].blend; }
     }
     S.savedVer = saved.ver;
     for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup']) if (saved[k] !== undefined) S[k] = saved[k];
@@ -712,7 +715,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, ver:9})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, ver:10})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -2914,33 +2917,43 @@ float glassT(vec2 p, Pane P, out float scat){
     // Raindrops are tiny lenses: each throws a dark rim with a bright focused core.
     float top = uWin.y * 0.5 + 0.05, span = uWin.y + 0.1;
     float loopT = uLoopT > 0.0 ? uLoopT : 20.0;
-    // running drops: they grow until they break loose, then slide down in stick-slip jerks,
-    // meandering and leaving a wet trail of little beads that they sweep the glass clean along
+    // running drops: they grow until they break loose, then run down, meandering and
+    // leaving a wet trail of little beads behind them, sweeping the glass clean along their path
     float sp = 0.035 / (0.4 + uRain) / max(1.0, uRainRun), clear = 0.0, run = 1.0, runS = 0.0;
     float c0 = floor(p.x / sp);
     for (int j = -1; j <= 1; j++){
       float c = c0 + float(j);
       if (h2(vec2(c, 11), 91u) > clamp((0.35 + 0.55 * min(uRain, 1.0)) * min(uRainRun, 1.0), 0.0, 0.98)) continue;
-      float n = floor((1.0 + 2.5 * h2(vec2(c, 12), 91u)) * uRainSpd + 0.5); if (n < 1.0) n = 1.0;   // passes per loop
+      float n = floor((1.0 + 2.5 * h2(vec2(c, 12), 91u)) * uRainSpd + 0.5); if (n < 1.0) n = 1.0;   // drops per loop
       float ph = h2(vec2(c, 13), 91u);
-      float s = fract(uT * n / loopT + ph);
-      float m = floor(3.0 + 5.0 * h2(vec2(c, 14), 91u));
-      s = s + 0.85 * sin(TAU * m * s) / (TAU * m);                     // stick-slip: stops and lurches
-      float yD = top - s * span;
+      float cyc = uT * n / loopT + ph, kc = floor(cyc), u = cyc - kc;
+      // A drop sits as a bead, growing, until it is heavy enough to break loose; then it runs down without
+      // stopping, quickening and easing as it meets and picks up the water already on the glass.
+      float wait = 0.2 + 0.35 * h2(vec2(c, 18.0 + kc), 91u);
+      float yStart = top - span * (0.05 + 0.45 * h2(vec2(c, 19.0 + kc), 91u));
+      float yD, grow = 1.0;
+      if (u < wait) { yD = yStart; grow = 0.55 + 0.45 * u / wait; }
+      else {
+        float uu = (u - wait) / (1.0 - wait), k1 = 1.7 + 1.3 * h2(vec2(c, 20.0 + kc), 91u), q0 = h2(vec2(c, 21.0 + kc), 91u) * TAU;
+        float sl = uu * uu * (0.35 + 0.65 * uu) * 0.6 + uu * 0.4;                              // breaks loose gently, then runs
+        sl += 0.05 * (sin(TAU * k1 * uu + q0) - sin(q0)) / (TAU * k1 * 0.25) * uu;           // speed varies, never stops
+        yD = yStart - sl * span * 1.25;
+      }
       float fx = 0.006 * sin(p.y * 17.0 + c * 3.1) + 0.003 * sin(p.y * 43.0 + c * 1.7);
       float x0 = (c + 0.25 + 0.5 * h2(vec2(c, 15), 91u)) * sp;
       float dx = p.x - (x0 + fx);
-      float rD = (0.0018 + 0.0018 * h2(vec2(c, 16), 91u) * (0.5 + uRain)) * uRainSz;
+      float rD = (0.0018 + 0.0018 * h2(vec2(c, 16), 91u) * (0.5 + uRain)) * uRainSz * grow;
       vec2 q = vec2(dx, (p.y - yD) * 0.7) / rD;
       float dd = length(q);
       if (dd < 1.0) { run *= 1.0 + uRainLens * (-0.75 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd)); runS += 0.4 * uRainLens; }
       // trail behind it (above): a thin wet line that breaks into beads and slowly dries
-      if (p.y > yD){
+      if (p.y > yD && p.y < yStart + rD){
         float age = (p.y - yD) / (span * n / loopT);
         float fade = exp(-age / 4.0);
         clear = max(clear, (1.0 - smoothstep(rD * 1.4, rD * 2.2, abs(dx))) * exp(-age / 12.0));
-        float bead = fract((p.y - yD) / 0.0055 + h2(vec2(c, 17), 91u));
-        float bR = 0.0006 * uRainSz * step(0.45, h2(vec2(c, floor((p.y - yD) / 0.0055)), 92u));
+        // the beads it leaves stay put on the glass
+        float bead = fract(p.y / 0.0055 + h2(vec2(c, 17), 91u));
+        float bR = 0.0006 * uRainSz * step(0.45, h2(vec2(c, floor(p.y / 0.0055 + h2(vec2(c, 17), 91u)) + kc * 7.0), 92u));
         float bd = length(vec2(dx, (bead - 0.5) * 0.0055));
         float line = 1.0 - smoothstep(0.0003, 0.0007, abs(dx));
         float bb = 1.0 - smoothstep(bR * 0.6, bR, bd);
@@ -3379,7 +3392,8 @@ uniform vec2 uApex; uniform int uPz; uniform float uAim;
 uniform vec2 uDriftOff; uniform float uMorphZ, uFlowZ; uniform int uPzM, uPzF;
 uniform float uSway, uSwayHz, uWindA, uFlow, uBreath, uBreathT, uGust, uFlutter; uniform ivec2 uWindI;
 float gZ = 0.0, gAmt = 0.5, gGain = 0.5; int gPz = 1000; uint gSO = 0u; bool gFlut = false;
-uniform float uRough, uDark, uShimSpd;
+uniform float uRough, uDark, uShimSpd, uBlend, uBlendT, uBlendOff; uniform int uBlendN;
+bool gRaw = false;   // when set, the soft shapes return their raw field, so two versions can be morphed before it is shaped
 uniform float uFlutHz, uLSig;
 void useZ(float z, int P){ gZ = z; gPz = P; }
 float h1(int i, int k){ return rnd(ivec3(i, k, 5), uSeed); }
@@ -3510,14 +3524,14 @@ float leafStamps(vec2 uv, int F, float field, float thr){
 float organic(vec2 uv, int F){
   float soft = uSoft;
   if (uShape == 9){                          // organic breakup
-    return thresh(orgField(uv, F, (81u + gSO)), gAmt, soft);
+    float f9 = orgField(uv, F, (81u + gSO)); return gRaw ? f9 : thresh(f9, gAmt, soft);
   } else if (uShape == 10){                  // leafy breakup
     float f = orgField(uv, F, (82u + gSO)), thr = 1.0 - gAmt;
     float L = thresh(f, gAmt, soft * 0.7);
     return L * (1.0 - leafStamps(uv, F, f, thr) * (1.0 - 0.6 * soft));
   } else if (uShape == 11){                  // soft mottling
     float f = orgField(uv, F, (83u + gSO));
-    return clamp(0.5 + (f - (1.0 - gAmt)) * (1.2 + 3.0 * (1.0 - soft)), 0.0, 1.0);
+    return gRaw ? f : clamp(0.5 + (f - (1.0 - gAmt)) * (1.2 + 3.0 * (1.0 - soft)), 0.0, 1.0);
   } else if (uShape == 12){                  // dappled holes in a dark canopy
     int G = F * 2;
     // warp the cells so the holes come out irregular, not round
@@ -3565,6 +3579,7 @@ vec2 warpBy(vec2 uv, int F, float k, uint s){
   gGain = g0; useZ(z0, p0);
   return uv + k * w / float(Fw);
 }
+float washOut(float n){ return clamp(0.5 + (n - 0.5) * (0.8 + 2.5 * (1.0 - uSoft)) + (gAmt - 0.5), 0.0, 1.0); }
 float softNoise(vec2 uv, int F){
   int oct = 1 + int(uBrk * 5.0 + 0.5);
   ivec2 A, B; lattice(F, A, B);
@@ -3573,12 +3588,12 @@ float softNoise(vec2 uv, int F){
     float n = 0.5 + 0.5 * fbmA(u2, A, B, oct, 403u) / 0.6;
     float c = fbmA(uv, ivec2(max(F / 3, 1), 0), ivec2(0, max(F / 3, 1)), 2, 404u);
     n = 0.5 + (n - 0.5 + uClump * 0.45 * c) / (1.0 + 0.45 * uClump);
-    return thresh(n, gAmt, uSoft);
+    return gRaw ? n : thresh(n, gAmt, uSoft);
   }
   if (uShape == 16){                       // billows: puffs of light between soft dark creases
     vec2 u2 = warpBy(uv, F, uWarp * 0.3, 411u);
     float b = clamp(fbmAbs(u2, A, B, oct, 413u) * 2.4, 0.0, 1.0);
-    return thresh(b, gAmt, uSoft);
+    return gRaw ? b : thresh(b, gAmt, uSoft);
   }
   if (uShape == 17){                       // soft pools of light that swell and fade, each on its own time
     vec2 u2 = warpBy(uv, F, uWarp * 0.25, 421u);
@@ -3587,8 +3602,8 @@ float softNoise(vec2 uv, int F){
       ivec2 c = ivec2(gi) + ivec2(i, j); ivec2 cw = ivec2(wrap1(c.x, F), wrap1(c.y, F));
       float h1 = rnd(ivec3(cw, 31), uSeed), h2 = rnd(ivec3(cw, 32), uSeed), h3 = rnd(ivec3(cw, 33), uSeed), h4 = rnd(ivec3(cw, 34), uSeed);
       vec2 ctr = vec2(c) + vec2(h1, h2);
-      ctr += uMotion * 0.18 * vec2(sin(TAU * qf(0.03 + 0.02 * h3) * uT + h1 * TAU), cos(TAU * qf(0.025 + 0.02 * h4) * uT + h2 * TAU));
-      float fade = mix(1.0, 0.5 + 0.5 * sin(TAU * qf(0.04 + 0.05 * h4) * uT + h3 * TAU), clamp(uMotion * 1.5, 0.0, 1.0));
+      ctr += uMotion * 0.35 * vec2(sin(TAU * qf(0.03 + 0.02 * h3) * uT + h1 * TAU) + 0.4 * sin(TAU * qf(0.071 + 0.03 * h2) * uT + h4 * TAU), cos(TAU * qf(0.025 + 0.02 * h4) * uT + h2 * TAU) + 0.4 * cos(TAU * qf(0.063 + 0.03 * h1) * uT + h3 * TAU));
+      float fade = 1.0;
       float r = (0.25 + 0.5 * gAmt) * (1.0 - 0.6 * uWVar * h3);
       float d = length(g - ctr) / max(r, 0.02);
       float e = exp(-d * d * (1.2 + 6.0 * (1.0 - uSoft) * (1.0 - uSoft)));
@@ -3600,12 +3615,12 @@ float softNoise(vec2 uv, int F){
     vec2 u2 = warpBy(uv, max(F / 2, 1), uWarp * 0.7, 433u);
     float ph = uDir == 0 ? u2.x : uDir == 2 ? u2.y : uDir == 1 ? u2.x - u2.y : u2.x + u2.y;
     float t = TAU * float(F) * ph + uWarp * 12.0 * fbmA(u2, ivec2(max(F / 2, 1), 0), ivec2(0, max(F / 2, 1)), oct, 431u);
-    return thresh(0.5 + 0.5 * sin(t), gAmt, uSoft);
+    return gRaw ? 0.5 + 0.5 * sin(t) : thresh(0.5 + 0.5 * sin(t), gAmt, uSoft);
   }
   // uneven wash: broad, gentle unevenness rather than shapes
   vec2 u2 = warpBy(uv, F, uWarp * 0.3, 441u);
   float n = 0.5 + 0.5 * fbmA(u2, A, B, max(oct - 2, 1), 443u) / 0.55;
-  return clamp(0.5 + (n - 0.5) * (0.8 + 2.5 * (1.0 - uSoft)) + (gAmt - 0.5), 0.0, 1.0);
+  return gRaw ? n : washOut(n);
 }
 
 // sway of one layer of the pattern: it moves almost rigidly (a slowly varying offset, so nothing smears),
@@ -3651,9 +3666,27 @@ void main(){
   vec2 uv = moving ? motionUV(uv0) : uv0;
   float br = moving ? breathAt(uv0) : 0.0;
   gAmt = clamp(uAmount + br, 0.02, 0.98);
-  if (uShape >= 15 && uShape <= 19){
+  if ((uShape >= 15 && uShape <= 19) || ((uShape == 9 || uShape == 11) && uSway <= 0.0)){
     gGain = uRough;
-    v = softNoise(uv, F);
+    if (uBlend > 0.0 && uShape != 17){
+      /* Morph: the pattern is blended, before it is shaped, through a chain of versions of itself shifted by
+         random offsets. Blending the underlying field (not the light) lets shapes stretch, merge and split
+         into the next version instead of cross-fading, and B-spline weights keep the motion going without
+         ever pausing at a version. The blend is renormalised so contrast and brightness stay steady. */
+      float tt = uT / uBlendT, k = floor(tt), f = tt - k;
+      float w0 = 0.5 * (1.0 - f) * (1.0 - f), w2 = 0.5 * f * f, w1 = 1.0 - w0 - w2;
+      float n = 0.0;
+      gRaw = true;
+      for (int i = 0; i < 3; i++){
+        float ki = k + float(i) - 1.0; if (uBlendN > 0) ki = mod(ki, float(uBlendN));
+        vec2 o = uBlendOff * (vec2(fract(sin(ki * 12.9898 + 4.1) * 43758.5453), fract(sin(ki * 78.233 + 1.7) * 43758.5453)) - 0.5) * 3.0 / float(F);
+        float fi = uShape >= 15 ? softNoise(uv + o, F) : organic(uv + o, F);
+        n += (i == 0 ? w0 : i == 1 ? w1 : w2) * (fi - 0.5);
+      }
+      gRaw = false;
+      n = 0.5 + n / sqrt(w0 * w0 + w1 * w1 + w2 * w2);
+      v = uShape == 11 ? clamp(0.5 + (n - (1.0 - gAmt)) * (1.2 + 3.0 * (1.0 - uSoft)), 0.0, 1.0) : uShape == 19 ? washOut(n) : thresh(n, gAmt, uSoft);
+    } else v = uShape >= 15 ? softNoise(uv, F) : organic(uv, F);
     fragColor = vec4(vec3(mix(uDark, 1.0, v)), 1.0); return;
   }
   if (uShape >= 9 && uShape <= 13){
@@ -3799,6 +3832,9 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f2(p, 'uApex', P.apexX, P.apexY); f1(p, 'uAim', Math.atan2(-P.apexX, 0.5 + P.apexY));
     i1(p, 'uPz', tl.loop ? Math.max(1, Math.round(P.motion * tl.len / 3)) : 1000);
     i1(p, 'uStretch', Math.round(P.stretch || 1)); f1(p, 'uWarp', P.warp ?? 0.5); f1(p, 'uClump', P.clump ?? 0.4);
+    // morph timing: in a loop, a whole number of morphs per loop, cycling through that many versions
+    { const bt = Math.max(P.blendT ?? 8, 0.2); let BT = bt, BN = 0; if (tl.loop) { BN = Math.max(1, Math.round(M.Lm / bt)); BT = M.Lm / BN; }
+      f1(p, 'uBlend', org ? (P.blend ?? 0) : 0); f1(p, 'uBlendT', BT); i1(p, 'uBlendN', BN); f1(p, 'uBlendOff', P.blend ?? 0); }
     f1(p, 'uRough', P.rough ?? 0.5); f1(p, 'uDark', P.darkest ?? 0); f1(p, 'uShimSpd', P.shimSpd ?? 1);
     f2(p, 'uDriftOff', ...(org ? M.off : [0, 0])); f1(p, 'uMorphZ', M.morph.z); i1(p, 'uPzM', M.morph.P); f1(p, 'uFlowZ', M.flow.z); i1(p, 'uPzF', M.flow.P);
     // sway amplitude is a real distance where the light lands (up to about 10 cm), so it reads the same at any tile size
@@ -3806,7 +3842,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     // flutter rocks the fine detail through the noise's time axis (about a third of a feature at full strength)
     f1(p, 'uFlutter', org && sh >= 9 && sh <= 13 ? (P.flutter ?? 0) * 0.35 : 0); f1(p, 'uFlutHz', (P.swayHz ?? 0.4) * 3.2); f1(p, 'uLSig', P.lsig ?? ({9:0.1, 10:0.12, 11:0.14, 13:0.24}[sh] || 0.12));
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
-    f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', org ? (P.breath ?? 0) : 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
+    f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
     tex(p, 'uPaint', paintTex(), 1);
   });
   return out;
@@ -3837,8 +3873,8 @@ function motionInfo(P) {
   if (P.sway > 0) bits.push(`swaying ±${(P.sway * 10).toFixed(0)} cm at ${(P.swayHz ?? 0.4).toFixed(2)} Hz`);
   if (P.flutter > 0 && (P.shape | 0) >= 9 && (P.shape | 0) <= 13) bits.push('leaves fluttering');
   if (P.flow > 0) bits.push('flowing');
-  if (P.morph > 0) bits.push(`changing shape every ${(4 / P.morph / (P.mSpeed ?? 1)).toFixed(0)} s or so`);
-  if (P.breath > 0) bits.push(`breathing every ${(P.breathT / (P.mSpeed ?? 1)).toFixed(1)} s`);
+  if (P.morph > 0) bits.push(`evolving over about ${(4 / P.morph / (P.mSpeed ?? 1)).toFixed(0)} s`);
+  if (P.blend > 0) bits.push(`morphing to a new version every ${((P.blendT ?? 8) / (P.mSpeed ?? 1)).toFixed(1)} s`);
   return bits.length ? '\nMotion: ' + bits.join(', ') + (P.gust > 0 && (P.drift > 0 || P.sway > 0) ? ', in gusts' : '') : '\nStill';
 }
 function usesPool() {
