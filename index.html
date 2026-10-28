@@ -336,7 +336,7 @@ const MODES = {
     post:{...LEVELS},
   },
   trees: {
-    short:'Tree shadows', kind:'trees', tileable:true, tl:{loop:true, len:30, shutter:180},
+    short:'Tree shadows', kind:'trees', tileable:true, tl:{loop:false, len:60, shutter:180},
     groups:[
       {name:'Trees', params:[
         {k:'species', l:'Species', opts:SPECIES.map(s => s.name)},
@@ -637,6 +637,8 @@ try {
       if (!(saved.ver >= 4) && m === 'trees') S.p[m].gustAmt = 0;
       if (saved.post && saved.post[m]) Object.assign(S.post[m], saved.post[m]);
       if (saved.tl && saved.tl[m]) Object.assign(S.tl[m], saved.tl[m]);
+      // v6: trees run their wind simulation live instead of looping
+      if (!(saved.ver >= 6) && m === 'trees') S.tl[m] = {...MODES.trees.tl};
     }
     S.savedVer = saved.ver;
     for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams']) if (saved[k] !== undefined) S[k] = saved[k];
@@ -648,7 +650,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:5})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:6})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -2245,7 +2247,7 @@ function windModes(T, P, tl) {
   const U = Math.max(P.windSpeed, 0.05), wd = P.windDir * DEG, wx = Math.cos(wd), wy = Math.sin(wd);
   const Lx = T.Lx || 10, Ly = T.Ly || 10, Tl = tl.loop ? tl.len : Math.min(tl.len, 120);
   const sig = (P.turb ?? 0.35) * U, Uc = 0.8 * U, Lu = 12;
-  const q = w => Math.round(w * Tl / (2 * Math.PI)) * 2 * Math.PI / Tl;
+  const q = w => tl.loop ? Math.round(w * Tl / (2 * Math.PI)) * 2 * Math.PI / Tl : w;
   const fSp = clamp(0.25 + 0.5 * (P.indep ?? 0.5), 0.1, 0.9);       // share of the eddies smaller than the tile
   const gust = 1 + 1.5 * (P.gustAmt || 0);
   const modes = [];
@@ -2270,11 +2272,12 @@ function windModes(T, P, tl) {
   }
   // eddies bigger than the tile: the whole canopy surges and veers together
   const NU = 10, fs = [];
-  for (let i = 0; i < NU; i++) fs.push(Math.pow(10, -1.6 + 1.9 * (i + r()) / NU));
+  const f0 = tl.loop ? -1.6 : -2.0;
+  for (let i = 0; i < NU; i++) fs.push(Math.pow(10, f0 + (0.3 - f0) * (i + r()) / NU));
   const S = f => (Lu / U) / Math.pow(1 + 70.8 * (f * Lu / U) ** 2, 5 / 6);
   let Ssum = 0; const sf = fs.map((f, i) => { const df = f * 0.5; const v = S(f) * df; Ssum += v; return v; });
   fs.forEach((f, i) => {
-    const om = Math.max(q(2 * Math.PI * f), 2 * Math.PI / Tl), d = comp();
+    const om = tl.loop ? Math.max(q(2 * Math.PI * f), 2 * Math.PI / Tl) : 2 * Math.PI * f, d = comp();
     const a = sig * Math.sqrt((1 - fSp) * gust * 2 * sf[i] / Ssum);
     modes.push([0, 0, om, r() * 2 * Math.PI, a * d[0], a * d[1], a * d[2]]);
   });
@@ -2369,25 +2372,59 @@ function windSetup(T, P, tl) {
       aa[o] = pax + ax; aa[o + 1] = pay + ay; aa[o + 2] = paz + az;
     }
   };
-  // run until the start-up transient has died away, then record one period
+  // run until the start-up transient has died away
   const warm = Math.max(18, 4 / (zeta * 2 * Math.PI * Math.min(...groups.map(g => g.fn))));
   const warmSteps = Math.round(Math.min(warm, 40) / dt);
   setPhase(-warmSteps * dt);
   for (let s2 = 0; s2 < warmSteps; s2++) step();
-  const rate = Math.max(12, Math.min(30, 6e6 / (ng * 3 * Tl)));
-  const F = Math.max(2, Math.round(Tl * rate)), spf = 1 / (rate * dt);
-  const rec = new Float32Array(F * ng * 3);
-  let acc = 0, f = 0;
-  setPhase(0);
-  const nSteps = Math.round(Tl / dt);
-  for (let s2 = 0; s2 <= nSteps; s2++) {
-    const tNow = s2 * dt;
-    while (f < F && f / rate <= tNow + 1e-9) { rec.set(qx.subarray(0, ng * 3), f * ng * 3); f++; }
-    if (s2 < nSteps) step();
+  let rec = null, F = 0, rate = 30, live = null;
+  if (tl.loop) {
+    // looping: record one period of the (now periodic) response
+    rate = Math.max(12, Math.min(30, 6e6 / (ng * 3 * Tl)));
+    F = Math.max(2, Math.round(Tl * rate));
+    rec = new Float32Array(F * ng * 3);
+    let f = 0;
+    setPhase(0);
+    const nSteps = Math.round(Tl / dt);
+    for (let s2 = 0; s2 <= nSteps; s2++) {
+      const tNow = s2 * dt;
+      while (f < F && f / rate <= tNow + 1e-9) { rec.set(qx.subarray(0, ng * 3), f * ng * 3); f++; }
+      if (s2 < nSteps) step();
+    }
+    // remove the last trace of transient so the loop closes exactly
+    const end = Float32Array.from(qx);
+    for (let fr = 0; fr < F; fr++) { const w = fr / F; for (let i = 0; i < ng * 3; i++) rec[fr * ng * 3 + i] -= w * (end[i] - rec[i]); }
+  } else {
+    // not looping: the simulation runs forward live with the timeline, never repeating.
+    // Checkpoints every 2 s let it jump back when you scrub; a short history covers motion blur.
+    setPhase(0);
+    const snap = t => ({t, qx:Float64Array.from(qx), qv:Float64Array.from(qv), av:Float64Array.from(av), aa:Float64Array.from(aa)});
+    live = {t:0, n:0, cps:[snap(0)], hist:[], dt,
+      restore(cp) { qx.set(cp.qx); qv.set(cp.qv); av.set(cp.av); aa.set(cp.aa); setPhase(cp.t); this.t = cp.t; this.n = Math.round(cp.t / dt); this.hist = []; },
+      advance(t) {
+        const target = Math.round(t / dt);
+        if (target - this.n > 120 * 600) return;            // never stall the page on a huge jump
+        while (this.n < target) {
+          step(); this.n++; this.t = this.n * dt;
+          this.hist.push([this.t, Float32Array.from(qx)]); if (this.hist.length > 90) this.hist.shift();
+          const last = this.cps[this.cps.length - 1];
+          if (this.t - last.t >= 2 - 1e-9) this.cps.push(snap(this.t));
+        }
+      },
+      at(t) {
+        t = Math.max(t, 0);
+        const h = this.hist;
+        if (t < this.t - 1e-9 && (!h.length || t < h[0][0] - 1e-9)) {
+          let cp = this.cps[0]; for (const c of this.cps) if (c.t <= t + 1e-9) cp = c;
+          this.restore(cp);
+        }
+        if (t > this.t) this.advance(t);
+        if (t < this.t - 1e-9 && h.length) { let best = h[h.length - 1]; for (const e of h) if (Math.abs(e[0] - t) < Math.abs(best[0] - t)) best = e; return best[1]; }
+        return qx;
+      }};
+    // a short run to estimate the sway for the info line
+    rec = new Float32Array(2 * ng * 3); F = 0;
   }
-  // remove the last trace of transient so the loop closes exactly
-  const end = Float32Array.from(qx);
-  for (let fr = 0; fr < F; fr++) { const w = fr / F; for (let i = 0; i < ng * 3; i++) rec[fr * ng * 3 + i] -= w * (end[i] - rec[i]); }
   // node weights: each level's bending shape along its group
   const n = B.x.length, wts = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
@@ -2410,19 +2447,34 @@ function windSetup(T, P, tl) {
   const wk = new Float32Array(32 * 4), wa = new Float32Array(32 * 4);
   WM.modes.slice(0, 32).forEach((m, j) => { wk.set([m[0], m[1], m[2], m[3]], j * 4); wa.set([m[4], m[5], m[6], 0], j * 4); });
   let rms = 0; const top = off[1] > off[0] ? off[0] : 0;
-  for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; rms += rec[o] ** 2 + rec[o + 1] ** 2; }
-  let mean = [0, 0]; for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; mean[0] += rec[o] / F; mean[1] += rec[o + 1] / F; }
-  rms = Math.sqrt(Math.max(rms / F - mean[0] ** 2 - mean[1] ** 2, 0));
-  TR.wind = {rec, F, rate, ng, groups, off, wts, Tl, wk, wa, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
+  let mean = [0, 0];
+  if (F) {
+    for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; rms += rec[o] ** 2 + rec[o + 1] ** 2; }
+    for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; mean[0] += rec[o] / F; mean[1] += rec[o + 1] / F; }
+    rms = Math.sqrt(Math.max(rms / F - mean[0] ** 2 - mean[1] ** 2, 0));
+  } else {
+    // estimate from the first 10 s of the live run, then rewind
+    const o = top * 3, xs = [], ys = [];
+    for (let k = 1; k <= 100; k++) { const q2 = live.at(k * 0.1); xs.push(q2[o]); ys.push(q2[o + 1]); }
+    const mx = xs.reduce((a2, b2) => a2 + b2, 0) / xs.length, my = ys.reduce((a2, b2) => a2 + b2, 0) / ys.length;
+    rms = Math.sqrt(xs.reduce((a2, v, i) => a2 + (v - mx) ** 2 + (ys[i] - my) ** 2, 0) / xs.length); mean = [mx, my];
+    live.restore(live.cps[0]);
+  }
+  TR.wind = {rec, F, rate, ng, groups, off, wts, Tl, wk, wa, live, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
              twA:0, twF:[1, 1, 1], nG:0, fnLimb:groups[off[0]] ? groups[off[0]].fn : groups[0].fn, rmsTop:rms, lean:Math.hypot(...mean), nGroups:ng - off[0]};
 }
 function gustAt() { return 1; }
 function windEval(T, t) {
   const {B, G} = T, W = TR.wind;
-  const tt = ((t % W.Tl) + W.Tl) % W.Tl, x = tt * W.rate, f0 = Math.floor(x) % W.F, f1 = (f0 + 1) % W.F, u = x - Math.floor(x);
-  const ng = W.ng, a = f0 * ng * 3, b = f1 * ng * 3, rec = W.rec;
-  const g = W.gq || (W.gq = new Float32Array(ng * 3));
-  for (let i = 0; i < ng * 3; i++) g[i] = rec[a + i] * (1 - u) + rec[b + i] * u;
+  const ng = W.ng;
+  let g;
+  if (W.live) g = W.live.at(t);
+  else {
+    const tt = ((t % W.Tl) + W.Tl) % W.Tl, x = tt * W.rate, f0 = Math.floor(x) % W.F, f1 = (f0 + 1) % W.F, u = x - Math.floor(x);
+    const a = f0 * ng * 3, b = f1 * ng * 3, rec = W.rec;
+    g = W.gq || (W.gq = new Float32Array(ng * 3));
+    for (let i = 0; i < ng * 3; i++) g[i] = rec[a + i] * (1 - u) + rec[b + i] * u;
+  }
   const d = TR.dispData, n = B.x.length, off = W.off, wt = W.wts;
   for (let i = 0; i < n; i++) {
     const t0 = B.tree[i] * 3, w0 = wt[i * 4];
