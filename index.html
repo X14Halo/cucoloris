@@ -647,7 +647,7 @@ try {
       if (!(saved.ver >= 7)) S.tl[m] = {...S.tl[m], loop:false, len:Math.max(S.tl[m].len, 60)};
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'under';
   }
 } catch (e) {}
@@ -656,7 +656,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:7})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ver:7})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -2100,7 +2100,8 @@ function genTrees(P) {
   const sp = SPECIES[P.species | 0];
   const sinE = Math.sin(Math.max(P.sunElev, 5) * DEG);
   const L = P.tileSize, Lx = L / sinE, Ly = L;
-  if ((P.framing | 0) === 1) {
+  // palms are single trees, so a light pool frames one real palm in the middle (a canopy patch would put them anywhere)
+  if ((P.framing | 0) === 1 || ((P.framing | 0) === 2 && sp.kind === 'palm')) {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 11);
     const B = newBuilder();
     const G = newG();
@@ -4111,7 +4112,13 @@ function buildPanel() {
   const pr = $('presets'); pr.innerHTML = '';
   m.presets.forEach(ps => {
     const b = document.createElement('button'); b.className = 'pchip'; b.textContent = ps.name;
-    b.onclick = () => { S.p[S.mode] = {...DEFAULTS[S.mode], ...ps.v, seed:S.p[S.mode].seed}; buildPanel(); changed(); };
+    b.onclick = () => {
+      const prev = S.p[S.mode];
+      S.p[S.mode] = {...DEFAULTS[S.mode], ...ps.v, seed:prev.seed};
+      // a framing the user chose stays put when they try other presets
+      if (S.userFraming && S.userFraming[S.mode]) for (const k of ['framing', 'poolSize', 'poolSoft']) if (prev[k] !== undefined) S.p[S.mode][k] = prev[k];
+      buildPanel(); changed();
+    };
     pr.append(b);
   });
   const rs = document.createElement('button'); rs.className = 'pchip alt'; rs.textContent = 'New seed';
@@ -4150,7 +4157,11 @@ function buildPanel() {
   const fdef = m.groups.flatMap(g => g.params).find(d => d.k === 'framing');
   if (fdef) {
     top.hidden = false;
-    const onCh = k => { if (!m.onParam || m.onParam(k, store)) buildPanel(); changed(); };
+    const onCh = k => {
+      S.userFraming = S.userFraming || {};
+      S.userFraming[S.mode] = (store.framing | 0) !== (DEFAULTS[S.mode].framing | 0);
+      if (!m.onParam || m.onParam(k, store)) buildPanel(); changed();
+    };
     top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
   }
   groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
