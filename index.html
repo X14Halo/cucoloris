@@ -566,7 +566,7 @@ const MOTION_LOOKS = [
 ];
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
-  onParam(k) { return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'breath'; },
+  onParam(k) { return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'breath' || k === 'pbTool'; },
   get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
@@ -629,7 +629,7 @@ MODES.shapes = {
   },
   presets:[
     {name:'Breathing light pool', v:{seed:4, shape:9, framing:1, poolSize:0.9, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
-      brk:0.4, rough:0.45, darkest:0.2, dir:0, scale:3, amount:0.55, motion:0.5, shimSpd:1, warp:0.9, clump:0.4, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true, pbScene:true,
+      brk:0.4, rough:0.45, darkest:0.2, dir:0, scale:3, amount:0.55, motion:0.5, shimSpd:1, warp:0.9, clump:0.4, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true, pbScene:true, pbAngle:20, pbLen:6, pbStreak:0.5,
       mSpeed:1, sway:0, swayHz:0.45, flutter:0, drift:0, windDir:0, gust:0, flow:0.25, morph:0.06, breath:0.6, breathT:9}},
     {name:'Soft drifting clouds', v:{shape:15, framing:0, blur:6, scale:2, amount:0.5, soft:0.75, brk:0.5, rough:0.5, darkest:0.3, warp:0.6, clump:0.5, drift:0.15, gust:0.3, morph:0.06, flow:0.15, breath:0}},
     {name:'Pools that come and go', v:{shape:17, framing:0, blur:5, scale:3, amount:0.5, soft:0.85, darkest:0.15, warp:0.5, wVar:0.6, morph:0.5, flow:0.15, breath:0}},
@@ -641,7 +641,7 @@ MODES.shapes = {
     {name:'Soft streaks', v:{shape:15, framing:0, blur:5, scale:3, amount:0.5, soft:0.7, brk:0.5, rough:0.5, darkest:0.25, warp:0.4, clump:0.3, stretch:4, dir:1, drift:0.1, morph:0.05, breath:0}},
     {name:'Soft pool, slow swirl', v:{shape:15, framing:1, poolSize:0.85, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
     {name:'Soft spots, drifting', v:{shape:7, framing:0, blur:7, scale:4, amount:0.6, wVar:0.6, soft:0.85, darkest:0.15, drift:0.1, morph:0.3, breath:0}},
-    {name:'Paint your own', v:{shape:14, blur:4}},
+    {name:'Paint your own', v:{shape:14, blur:2, framing:0, breath:0, flow:0, morph:0, drift:0}},
     {name:'Light shafts, slow shimmer', v:{shape:0, blur:0.5, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.6, shimSpd:0.8}},
     {name:'Shafts from the side', v:{shape:0, blur:0.5, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6, motion:0.5, shimSpd:0.7}},
     {name:'Curtain shafts', v:{shape:1, blur:0.5, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6, motion:0.4}},
@@ -4632,7 +4632,8 @@ function paintTex() {
 }
 const PB = () => {
   const P = S.p.shapes;
-  return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true};
+  return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
+          angle:P.pbAngle ?? 20, len:P.pbLen ?? 6, streak:P.pbStreak ?? 0.5};
 };
 function paintSave() {
   clearTimeout(PAINT.saveT);
@@ -4644,17 +4645,114 @@ function pushUndo() {
   c.getContext('2d').drawImage(PAINT.cv, 0, 0);
   PAINT.undo.push(c); if (PAINT.undo.length > 12) PAINT.undo.shift();
 }
+/* ---------- brush sprites: drawn once per dab as a white alpha mask, then tinted with the ink ---------- */
+function sprite(w, h, draw) {
+  const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
+  const x = c.getContext('2d'); draw(x, c.width, c.height); return c;
+}
+function tint(c, col, a) { const x = c.getContext('2d'); x.globalCompositeOperation = 'source-in'; x.fillStyle = `rgba(${col},${a})`; x.fillRect(0, 0, c.width, c.height); return c; }
+// fine lengthwise streaks, as dust and haze give a real light shaft
+function streaks(x, w, h, amt, rr) {
+  if (amt <= 0) return;
+  x.globalCompositeOperation = 'destination-out';
+  const n = Math.round(10 + 40 * amt);
+  for (let i = 0; i < n; i++) {
+    const yy = rr() * h, th = 0.5 + rr() * h * 0.06, x0 = rr() * w * 0.3, x1 = w - rr() * w * 0.3;
+    const g = x.createLinearGradient(x0, 0, x1, 0); const a = amt * (0.15 + 0.5 * rr());
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.5, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = g; x.fillRect(x0, yy - th / 2, x1 - x0, th);
+  }
+  x.globalCompositeOperation = 'source-over';
+}
+// a soft profile across a band: a flat core with edges that fall off over the softness
+function bandMask(x, w, h, soft) {
+  const g = x.createLinearGradient(0, 0, 0, h), e = 0.04 + 0.46 * soft;
+  g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(e, 'rgba(255,255,255,1)'); g.addColorStop(1 - e, 'rgba(255,255,255,1)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, w, h);
+}
+let NOISE_TILE = null;
+function noiseTile() {
+  if (NOISE_TILE) return NOISE_TILE;
+  // a small tiling value-noise texture, several octaves, for the mottle brush
+  const n = 256, c = document.createElement('canvas'); c.width = c.height = n;
+  const x = c.getContext('2d'), id = x.createImageData(n, n), r0 = rng(4242);
+  const lat = []; for (let o = 0; o < 5; o++) { const g = 4 << o, a = new Float32Array(g * g); for (let i = 0; i < g * g; i++) a[i] = r0(); lat.push([g, a]); }
+  for (let y = 0; y < n; y++) for (let xx = 0; xx < n; xx++) {
+    let v = 0, amp = 0.5, tot = 0;
+    for (const [g, a] of lat) {
+      const fx = xx / n * g, fy = y / n * g, ix = Math.floor(fx), iy = Math.floor(fy), tx = fx - ix, ty = fy - iy;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty), A = (i, j) => a[((iy + j) % g) * g + (ix + i) % g];
+      v += amp * ((A(0, 0) * (1 - sx) + A(1, 0) * sx) * (1 - sy) + (A(0, 1) * (1 - sx) + A(1, 1) * sx) * sy); tot += amp; amp *= 0.55;
+    }
+    const k = (y * n + xx) * 4; id.data[k] = id.data[k + 1] = id.data[k + 2] = 255; id.data[k + 3] = Math.round(255 * clamp((v / tot - 0.5) * 2.2 + 0.5, 0, 1));
+  }
+  x.putImageData(id, 0, 0);
+  return (NOISE_TILE = c);
+}
 // one dab of the brush, repeated across the edges when wrapping so the gobo stays seamless
 function dab(x, y) {
   const b = PB(), N = PAINT.N, ctx = PAINT.ctx, r = Math.max(1, b.size / 100 * N * 0.5);
   const col = b.ink ? '255,255,255' : '0,0,0';
+  const ext = b.tool === 4 ? Math.max(r, r * b.len) : b.tool === 5 ? r * 2 : r * 1.6;
   const offs = [[0, 0]];
-  if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -r * 1.6 && x + ox < N + r * 1.6 && y + oy > -r * 1.6 && y + oy < N + r * 1.6) offs.push([ox, oy]);
+  if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -ext && x + ox < N + ext && y + oy > -ext && y + oy < N + ext) offs.push([ox, oy]);
   const rr = rng((PAINT.seed = (PAINT.seed || 1) + 1) * 7919);
+  // brushes built as a sprite are made once per dab and stamped at each wrapped copy
+  let spr = null, sang = 0;
+  if (b.tool === 4) {
+    // one light beam: a long soft shaft at a set angle, fading toward its far end, streaked by haze
+    const L = r * 2 * b.len, w = r * 2;
+    spr = sprite(L, w, (x2, W, H) => {
+      bandMask(x2, W, H, b.soft); streaks(x2, W, H, b.streak, rr);
+      x2.globalCompositeOperation = 'destination-in';
+      const g = x2.createLinearGradient(0, 0, W, 0);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(0.12, 'rgba(0,0,0,1)'); g.addColorStop(0.55, 'rgba(0,0,0,0.85)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x2.fillStyle = g; x2.fillRect(0, 0, W, H);
+    });
+    tint(spr, col, b.flow); sang = (90 + b.angle) * DEG;
+  } else if (b.tool === 5) {
+    // a soft streak that follows the stroke
+    const L = r * 3, w = r * 1.2;
+    spr = sprite(L, w, (x2, W, H) => {
+      bandMask(x2, W, H, Math.max(b.soft, 0.3)); streaks(x2, W, H, b.streak, rr);
+      x2.globalCompositeOperation = 'destination-in';
+      const g = x2.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5 + 0.4 * (1 - b.soft), 'rgba(0,0,0,0.8)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x2.fillStyle = g; x2.fillRect(0, 0, W, H);
+    });
+    tint(spr, col, b.flow * 0.2); sang = PAINT.dir || 0;
+  } else if (b.tool === 7) {
+    // mottle: a patch of soft noise that fades out at the brush edge
+    const nt = noiseTile(), ox0 = rr() * 192, oy0 = rr() * 192;
+    spr = sprite(r * 2, r * 2, (x2, W, H) => {
+      x2.drawImage(nt, ox0, oy0, 64, 64, 0, 0, W, H);
+      x2.globalCompositeOperation = 'destination-in';
+      const g = x2.createRadialGradient(W / 2, H / 2, W / 2 * (1 - b.soft) * 0.9, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+      x2.fillStyle = g; x2.fillRect(0, 0, W, H);
+    });
+    tint(spr, col, b.flow); sang = rr() * 2 * Math.PI;
+  }
   for (const [ox, oy] of offs) {
     const cx = x + ox, cy = y + oy;
     ctx.save();
-    if (b.tool === 0) {
+    if (spr) {
+      ctx.translate(cx, cy); ctx.rotate(sang); ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
+    } else if (b.tool === 6) {
+      // soft cloud: a cluster of overlapping soft puffs
+      const n = 5 + Math.floor(rr() * 5);
+      for (let i = 0; i < n; i++) {
+        const a = rr() * 2 * Math.PI, d = Math.sqrt(rr()) * r * 0.6, s = r * (0.3 + 0.4 * rr()), px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d;
+        const g = ctx.createRadialGradient(px, py, 0, px, py, s); g.addColorStop(0, `rgba(${col},${b.flow * 0.35})`); g.addColorStop(0.3 + 0.5 * (1 - b.soft), `rgba(${col},${b.flow * 0.25})`); g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, s, 0, 2 * Math.PI); ctx.fill();
+      }
+    } else if (b.tool === 8) {
+      // soft dots of different sizes, like out-of-focus highlights
+      const n = 3 + Math.floor(rr() * 5);
+      for (let i = 0; i < n; i++) {
+        const a = rr() * 2 * Math.PI, d = Math.sqrt(rr()) * r, s = r * (0.08 + 0.25 * rr()), px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d;
+        const g = ctx.createRadialGradient(px, py, s * (1 - b.soft) * 0.9, px, py, s); g.addColorStop(0, `rgba(${col},${b.flow * (0.5 + 0.5 * rr())})`); g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(px, py, s, 0, 2 * Math.PI); ctx.fill();
+      }
+    } else if (b.tool === 0) {
       const g = ctx.createRadialGradient(cx, cy, r * (1 - b.soft) * 0.98, cx, cy, r);
       g.addColorStop(0, `rgba(${col},${b.flow})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 2 * Math.PI); ctx.fill();
@@ -4686,12 +4784,14 @@ function dab(x, y) {
   }
 }
 function stroke(x, y) {
-  const b = PB(), N = PAINT.N, step = Math.max(1, b.size / 100 * N * 0.5 * (b.tool === 0 ? 0.25 : 0.6));
+  const b = PB(), N = PAINT.N, r = b.size / 100 * N * 0.5;
+  const step = Math.max(1, r * ({0:0.25, 4:1.3, 5:0.22, 6:0.5, 7:0.45, 8:0.8}[b.tool] ?? 0.6));
   if (!PAINT.last) { dab(x, y); PAINT.last = [x, y]; return; }
   let [lx, ly] = PAINT.last;
   // take the short way across a wrapped edge
   if (b.wrap) { if (x - lx > N / 2) lx += N; if (lx - x > N / 2) lx -= N; if (y - ly > N / 2) ly += N; if (ly - y > N / 2) ly -= N; }
   const d = Math.hypot(x - lx, y - ly), n = Math.floor(d / step);
+  if (d > 0.5) PAINT.dir = Math.atan2(y - ly, x - lx);
   for (let i = 1; i <= n; i++) { const t = i / n; dab(lx + (x - lx) * t, ly + (y - ly) * t); }
   if (n) PAINT.last = [x, y];
 }
@@ -4707,7 +4807,7 @@ function paintPad(el) {
   el.append(c); PAD.cv = c;
   let down = false;
   const toPx = e => { const r = c.getBoundingClientRect(); return [clamp((e.clientX - r.left) / r.width, 0, 0.9999) * PAINT.N, clamp((e.clientY - r.top) / r.height, 0, 0.9999) * PAINT.N]; };
-  c.addEventListener('pointerdown', e => { pushUndo(); down = true; PAINT.last = null; c.setPointerCapture(e.pointerId); stroke(...toPx(e)); paintChanged(); e.preventDefault(); });
+  c.addEventListener('pointerdown', e => { pushUndo(); down = true; PAINT.last = null; try { c.setPointerCapture(e.pointerId); } catch (err) {} stroke(...toPx(e)); paintChanged(); e.preventDefault(); });
   c.addEventListener('pointermove', e => { PAD.hover = toPx(e); if (down) { stroke(...PAD.hover); paintChanged(); } else padRedraw(); });
   const up = () => { down = false; PAINT.last = null; };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
@@ -4802,7 +4902,9 @@ function paintAction(a) {
 function paintDefs() {
   return [
     {type:'mount', mount:el => paintPad(el)},
-    {k:'pbTool', l:'Brush', opts:['Soft round', 'Leaf scatter', 'Splatter', 'Soften (blur)']},
+    {k:'pbTool', l:'Brush', opts:['Soft round', 'Light beam (one shaft)', 'Soft streak (follows the stroke)', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Leaf scatter', 'Splatter', 'Soften (blur)'], vals:[0, 4, 5, 6, 7, 8, 1, 2, 3]},
+    ...((S.p.shapes.pbTool | 0) === 4 ? [{k:'pbAngle', l:'Beam angle', min:-90, max:90, step:0.5, u:'°', h:'0° points straight down the frame.'}, {k:'pbLen', l:'Beam length', min:2, max:16, step:0.1, fmt:v => v.toFixed(1) + '× its width'}] : []),
+    ...([4, 5].includes(S.p.shapes.pbTool | 0) ? [{k:'pbStreak', l:'Haze streaks', min:0, max:1, step:0.01, h:'Fine lengthwise streaks inside the light, as dust and haze give a real shaft.'}] : []),
     {k:'pbInk', l:'Paint with', opts:['Shadow (blocks light)', 'Light (lets light through)']},
     {k:'pbSize', l:'Brush size', min:0.5, max:40, step:0.1, u:'%'},
     {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
@@ -5030,9 +5132,11 @@ const shotActive = () => !!S.shotSel && !!SHOT.src;
    their utility passes are rendered on the fly, then go through exactly the same steps a real shot's would
    (camera solved from the position pass, pixels turned into a rough model). */
 const SHOTS = [
-  {id:'ph_court', seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard (tree dapple)', first:1001, last:1001,
-   cam:{eye:[2.4, 1.6, 6.8], at:[0, 1.0, 0], vfov:34},
-   lights:{trees:{ltype:1, follow:true, aim:[0, 1.15, 0], amb:0.2}}},
+  {id:'ph_court_mid', seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard, mid shot (tree dapple)', first:1001, last:1001,
+   cam:{eye:[0.8, 1.48, 2.15], at:[0.0, 1.3, 0.0], vfov:30},
+   // one big tree overhead, framed in open sunlight, so its shadow covers the person
+   preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
+   lights:{trees:{ltype:1, follow:true, aim:[0, 1.35, 0], amb:0.2}}},
   {id:'ph_room', seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
    cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},
    // the window is behind the camera, off screen: only the gobo says it is there
@@ -5092,7 +5196,7 @@ function selectShot(id, fromMenu) {
     if (fromMenu && def.mode && MODES[def.mode]) { S.mode = def.mode; buildModes(); }
     if (fromMenu && def.preset) {
       const ps = MODES[def.preset.mode].presets.find(x => x.name === def.preset.name);
-      if (ps) S.p[def.preset.mode] = {...DEFAULTS[def.preset.mode], ...ps.v, seed:S.p[def.preset.mode].seed};
+      if (ps) S.p[def.preset.mode] = {...DEFAULTS[def.preset.mode], ...ps.v, ...(def.preset.v || {}), seed:S.p[def.preset.mode].seed};
     }
     if (S.view !== 'scene') setView('scene');
   }
