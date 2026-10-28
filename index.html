@@ -122,6 +122,7 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .hint{color:var(--mute);font-size:11.5px;line-height:1.5;margin:0}
 .phint{grid-column:1 / -1;color:var(--mute);font-size:11px;line-height:1.45;margin:2px 0 0}
 
+.plate.dropping{outline:2px dashed var(--accent);outline-offset:-6px}
 .viewseg{position:absolute;right:10px;top:10px;padding:2px;background:rgba(10,12,15,.82)}
 .hud{right:150px}
 .viewseg .mode{padding:5px 12px;font-size:12px}
@@ -647,7 +648,7 @@ try {
       if (!(saved.ver >= 7)) S.tl[m] = {...S.tl[m], loop:false, len:Math.max(S.tl[m].len, 60)};
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'shot']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'under';
   }
 } catch (e) {}
@@ -656,7 +657,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ver:7})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, shot:S.shot, ver:7})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -3833,16 +3834,17 @@ const SCENE_DEFAULTS = {
   aimX:0, aimY:0.8, aimZ:0.8,
   sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0, follow:true, real:true,
 };
-const SETS = ['Floor', 'Floor & wall', 'Dock, seen from below', 'Wall at the waterline'];
+const SETS = ['Floor', 'Floor & wall', 'Dock, seen from below', 'Wall at the waterline', 'Your shot (utility passes)'];
 const SET_CAMS = [
   {az:30, el:38, dist:10, tx:0, ty:0, tz:0},
   {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6},
   {az:18, el:-16, dist:4.2, tx:0, ty:1.35, tz:2.0},
   {az:32, el:10, dist:9, tx:0, ty:1.0, tz:0.6},
+  {az:30, el:15, dist:11, tx:0, ty:1.3, tz:1.6},
 ];
 // a 0.9 m ball (about 3 ft) stands in for a character, with the light framed around it
 const MODE_SPHERE = {windows:[0.5, 0.22, 1.25, 0.22], trees:[0, 0.45, 1.5, 0.45], shapes:[0, 0.45, 1.5, 0.45]};
-const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.01], [0, -9, 0, 0.01]];
+const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.01], [0, -9, 0, 0.01], [-1.3, 0.5, 1.7, 0.5]];
 // each pattern gets a set and a light placed the way that pattern is used
 const MODE_SCENE = {
   under:  {set:0, ltype:0, cone:90, dist:4, el:90, az:0, aimX:0, aimY:0, aimZ:0, sphere:true},
@@ -3854,7 +3856,7 @@ const MODE_SCENE = {
 };
 // spotlights start with the gobo at its real size where they are aimed
 const MODE_CAMS = {windows:{az:24, el:22, dist:3.6, tx:0.15, ty:0.35, tz:0.75}, trees:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}, shapes:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}};
-function camDefault(m) { const set = S.scenes[m].set | 0; return {...(MODE_CAMS[m] && MODE_SCENE[m].set === set ? MODE_CAMS[m] : SET_CAMS[set])}; }
+function camDefault(m) { const set = S.scenes[m].set | 0; if (set === 4) return (shotReady() && shotOrbitCam()) || {...SET_CAMS[1]}; return {...(MODE_CAMS[m] && MODE_SCENE[m].set === set ? MODE_CAMS[m] : SET_CAMS[set])}; }
 const sceneDefaults = m => {
   const d = {...SCENE_DEFAULTS, ...(MODE_SCENE[m] || {})};
   const tile = S.p[m] && S.p[m].tileSize;
@@ -3868,13 +3870,16 @@ if (!S.scenes || !(S.savedVer >= 5)) S.scenes = {};
 if (!S.cams || !(S.savedVer >= 5)) S.cams = {};
 for (const m of Object.keys(MODES)) {
   S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
+  // a loaded shot lives only in the tab it was opened in
+  if ((S.scenes[m].set | 0) === 4) { const d = sceneDefaults(m); Object.assign(S.scenes[m], {set:d.set, aimX:d.aimX, aimY:d.aimY, aimZ:d.aimZ, az:d.az, sphere:d.sphere}); S.cams[m] = null; }
   if (!S.cams[m]) S.cams[m] = camDefault(m);
 }
 
 const SC = () => S.scenes[S.mode];
 const CAM = () => S.cams[S.mode];
+const inShot = () => (SC().set | 0) === 4 && shotReady();
 const SCENE_GROUPS = () => {
-  const sun = SC().ltype === 1;
+  const sun = SC().ltype === 1, shot = inShot();
   const light = [
     {k:'ltype', l:'Light', opts:['Spotlight', 'Sun (distant light)'], h:'A spotlight projects the gobo through its cone and falls off with distance. The sun is a parallel light: the gobo is laid across the set at its real-world size.'},
     {k:'real', l:'Keep real-world scale', type:'chk', h:'Sizes the gobo automatically so the pattern lands at its true size: a canopy tile is its real width, a single branch or light pool fills the projection.'},
@@ -3900,22 +3905,25 @@ const SCENE_GROUPS = () => {
   const fol = sun && canFollow();
   if (fol) place.push({k:'follow', l:'Use the pattern\'s sun angle', type:'chk', h:'Points the scene sun the way the pattern was made, so the shadow lands with its true shape.'});
   place.push(
-    ...(fol && SC().follow ? [] : [{k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:-85, max:85, step:0.5, u:'°', h:'Around the aim point; 0° is straight out from the wall.'},
+    ...(fol && SC().follow ? [] : [{k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:shot ? -180 : -85, max:shot ? 180 : 85, step:0.5, u:'°', h:shot ? 'Around the aim point, measured in the shot\'s world axes.' : 'Around the aim point; 0° is straight out from the wall.'},
     {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:sun && S.mode !== 'hull' ? 2 : -89, max:90, step:0.5, u:'°', h:sun ? 'Height of the sun above the horizon.' : 'Angle of the light above the aim point; negative puts it below, pointing up (as for light reflected off water).'}]),
+    ...(shot ? [{type:'note', l:`${sun ? 'Pattern centre' : 'Aimed at'} ${[SC().aimX, SC().aimY, SC().aimZ].map(v => v.toFixed(2)).join(', ')} m. Click anywhere in the shot to aim there.`}] : [
     {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right.'},
     {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor or water.'},
-    {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:-1, max:8, step:0.05, u:'m', h:'Distance out from the wall.'},
+    {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:-1, max:8, step:0.05, u:'m', h:'Distance out from the wall.'}]),
   );
   const set = [
-    {k:'set', l:'Set', opts:SETS},
-    {k:'sphere', l:'Test sphere', type:'chk'},
+    {k:'set', l:'Set', opts:SETS, h:'Simple stand-in sets, or your own shot built from its utility passes.'},
+    ...((SC().set | 0) === 4 ? [] : [{k:'sphere', l:'Test sphere', type:'chk'}]),
     {k:'gizmo', l:'Show light', type:'chk'},
     {k:'haze', l:'Atmospheric haze', min:0, max:1, step:0.01, h:'Single scattering in the air, so the projected beam becomes visible.'},
     {k:'amb', l:'Fill light', min:0, max:1, step:0.01, h:'Soft ambient fill so unlit areas are not black.'},
-    {k:'alb', l:'Surface grey', min:0.05, max:0.9, step:0.01, h:'Albedo of the set.'},
+    {k:'alb', l:shot && SHOT.frame.hasCol ? 'Surface colour gain' : 'Surface grey', min:0.05, max:0.9, step:0.01, h:shot && SHOT.frame.hasCol ? 'Scales the shot\'s surface colour; 0.5 uses it as rendered.' : 'Albedo of the set.'},
     {k:'expo', l:'Camera exposure', min:-4, max:4, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV'},
   ];
-  return [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:'Set & camera', params:set}];
+  if ((SC().set | 0) !== 4) set.push({type:'buttons', items:[['Load your shot (utility EXRs)…', () => $('shotFile').click()]]});
+  const out = [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:'Set & camera', params:set}];
+  return (SC().set | 0) === 4 ? [{name:'Your shot', params:shotDefs(), shot:true}, ...out] : out;
 };
 const hex3 = h => { const n = parseInt((h || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)); };
 const v3 = {
@@ -3947,7 +3955,7 @@ function camPos(cam) {
   const ca = cam.az * DEG, ce = cam.el * DEG;
   const t0 = [cam.tx, cam.ty, cam.tz];
   const p = v3.add(t0, v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], cam.dist));
-  p[1] = Math.max(p[1], 0.08);
+  if (!inShot()) p[1] = Math.max(p[1], 0.08);
   return {p, t0};
 }
 function drawScene(fin) {
@@ -3970,25 +3978,30 @@ function drawScene(fin) {
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
   const kind = MODES[S.mode].kind;
   const single = S.mode === 'hull' ? (S.p.hull.fade > 0 ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const sunSize = sceneTile() * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
+  const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
+  const lightLines = () => c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
+    : [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${(2 * c.dist * tanC).toFixed(2)} m wide there`,
+       `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`];
+  if ((c.set | 0) === 4) {
+    shotSync();
+    if (shotReady()) { drawShot(fin, c, L, {tanC, rep, blur, lod, single, sunSize}); return [SHOT.status, ...lightLines()]; }
+  }
   pass(PR.scene, null, p => {
     tex(p, 'uGobo', fin.tex, 0);
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
-    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single); i1(p, 'uSet', c.set | 0);
-    i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single); i1(p, 'uSet', (c.set | 0) === 4 ? 1 : c.set | 0);
+    i1(p, 'uSphere', c.sphere && (c.set === 4 || c.set < 2) ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
     f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
     f3(p, 'uLCol', ...hex3(c.color));
     f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
-    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sceneTile() * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1)); f1(p, 'uSrcR', 0.04);
+    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sunSize); f1(p, 'uSrcR', 0.04);
     gl.uniform4f(p.u('uSph'), ...(MODE_SPHERE[S.mode] && (MODE_SCENE[S.mode] || {}).set === (c.set | 0) ? MODE_SPHERE[S.mode] : SET_SPHERE[c.set | 0]));
     f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
   });
-  const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
-  if (c.ltype === 1) {
-    return [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`];
-  }
-  const width = 2 * c.dist * tanC;
-  return [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${width.toFixed(2)} m wide there`,
-          `${what[0].toUpperCase() + what.slice(1)} spans ${(width / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(width / rep - tile) / tile < 0.03 ? ', matched' : ''})`];
+  const lines = lightLines();
+  if ((c.set | 0) === 4) lines.unshift(SHOT.status || 'Load the utility passes of your shot (Your shot panel, or drop the EXRs here) to light it. Showing the floor & wall set until then.');
+  return lines;
 }
 // gobos that are a single framed image rather than a repeating tile
 function sceneFramed() {
@@ -4009,8 +4022,9 @@ function matchScale() {
 (() => {
   let drag = null;
   cv.addEventListener('contextmenu', e => { if (S.view === 'scene') e.preventDefault(); });
+  const shotCamView = () => inShot() && (S.shot.view | 0) === 0;
   cv.addEventListener('pointerdown', e => {
-    if (S.view !== 'scene') return;
+    if (S.view !== 'scene' || shotCamView()) return;
     drag = {x:e.clientX, y:e.clientY, pan:e.button === 2 || e.shiftKey, cam:{...CAM()}};
     cv.setPointerCapture(e.pointerId);
   });
@@ -4023,7 +4037,11 @@ function matchScale() {
       const f = v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], -1), b = basis(f);
       const s = 2 * Math.tan(20 * DEG) * drag.cam.dist * k;
       const m = v3.add(v3.mul(b.r, -dx * s), v3.mul(b.u, dy * s));
-      cam.tx = clamp(drag.cam.tx + m[0], -8, 8); cam.ty = clamp(drag.cam.ty + m[1], 0, 6); cam.tz = clamp(drag.cam.tz + m[2], -1, 10);
+      if (inShot()) { cam.tx = drag.cam.tx + m[0]; cam.ty = drag.cam.ty + m[1]; cam.tz = drag.cam.tz + m[2]; }
+      else { cam.tx = clamp(drag.cam.tx + m[0], -8, 8); cam.ty = clamp(drag.cam.ty + m[1], 0, 6); cam.tz = clamp(drag.cam.tz + m[2], -1, 10); }
+    } else if (inShot()) {
+      cam.az = drag.cam.az - dx * k * 180;
+      cam.el = clamp(drag.cam.el + dy * k * 120, -89, 89);
     } else {
       cam.az = clamp(drag.cam.az - dx * k * 180, -85, 85);
       cam.el = clamp(drag.cam.el + dy * k * 120, -40, 89);
@@ -4033,9 +4051,9 @@ function matchScale() {
   const end = () => { if (drag) { drag = null; save(); } };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('wheel', e => {
-    if (S.view !== 'scene') return;
+    if (S.view !== 'scene' || shotCamView()) return;
     e.preventDefault();
-    CAM().dist = clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
+    CAM().dist = inShot() ? clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 0.2, 5000) : clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
   }, {passive:false});
   cv.addEventListener('dblclick', () => { if (S.view === 'scene') { S.cams[S.mode] = camDefault(S.mode); viewDirty = true; save(); } });
 })();
@@ -4062,7 +4080,7 @@ function control(def, store, idPrefix, dflt, onChange) {
     const sel = document.createElement('select'); sel.id = id;
     def.opts.forEach((o, i) => { const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o; sel.append(op); });
     sel.value = store[def.k];
-    sel.onchange = () => { store[def.k] = +sel.value; onChange(def.k); };
+    sel.onchange = () => { store[def.k] = def.vals && typeof def.vals[0] === 'string' ? sel.value : +sel.value; onChange(def.k); };
     row.append(sel);
   } else if (def.type === 'color') {
     const ci = document.createElement('input'); ci.type = 'color'; ci.id = id; ci.value = store[def.k] || '#ffffff'; ci.className = 'swatch';
@@ -4108,6 +4126,9 @@ function buildModes() {
   }
 }
 function buildPanel() {
+  const hint = document.querySelector('.camhint');
+  if (hint) hint.textContent = S.view === 'scene' && inShot() ? ((S.shot.view | 0) === 0 ? 'Seen through the shot camera · Click to aim the light there' : 'Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Click to aim the light · Double-click resets')
+                                                          : 'Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets';
   const m = MODES[S.mode], store = S.p[S.mode];
   const pr = $('presets'); pr.innerHTML = '';
   m.presets.forEach(ps => {
@@ -4134,13 +4155,17 @@ function buildPanel() {
     d.append(s, c); groups.append(d);
   };
   if (S.view === 'scene') {
-    const onScene = k => { if (k === 'set') S.cams[S.mode] = camDefault(S.mode); if (k === 'ltype' || k === 'set' || k === 'follow' || k === 'real') buildPanel(); viewDirty = true; save(); };
+    const onScene = k => {
+      if (k === 'set' && (SC().set | 0) === 4 && shotReady()) { const f = SHOT.frame; Object.assign(SC(), {aimX:f.mid[0], aimY:f.mid[1], aimZ:f.mid[2]}); }
+      if (k === 'set') S.cams[S.mode] = camDefault(S.mode);
+      if (k === 'ltype' && inShot()) SC().ev = SC().ltype === 0 ? +clamp(Math.log2(SC().dist * SC().dist / 25), -6, 6).toFixed(1) : 0; if (k === 'ltype' || k === 'set' || k === 'follow' || k === 'real') buildPanel(); viewDirty = true; save(); };
     SCENE_GROUPS().forEach((g, gi) => {
-      const d = document.createElement('details'); d.className = 'grp scene'; d.open = gi < 2;
+      const d = document.createElement('details'); d.className = 'grp scene'; d.open = true;
       const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label"></span>'; sm.firstChild.textContent = g.name;
       const c = document.createElement('div'); c.className = 'ctrls';
+      if (g.shot) { d.open = true; g.params.forEach(def => c.append(control(def, S.shot, 'shot', null, shotParamChanged))); d.append(sm, c); groups.append(d); return; }
       g.params.forEach(def => c.append(control(def, SC(), 'scene', sceneDefaults(S.mode), onScene)));
-      if (gi === 0) {
+      if (g.name === 'Scene light') {
         const b = document.createElement('button'); b.className = 'pchip'; b.textContent = 'Match real scale';
         b.title = 'Size the gobo so one tile covers its true size in metres at the aim point.';
         b.onclick = () => { matchScale(); buildPanel(); viewDirty = true; save(); };
@@ -4467,6 +4492,780 @@ function paintDefs() {
 })();
 
 /* =====================================================================
+   OpenEXR reader (scanline images, single- or multi-part; uncompressed,
+   RLE, ZIPS and ZIP compression). Only the layers that are asked for
+   are decoded, and rows can be skipped for a quick low-res read.
+   ===================================================================== */
+const EXR = (() => {
+  const LINES = [1, 1, 1, 16, 32, 16, 32, 32, 32, 256];
+  const CNAMES = ['none', 'RLE', 'ZIPS', 'ZIP', 'PIZ', 'PXR24', 'B44', 'B44A', 'DWAA', 'DWAB'];
+  let half = null;
+  function halfTable() {
+    if (half) return half;
+    half = new Float32Array(65536);
+    for (let h = 0; h < 65536; h++) {
+      const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, m = h & 1023;
+      half[h] = e === 0 ? s * m * Math.pow(2, -24) : e === 31 ? (m ? NaN : s * Infinity) : s * (1 + m / 1024) * Math.pow(2, e - 15);
+    }
+    return half;
+  }
+  function readHeader(dv, p, u8) {
+    const at = {};
+    const str = () => { let e = p; while (u8[e]) e++; const s = new TextDecoder().decode(u8.subarray(p, e)); p = e + 1; return s; };
+    for (;;) {
+      const name = str(); if (!name) break;
+      const type = str(), size = dv.getInt32(p, true); p += 4;
+      const v = p;
+      if (type === 'chlist') {
+        const ch = []; let q = v;
+        while (u8[q]) { let e = q; while (u8[e]) e++; const n = new TextDecoder().decode(u8.subarray(q, e)); q = e + 1; ch.push({name:n, type:dv.getInt32(q, true), xs:dv.getInt32(q + 8, true), ys:dv.getInt32(q + 12, true)}); q += 16; }
+        at[name] = ch;
+      } else if (type === 'compression') at[name] = u8[v];
+      else if (type === 'box2i') at[name] = [0, 1, 2, 3].map(i => dv.getInt32(v + i * 4, true));
+      else if (type === 'int') at[name] = dv.getInt32(v, true);
+      else if (type === 'float') at[name] = dv.getFloat32(v, true);
+      else if (type === 'string') at[name] = new TextDecoder().decode(u8.subarray(v, v + size));
+      else if (type === 'm44f') { const m = []; for (let i = 0; i < 16; i++) m.push(dv.getFloat32(v + i * 4, true)); at[name] = m; }
+      else if (type === 'v2f') at[name] = [dv.getFloat32(v, true), dv.getFloat32(v + 4, true)];
+      p = v + size;
+    }
+    return {at, p};
+  }
+  // parse headers and chunk offsets; nothing is decompressed yet
+  function open(buf) {
+    const dv = new DataView(buf), u8 = new Uint8Array(buf);
+    if (dv.getUint32(0, true) !== 20000630) throw new Error('Not an OpenEXR file.');
+    const ver = dv.getUint32(4, true);
+    if (ver & 0x200) throw new Error('Tiled EXRs are not supported yet. Please write scanline EXRs.');
+    if (ver & 0x800) throw new Error('Deep EXRs are not supported.');
+    const multi = !!(ver & 0x1000);
+    let p = 8; const parts = [];
+    for (;;) {
+      const h = readHeader(dv, p, u8); p = h.p; parts.push(h.at);
+      if (!multi || u8[p] === 0) { if (multi) p++; break; }
+    }
+    for (const at of parts) {
+      const dw = at.dataWindow, h = dw[3] - dw[1] + 1;
+      const lpc = LINES[at.compression] || 1;
+      const n = at.chunkCount || Math.ceil(h / lpc);
+      const offs = new Array(n);
+      for (let i = 0; i < n; i++) { offs[i] = Number(dv.getBigUint64(p, true)); p += 8; }
+      at._offs = offs; at._lpc = lpc;
+    }
+    return {buf, dv, u8, multi, parts};
+  }
+  async function inflate(bytes) {
+    const ds = new DecompressionStream('deflate');
+    const out = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+    return new Uint8Array(out);
+  }
+  function unRle(src, n) {
+    const out = new Uint8Array(n); let i = 0, o = 0;
+    while (i < src.length && o < n) {
+      const c = (src[i] << 24) >> 24; i++;
+      if (c < 0) { for (let k = 0; k < -c; k++) out[o++] = src[i++]; }
+      else { const b = src[i++]; for (let k = 0; k <= c; k++) out[o++] = b; }
+    }
+    return out;
+  }
+  // ZIP/RLE store a byte predictor and split even/odd bytes; undo both
+  function unPredict(t) {
+    for (let i = 1; i < t.length; i++) t[i] = (t[i - 1] + t[i] - 128) & 255;
+    const out = new Uint8Array(t.length), h = (t.length + 1) >> 1;
+    for (let i = 0, a = 0, b = h; i < t.length; i += 2) { out[i] = t[a++]; if (i + 1 < t.length) out[i + 1] = t[b++]; }
+    return out;
+  }
+  // list layers as {name, comps:[channel names], part}
+  function layers(f) {
+    const L = [];
+    f.parts.forEach((at, pi) => {
+      const groups = {};
+      for (const c of at.channels) {
+        const k = c.name.lastIndexOf('.');
+        const layer = k < 0 ? '' : c.name.slice(0, k), comp = k < 0 ? c.name : c.name.slice(k + 1);
+        (groups[layer] = groups[layer] || []).push({comp, full:c.name});
+      }
+      for (const [name, cs] of Object.entries(groups)) L.push({name:name || (at.name && at.name !== 'subimage00' ? at.name : 'rgba'), raw:name, comps:cs, part:pi});
+    });
+    return L;
+  }
+  /* Decode the given channels of one part. step > 1 reads every step-th row and column only. */
+  async function read(f, partIndex, chanNames, step = 1, onProgress) {
+    const at = f.parts[partIndex], dw = at.dataWindow;
+    const W = dw[2] - dw[0] + 1, H = dw[3] - dw[1] + 1;
+    const comp = at.compression;
+    if (![0, 1, 2, 3].includes(comp)) throw new Error(`This EXR uses ${CNAMES[comp] || 'unknown'} compression. Please write the utility passes with ZIP, ZIPS, RLE or no compression.`);
+    const chans = at.channels, bpp = chans.map(c => c.type === 1 ? 2 : 4);
+    const lineBytes = chans.reduce((s, c, i) => s + W * bpp[i], 0);
+    const want = chanNames.map(n => chans.findIndex(c => c.name === n));
+    const w2 = Math.ceil(W / step), h2 = Math.ceil(H / step);
+    const out = want.map(() => new Float32Array(w2 * h2));
+    const ht = halfTable();
+    const lpc = at._lpc, dv = f.dv, u8 = f.u8;
+    const jobs = [];
+    for (let ci = 0; ci < at._offs.length; ci++) {
+      const y0 = ci * lpc;
+      // skip chunks with no wanted rows
+      let need = false; for (let y = y0; y < Math.min(y0 + lpc, H); y++) if (y % step === 0) { need = true; break; }
+      if (need) jobs.push(ci);
+    }
+    let done = 0;
+    const doChunk = async ci => {
+      let p = at._offs[ci];
+      if (f.multi) p += 4;
+      const yStart = dv.getInt32(p, true) - dw[1]; p += 4;
+      const size = dv.getInt32(p, true); p += 4;
+      const rows = Math.min(lpc, H - yStart);
+      const rawSize = rows * lineBytes;
+      let data = u8.subarray(p, p + size);
+      if (size < rawSize) {
+        if (comp === 2 || comp === 3) data = unPredict(await inflate(data));
+        else if (comp === 1) data = unPredict(unRle(data, rawSize));
+      }
+      const ddv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+      let q = 0;
+      for (let r = 0; r < rows; r++) {
+        const y = yStart + r;
+        for (let c = 0; c < chans.length; c++) {
+          const k = want.indexOf(c);
+          if (k >= 0 && y % step === 0) {
+            const o = out[k], row = (y / step) * w2;
+            if (bpp[c] === 2) for (let x = 0, j = 0; x < W; x += step, j++) o[row + j] = ht[ddv.getUint16(q + x * 2, true)];
+            else if (chans[c].type === 2) for (let x = 0, j = 0; x < W; x += step, j++) o[row + j] = ddv.getFloat32(q + x * 4, true);
+            else for (let x = 0, j = 0; x < W; x += step, j++) o[row + j] = ddv.getUint32(q + x * 4, true);
+          }
+          q += W * bpp[c];
+        }
+      }
+      if (onProgress && (++done % 64 === 0)) onProgress(done / jobs.length);
+    };
+    for (let i = 0; i < jobs.length; i += 48) await Promise.all(jobs.slice(i, i + 48).map(doChunk));
+    return {W:w2, H:h2, data:out, fullW:W, fullH:H};
+  }
+  return {open, layers, read, CNAMES};
+})();
+
+/* =====================================================================
+   YOUR SHOT
+   Load the utility passes of a rendered shot (world position, normals,
+   optionally depth, surface colour and alpha; one frame or a sequence).
+   Everything is read in this browser tab; nothing is uploaded. The shot
+   camera is solved from the position pass alone (a direct linear
+   transform: every pixel is a known 3D point seen at a known 2D spot),
+   and the pixels become a rough 3D mesh of what the camera sees. The
+   gobo light then lights that mesh, with shadows cast by the shot's own
+   geometry (a shadow map rendered from the light), seen either through
+   the shot camera or orbiting freely.
+   ===================================================================== */
+const SHOT = {files:new Map(), frames:[], cache:new Map(), layerNames:[], frame:null, loading:null, status:'', tex:null};
+if (!S.shot) S.shot = {};
+S.shot = {view:0, units:0, upZ:false, detail:1, pos:'', nrm:'', col:'', ...S.shot};
+const UNIT_OPTS = ['Auto', 'Centimetres', 'Metres', 'Millimetres', 'Inches', 'Feet', 'Decimetres'];
+const UNIT_M = [0, 0.01, 1, 0.001, 0.0254, 0.3048, 0.1];
+const DETAIL = [1, 2, 4];
+const shotReady = () => !!(SHOT.frame && SHOT.tex);
+const RX = {
+  pos:/^(p|pos|position|pworld|p_world|worldpos|world_?position|wp|wpos)$/i,
+  nrm:/^(n|normal|normals|nworld|n_world|world_?normal)$/i,
+  col:/^(surfacecolou?r|albedo|basecolou?r|diffuse_?colou?r|diffcolou?r|diffuse_?albedo)$/i,
+  depth:/^(z|depth|depth\.z)$/i,
+};
+const compIdx = cs => {
+  // order the components x, y, z whatever they are called
+  const names = cs.map(c => c.comp.toLowerCase());
+  const pick = keys => { for (const k of keys) { const i = names.indexOf(k); if (i >= 0) return cs[i].full; } return null; };
+  const r = [pick(['r', 'x', 'u']), pick(['g', 'y', 'v']), pick(['b', 'z', 'w'])];
+  return r.every(Boolean) ? r : cs.slice(0, 3).map(c => c.full);
+};
+function frameOf(name) {
+  const m = name.match(/(\d+)(?=\.exr$)/i);
+  return m ? parseInt(m[1], 10) : 0;
+}
+async function shotLoadFiles(list) {
+  const files = [...list].filter(f => /\.exr$/i.test(f.name));
+  if (!files.length) { SHOT.status = 'No .exr files in that drop.'; buildPanel(); return; }
+  SHOT.files = new Map(); SHOT.cache = new Map();
+  for (const f of files) { const n = frameOf(f.name); if (!SHOT.files.has(n)) SHOT.files.set(n, []); SHOT.files.get(n).push(f); }
+  SHOT.frames = [...SHOT.files.keys()].sort((a, b) => a - b);
+  SHOT.status = 'Reading the EXR headers…'; buildPanel();
+  try {
+    // list the layers available in the first frame's files
+    const names = new Set();
+    for (const f of SHOT.files.get(SHOT.frames[0])) {
+      const e = EXR.open(await f.arrayBuffer());
+      EXR.layers(e).forEach(l => { if (l.comps.length >= 1) names.add(l.name); });
+    }
+    SHOT.layerNames = [...names];
+    const auto = rx => SHOT.layerNames.find(n => rx.test(n)) || '';
+    S.shot.pos = SHOT.layerNames.includes(S.shot.pos) ? S.shot.pos : auto(RX.pos);
+    S.shot.nrm = SHOT.layerNames.includes(S.shot.nrm) ? S.shot.nrm : auto(RX.nrm);
+    S.shot.col = SHOT.layerNames.includes(S.shot.col) ? S.shot.col : auto(RX.col);
+    if (!S.shot.pos) throw new Error('No world-position layer found (looked for P, pos, position, Pworld…). Pick it from the Position layer list.');
+    SC().set = 4;
+    await shotShowFrame(SHOT.frames[0], true);
+    if (!SHOT.frame) return;
+    // a sequence sets the timeline to its length, one shot frame per timeline frame
+    if (SHOT.frames.length > 1) { TL().len = SHOT.frames.length / S.fps; S.t = 0; buildTimeline(); }
+    S.cams[S.mode] = camDefault(S.mode);
+    if (S.view !== 'scene') setView('scene');
+    buildPanel(); viewDirty = true; dirty = true; save();
+  } catch (e) { console.error(e); SHOT.status = String(e.message || e); buildPanel(); }
+}
+// each frame is decoded once; asking again while it is being read waits for that read
+function decodeFrame(n) {
+  const key = [n, S.shot.pos, S.shot.nrm, S.shot.col, S.shot.units, S.shot.upZ, S.shot.detail].join('|');
+  if (!SHOT.cache.has(key)) {
+    const pr = decodeFrameNow(n, key);
+    SHOT.cache.set(key, pr);
+    pr.catch(() => SHOT.cache.delete(key));
+    if (SHOT.cache.size > 8) SHOT.cache.delete(SHOT.cache.keys().next().value);
+  }
+  return SHOT.cache.get(key);
+}
+async function decodeFrameNow(n, key) {
+  const step = DETAIL[S.shot.detail | 0] || 2;
+  const got = {};
+  for (const file of SHOT.files.get(n) || []) {
+    const e = EXR.open(await file.arrayBuffer());
+    const L = EXR.layers(e);
+    for (const [k, name] of [['pos', S.shot.pos], ['nrm', S.shot.nrm], ['col', S.shot.col]]) {
+      if (got[k] || !name) continue;
+      const l = L.find(x => x.name === name); if (!l) continue;
+      got[k] = await EXR.read(e, l.part, compIdx(l.comps), step, pr => { if (SHOT.loading === n) SHOT.status = `Frame ${n}: reading ${name}… ${Math.round(pr * 100)}%`; });
+    }
+    if (!got.a) { const l = L.find(x => x.name === 'rgba' && x.comps.some(c => c.comp === 'A')) || L.find(x => /^(alpha|a)$/i.test(x.name)); if (l) got.a = await EXR.read(e, l.part, [l.comps.find(c => /^a$/i.test(c.comp))?.full || l.comps[0].full], step); }
+  }
+  if (!got.pos) throw new Error(`Frame ${n} has no ${S.shot.pos} layer.`);
+  const W = got.pos.W, H = got.pos.H, N = W * H;
+  const [px, py, pz] = got.pos.data;
+  const A = got.a ? got.a.data[0] : null;
+  // which pixels hold geometry
+  const valid = new Uint8Array(N);
+  for (let i = 0; i < N; i++) valid[i] = (!A || A[i] > 0.002) && isFinite(px[i] + py[i] + pz[i]) && (px[i] !== 0 || py[i] !== 0 || pz[i] !== 0) ? 1 : 0;
+  // camera from the raw positions (scale-free), then units
+  const cam = solveCamera(px, py, pz, valid, W, H);
+  // pixels whose position does not project back onto themselves blend two surfaces (or a surface and the sky): drop them
+  { const Pm = cam.P;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!valid[i]) continue;
+      const q0 = Pm[0][0] * px[i] + Pm[0][1] * py[i] + Pm[0][2] * pz[i] + Pm[0][3], q1 = Pm[1][0] * px[i] + Pm[1][1] * py[i] + Pm[1][2] * pz[i] + Pm[1][3], q2 = Pm[2][0] * px[i] + Pm[2][1] * py[i] + Pm[2][2] * pz[i] + Pm[2][3];
+      if (q2 === 0 || Math.abs(q0 / q2 - x - 0.5) > 1.5 || Math.abs(q1 / q2 - y - 0.5) > 1.5) valid[i] = 0;
+    } }
+  let um = UNIT_M[S.shot.units | 0];
+  if (!um) {
+    const ds = []; for (let i = 0; i < N; i += 97) if (valid[i]) ds.push(Math.hypot(px[i] - cam.C[0], py[i] - cam.C[1], pz[i] - cam.C[2]));
+    ds.sort((a, b) => a - b); const med = ds[ds.length >> 1] || 1;
+    um = med > 2500 ? 0.001 : med > 60 ? 0.01 : 1;       // a shot's typical distance is 1–60 m
+  }
+  const upZ = !!S.shot.upZ;
+  const tr = (x, y, z) => upZ ? [x * um, z * um, -y * um] : [x * um, y * um, z * um];
+  const Cm = tr(...cam.C);
+  const P = new Float32Array(N * 4), Nn = new Float32Array(N * 4), C = new Uint8Array(N * 4);
+  let bmin = [1e9, 1e9, 1e9], bmax = [-1e9, -1e9, -1e9];
+  for (let i = 0; i < N; i++) {
+    if (!valid[i]) continue;
+    const q = tr(px[i], py[i], pz[i]);
+    P[i * 4] = q[0]; P[i * 4 + 1] = q[1]; P[i * 4 + 2] = q[2]; P[i * 4 + 3] = 1;
+    for (let k = 0; k < 3; k++) { bmin[k] = Math.min(bmin[k], q[k]); bmax[k] = Math.max(bmax[k], q[k]); }
+  }
+  // normals: the layer if there is one, else from the shape of the position pass
+  if (got.nrm) {
+    const [nx, ny, nz] = got.nrm.data;
+    for (let i = 0; i < N; i++) { const q = upZ ? [nx[i], nz[i], -ny[i]] : [nx[i], ny[i], nz[i]]; const l = Math.hypot(...q) || 1; Nn[i * 4] = q[0] / l; Nn[i * 4 + 1] = q[1] / l; Nn[i * 4 + 2] = q[2] / l; }
+  } else {
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; if (!P[i * 4 + 3]) continue;
+      const r = x + 1 < W && P[(i + 1) * 4 + 3] ? i + 1 : i - 1, d = y + 1 < H && P[(i + W) * 4 + 3] ? i + W : i - W;
+      if (r < 0 || d < 0) continue;
+      const a = [0, 1, 2].map(k => P[r * 4 + k] - P[i * 4 + k]), b = [0, 1, 2].map(k => P[d * 4 + k] - P[i * 4 + k]);
+      let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const tc = [0, 1, 2].map(k => Cm[k] - P[i * 4 + k]);
+      if (n[0] * tc[0] + n[1] * tc[1] + n[2] * tc[2] < 0) n = n.map(v => -v);
+      const l = Math.hypot(...n) || 1; Nn[i * 4] = n[0] / l; Nn[i * 4 + 1] = n[1] / l; Nn[i * 4 + 2] = n[2] / l;
+    }
+  }
+  if (got.col) {
+    const [r, g, b] = got.col.data;
+    for (let i = 0; i < N; i++) { const s = v => Math.round(255 * Math.pow(clamp(v, 0, 1), 1 / 2.2)); C[i * 4] = s(r[i]); C[i * 4 + 1] = s(g[i]); C[i * 4 + 2] = s(b[i]); C[i * 4 + 3] = 255; }
+  } else C.fill(150);
+  // robust extent of the shot (a few far background pixels should not set the scale)
+  const smp = [[], [], []], dist = [];
+  for (let i = 0; i < N; i += 7) if (P[i * 4 + 3]) { for (let k = 0; k < 3; k++) smp[k].push(P[i * 4 + k]); dist.push(Math.hypot(P[i * 4] - Cm[0], P[i * 4 + 1] - Cm[1], P[i * 4 + 2] - Cm[2])); }
+  const pct = (v, q) => v[Math.min(v.length - 1, Math.floor(q * v.length))];
+  smp.forEach(v => v.sort((x, y) => x - y)); dist.sort((x, y) => x - y);
+  const lo = smp.map(v => pct(v, 0.03)), hi = smp.map(v => pct(v, 0.97));
+  const fr = {n, W, H, P, N:Nn, C, cam, Cm, um, bmin, bmax, hasNrm:!!got.nrm, hasCol:!!got.col,
+              R:Math.max(0.5, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2), ctr:[0, 1, 2].map(k => (lo[k] + hi[k]) / 2), dMed:pct(dist, 0.5) || 5};
+  // default aim: in the middle of the frame, at the shot's typical distance (where the action usually is)
+  let mid = null, best = 1e30;
+  for (let y = Math.floor(H * 0.4); y < H * 0.85; y += 2) for (let x = Math.floor(W * 0.3); x < W * 0.7; x += 2) {
+    const i = y * W + x; if (!P[i * 4 + 3]) continue;
+    const dd = Math.hypot(P[i * 4] - Cm[0], P[i * 4 + 1] - Cm[1], P[i * 4 + 2] - Cm[2]);
+    const sc = Math.abs(Math.log(dd / fr.dMed)) + 0.6 * Math.hypot(x / W - 0.5, y / H - 0.6);
+    if (sc < best) { best = sc; mid = [P[i * 4], P[i * 4 + 1], P[i * 4 + 2]]; }
+  }
+  fr.mid = mid || fr.ctr;
+  // orbit around a point on the camera's centre line at the typical distance
+  const fwd = upZ ? [cam.fwd[0], cam.fwd[2], -cam.fwd[1]] : cam.fwd;
+  fr.pivot = Cm.map((v, k) => v + fwd[k] * fr.dMed);
+  return fr;
+}
+function shotUpload(fr) {
+  const mk = (data, ifmt, fmt, type) => {
+    const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, ifmt, fr.W, fr.H, 0, fmt, type, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  if (SHOT.tex) Object.values(SHOT.tex).forEach(t => gl.deleteTexture(t));
+  SHOT.tex = {P:mk(fr.P, gl.RGBA32F, gl.RGBA, gl.FLOAT), N:mk(fr.N, gl.RGBA32F, gl.RGBA, gl.FLOAT), C:mk(fr.C, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE)};
+  SHOT.frame = fr;
+}
+async function shotShowFrame(n, first) {
+  SHOT.loading = n;
+  try {
+    const fr = await decodeFrame(n);
+    if (SHOT.loading !== n) return;
+    shotUpload(fr);
+    SHOT.vfov = clamp(fr.cam.vfov, 10, 100);
+    const c = fr.cam;
+    SHOT.status = `${SHOT.frames.length > 1 ? SHOT.frames.length + ' frames · ' : ''}frame ${n}: ${fr.W}×${fr.H} · ${fr.hasNrm ? 'normals from ' + S.shot.nrm : 'normals from the position pass'}${fr.hasCol ? ' · colour from ' + S.shot.col : ''}\n` +
+                  `Camera solved from ${S.shot.pos}: ${c.vfov.toFixed(1)}° vertical field of view, ${c.err.toFixed(2)} px mean error · 1 scene unit = ${fr.um >= 1 ? fr.um + ' m' : fr.um * 100 + ' cm'}`;
+    if (first) {
+      // aim at the middle of the shot, with the light up and to one side of the camera
+      const sc = SC(); sc.aimX = fr.mid[0]; sc.aimY = fr.mid[1]; sc.aimZ = fr.mid[2];
+      const d = v3.sub(fr.Cm, fr.mid);
+      sc.az = Math.round(((Math.atan2(d[0], d[2]) / DEG + 35 + 540) % 360) - 180);
+      sc.sphere = false; sc.follow = false; sc.el = sc.ltype === 1 ? 45 : 55;
+      // a spot pool at least one gobo tile wide, and about 40% of the frame where it is aimed
+      const seen = 2 * Math.hypot(...d) * Math.tan(c.vfov * DEG / 2) * fr.W / fr.H;
+      sc.dist = clamp(+(Math.max(0.4 * seen, sceneTile()) / (2 * Math.tan(sc.cone * DEG / 2))).toFixed(2), 0.5, 40);
+      // and bright enough there: an irradiance of 1 at the aim point, as the simple sets have at 5 m
+      sc.ev = sc.ltype === 0 ? +clamp(Math.log2(sc.dist * sc.dist / 25), -6, 6).toFixed(1) : 0;
+    }
+  } catch (e) { console.error(e); SHOT.status = String(e.message || e); }
+  SHOT.loading = null; viewDirty = true; dirty = true;
+  // read the next frame of a sequence while this one is on screen
+  const at = SHOT.frames.indexOf(n);
+  if (SHOT.frames.length > 1 && at >= 0) decodeFrame(SHOT.frames[(at + 1) % SHOT.frames.length]).catch(() => {});
+  if (S.view === 'scene') buildPanel();
+}
+/* The shot camera from the position pass: a direct linear transform, solved with
+   normalised coordinates (Hartley) and the eigenvector of AᵀA with the smallest eigenvalue. */
+function solveCamera(px, py, pz, valid, W, H) {
+  // sample pixels well inside surfaces: edge pixels of a filtered render blend two depths (or the sky) and lie on no surface
+  const ok = k => valid[k] && valid[k - 1] && valid[k + 1] && valid[k - W] && valid[k + W];
+  const flat = k => {
+    // the point should sit between its neighbours, as on a smooth surface
+    const e = Math.abs(px[k - 1] + px[k + 1] - 2 * px[k]) + Math.abs(py[k - 1] + py[k + 1] - 2 * py[k]) + Math.abs(pz[k - 1] + pz[k + 1] - 2 * pz[k]);
+    const s = Math.hypot(px[k + 1] - px[k - 1], py[k + 1] - py[k - 1], pz[k + 1] - pz[k - 1]);
+    return e <= 0.25 * s + 1e-9;
+  };
+  let pts = [];
+  const gx = 48, gy = 32;
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) for (let t = 0; t < 8; t++) {
+    const x = clamp(Math.floor((i + (t ? Math.random() : 0.5)) / gx * W), 1, W - 2), y = clamp(Math.floor((j + (t ? Math.random() : 0.5)) / gy * H), 1, H - 2);
+    const k = y * W + x; if (ok(k) && flat(k)) { pts.push([x + 0.5, y + 0.5, k]); break; }
+  }
+  if (pts.length < 12) throw new Error('Too little geometry in the position pass to solve the camera.');
+  // solve, then drop the points that disagree and solve again
+  let cam = null;
+  for (let it = 0; it < 5; it++) {
+    cam = dlt(pts, px, py, pz);
+    const res = pts.map(([u, v, k]) => { const q = cam.P.map(r => r[0] * px[k] + r[1] * py[k] + r[2] * pz[k] + r[3]); return Math.hypot(q[0] / q[2] - u, q[1] / q[2] - v); });
+    const srt = [...res].sort((a, b) => a - b), med = srt[srt.length >> 1];
+    cam.err = med;
+    const lim = Math.max(med * 3, 0.75);
+    const keep = pts.filter((_, i) => res[i] <= lim);
+    if (keep.length === pts.length || keep.length < 12) break;
+    pts = keep;
+  }
+  const {P, inv, C} = cam;
+  const ray = (u, v) => inv.map(r => r[0] * u + r[1] * v + r[2]);
+  const [u0, v0, k0] = pts[0];
+  let sg = 1; { const d = ray(u0, v0); if (d[0] * (px[k0] - C[0]) + d[1] * (py[k0] - C[1]) + d[2] * (pz[k0] - C[2]) < 0) sg = -1; }
+  const nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l * sg); };
+  const rt = nrm(ray(W / 2, 0)), rb = nrm(ray(W / 2, H)), rc = nrm(ray(W / 2, H / 2));
+  const vfov = Math.acos(clamp(rt[0] * rb[0] + rt[1] * rb[1] + rt[2] * rb[2], -1, 1)) / DEG;
+  return {P, C, err:cam.err, n:pts.length, vfov, fwd:rc, up:[rt[0] - rb[0], rt[1] - rb[1], rt[2] - rb[2]]};
+}
+/* Direct linear transform with normalised coordinates (Hartley): the eigenvector of AᵀA with the smallest eigenvalue. */
+function dlt(idx, px, py, pz) {
+  const n = idx.length;
+  let m2 = [0, 0], m3 = [0, 0, 0];
+  idx.forEach(([u, v, k]) => { m2[0] += u / n; m2[1] += v / n; m3[0] += px[k] / n; m3[1] += py[k] / n; m3[2] += pz[k] / n; });
+  let d2 = 0, d3 = 0;
+  idx.forEach(([u, v, k]) => { d2 += Math.hypot(u - m2[0], v - m2[1]) / n; d3 += Math.hypot(px[k] - m3[0], py[k] - m3[1], pz[k] - m3[2]) / n; });
+  const s2 = Math.SQRT2 / d2, s3 = Math.sqrt(3) / d3;
+  const M = Array.from({length:12}, () => new Float64Array(12));
+  idx.forEach(([u0, v0, k]) => {
+    const u = (u0 - m2[0]) * s2, v = (v0 - m2[1]) * s2;
+    const X = [(px[k] - m3[0]) * s3, (py[k] - m3[1]) * s3, (pz[k] - m3[2]) * s3, 1];
+    const r1 = [...X, 0, 0, 0, 0, ...X.map(a => -u * a)], r2 = [0, 0, 0, 0, ...X, ...X.map(a => -v * a)];
+    for (let a = 0; a < 12; a++) for (let b = 0; b < 12; b++) M[a][b] += r1[a] * r1[b] + r2[a] * r2[b];
+  });
+  const h = smallestEigvec(M);
+  const Pn = [h.slice(0, 4), h.slice(4, 8), h.slice(8, 12)];
+  const T3 = [[s3, 0, 0, -s3 * m3[0]], [0, s3, 0, -s3 * m3[1]], [0, 0, s3, -s3 * m3[2]], [0, 0, 0, 1]];
+  const T2i = [[1 / s2, 0, m2[0]], [0, 1 / s2, m2[1]], [0, 0, 1]];
+  const mul = (A, B) => A.map(r => B[0].map((_, j) => r.reduce((s, a, k) => s + a * B[k][j], 0)));
+  const P = mul(mul(T2i, Pn), T3);
+  const inv = inv3(P.map(r => r.slice(0, 3))), p4 = P.map(r => r[3]);
+  const C = inv.map(r => -(r[0] * p4[0] + r[1] * p4[1] + r[2] * p4[2]));
+  return {P, inv, C};
+}
+function inv3(m) {
+  const [a, b, c] = m[0], [d, e, f] = m[1], [g, h, i] = m[2];
+  const A = e * i - f * h, B = -(d * i - f * g), C2 = d * h - e * g, det = a * A + b * B + c * C2;
+  return [[A / det, -(b * i - c * h) / det, (b * f - c * e) / det], [B / det, (a * i - c * g) / det, -(a * f - c * d) / det], [C2 / det, -(a * h - b * g) / det, (a * e - b * d) / det]];
+}
+function smallestEigvec(M0) {
+  const n = 12, A = M0.map(r => Float64Array.from(r)), V = Array.from({length:n}, (_, i) => { const r = new Float64Array(n); r[i] = 1; return r; });
+  for (let sweep = 0; sweep < 60; sweep++) {
+    let off = 0; for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) off += A[p][q] ** 2;
+    if (off < 1e-22) break;
+    for (let p = 0; p < n; p++) for (let q = p + 1; q < n; q++) {
+      if (Math.abs(A[p][q]) < 1e-300) continue;
+      const th = (A[q][q] - A[p][p]) / (2 * A[p][q]), t = Math.sign(th || 1) / (Math.abs(th) + Math.sqrt(th * th + 1)), c = 1 / Math.sqrt(t * t + 1), s = t * c;
+      for (let k = 0; k < n; k++) { const akp = A[k][p], akq = A[k][q]; A[k][p] = c * akp - s * akq; A[k][q] = s * akp + c * akq; }
+      for (let k = 0; k < n; k++) { const apk = A[p][k], aqk = A[q][k]; A[p][k] = c * apk - s * aqk; A[q][k] = s * apk + c * aqk; }
+      for (let k = 0; k < n; k++) { const vkp = V[k][p], vkq = V[k][q]; V[k][p] = c * vkp - s * vkq; V[k][q] = s * vkp + c * vkq; }
+    }
+  }
+  let best = 0; for (let i = 1; i < n; i++) if (A[i][i] < A[best][best]) best = i;
+  return V.map(r => r[best]);
+}
+
+/* ---------- rendering ---------- */
+const SHOT_LIGHT = `
+uniform sampler2D uGobo, uShadow;
+uniform int uType, uShape, uSingle;
+uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
+uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uGoboRes, uShT, uShHalf, uShFar, uShRes;
+vec3 gobo(vec2 uv){
+  if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }
+  else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
+  if (uBlur <= 0.0) return texture(uGobo, uv).rgb;
+  vec3 s = vec3(0.0);
+  for (int i = 0; i < 12; i++){ float rho = sqrt((float(i) + 0.5) / 12.0), th = float(i) * 2.39996323; s += textureLod(uGobo, uv + uBlur * rho * vec2(cos(th), sin(th)), uBlurLod).rgb; }
+  return s / 12.0;
+}
+// where a point falls in the light's shadow map, and its depth there
+vec3 shadowCoord(vec3 p){
+  if (uType == 0){ vec3 v = p - uLPos; float z = dot(v, uLF); if (z <= 1e-4) return vec3(-1.0); return vec3(0.5 + 0.5 * vec2(dot(v, uLR), dot(v, uLU)) / (z * uShT), z); }
+  vec3 v = p - uAim; return vec3(0.5 + 0.5 * vec2(dot(v, uLR), dot(v, uLU)) / uShHalf, dot(v, uLF) + 0.5 * uShFar);
+}
+float shadowAt(vec3 p, vec3 n){
+  // world size of a shadow-map texel here sets the offsets that keep surfaces from shadowing themselves
+  float tx = (uType == 0 ? 2.0 * uShT * dot(p - uLPos, uLF) : 2.0 * uShHalf) / uShRes;
+  vec3 sc = shadowCoord(p + n * tx * 1.5);
+  if (sc.x < 0.0 || sc.y < 0.0 || sc.x > 1.0 || sc.y > 1.0) return 1.0;
+  float bias = tx * 2.0 + 0.005, s = 0.0, r = 1.0 / uShRes;
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) s += sc.z - bias <= texture(uShadow, sc.xy + vec2(i, j) * r).r ? 1.0 : 0.0;
+  return s / 9.0;
+}
+vec3 lightAt(vec3 p, vec3 n, out vec3 l){
+  if (uType == 1){
+    l = -uLF;
+    vec2 q = vec2(dot(p - uAim, uLR), dot(p - uAim, uLU)) / uSunSize;
+    return uI * uLCol * gobo(q + 0.5) * shadowAt(p, n);
+  }
+  vec3 v = p - uLPos; float d2 = max(dot(v, v), 0.04), d = sqrt(d2);
+  l = -v / d;
+  float z = dot(v, uLF);
+  if (z <= 1e-4) return vec3(0.0);
+  vec2 q = vec2(dot(v, uLR), dot(v, uLU)) / (z * uTanC);
+  float s = max(uSoft, 1e-3), m;
+  if (uShape == 0) m = 1.0 - smoothstep(1.0 - s, 1.0, length(q));
+  else m = (1.0 - smoothstep(1.0 - s, 1.0, abs(q.x))) * (1.0 - smoothstep(1.0 - s, 1.0, abs(q.y)));
+  if (m <= 0.0) return vec3(0.0);
+  return uI * uLCol * m * gobo(0.5 + 0.5 * q * uRep) / d2 * shadowAt(p, n);
+}
+vec3 aces(vec3 x){ return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgb(vec3 c){ return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+`;
+// the pixels as a mesh: two triangles per cell, dropped where they would bridge a depth jump
+const VS_SHOTMESH = HEAD + `
+uniform sampler2D uP, uN; uniform ivec2 uGrid; uniform int uStep, uMode; uniform mat4 uVP; uniform vec3 uSC; uniform float uPixAng;
+uniform int uType; uniform vec3 uLPos, uLF, uLR, uLU, uAim; uniform float uShT, uShHalf, uShFar;
+out vec3 vP; out vec2 vUV; out float vD;
+vec4 fetchP(ivec2 g){ ivec2 s = textureSize(uP, 0); return texelFetch(uP, clamp(g * uStep, ivec2(0), s - 1), 0); }
+vec3 fetchN(ivec2 g){ ivec2 s = textureSize(uN, 0); vec3 n = texelFetch(uN, clamp(g * uStep, ivec2(0), s - 1), 0).xyz; return dot(n, n) > 1e-8 ? normalize(n) : vec3(0.0); }
+// depth along the shot camera's rays
+float dep(ivec2 g){ vec4 p = fetchP(g); return p.w > 0.5 ? distance(p.xyz, uSC) : -1.0; }
+// two neighbouring pixels belong to one surface when the depth step between them is in line with the steps
+// on either side (ground seen at a grazing angle grows smoothly); a jump far bigger than its neighbours is the
+// edge of one object in front of another, and no triangle should bridge it
+bool joined(ivec2 g0, ivec2 g1){
+  ivec2 o = g1 - g0;
+  float d0 = dep(g0), d1 = dep(g1);
+  float jump = abs(d1 - d0), lim = min(d0, d1) * uPixAng * 4.0 + 0.005;
+  if (jump <= lim) return true;
+  // one surface seen at a grazing angle: the same facing at both ends, and the edge runs along it
+  vec3 p0 = fetchP(g0).xyz, p1 = fetchP(g1).xyz, n0 = fetchN(g0), n1 = fetchN(g1), e = normalize(p1 - p0);
+  if (dot(n0, n1) > 0.8 && abs(dot(e, n0)) < 0.3 && abs(dot(e, n1)) < 0.3 && jump < lim * 25.0) return true;
+  // or a smooth ramp: the steps on both sides go the same way and are about as big
+  float dm = dep(g0 - o), dp = dep(g1 + o);
+  if (dm < 0.0 || dp < 0.0) return false;
+  float s0 = d0 - dm, s1 = d1 - d0, s2 = dp - d1;
+  if (s0 * s1 <= 0.0 || s1 * s2 <= 0.0) return false;
+  return jump <= min(abs(s0), abs(s2)) * 1.7 + lim;
+}
+void main(){
+  int cell = gl_VertexID / 6, k = gl_VertexID - cell * 6;
+  ivec2 c = ivec2(cell % uGrid.x, cell / uGrid.x);
+  ivec2 o0 = k < 3 ? ivec2(0, 0) : ivec2(1, 0), o1 = k < 3 ? ivec2(1, 0) : ivec2(1, 1), o2 = ivec2(0, 1);
+  ivec2 me = c + (k % 3 == 0 ? o0 : k % 3 == 1 ? o1 : o2);
+  vec4 a = fetchP(c + o0), b = fetchP(c + o1), d = fetchP(c + o2), p = fetchP(me);
+  if (a.w * b.w * d.w < 0.5 || !joined(c + o0, c + o1) || !joined(c + o1, c + o2) || !joined(c + o0, c + o2)){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  vP = p.xyz; vUV = (vec2(me * uStep) + 0.5) / vec2(textureSize(uP, 0));
+  if (uMode == 1){
+    // shadow map from the light: linear depth, perspective for a spot, orthographic for the sun
+    if (uType == 0){ vec3 v = p.xyz - uLPos; float z = dot(v, uLF); vD = z; gl_Position = vec4(dot(v, uLR) / uShT, dot(v, uLU) / uShT, (z / (uShFar + 1.0)) * 2.0 * z - z, z); }
+    else { vec3 v = p.xyz - uAim; float z = dot(v, uLF) + 0.5 * uShFar; vD = z; gl_Position = vec4(dot(v, uLR) / uShHalf, dot(v, uLU) / uShHalf, z / uShFar * 2.0 - 1.0, 1.0); }
+    return;
+  }
+  gl_Position = uVP * vec4(p.xyz, 1.0);
+}`;
+const FS_SHOTMESH = HEAD + SHOT_LIGHT + `
+uniform sampler2D uN, uC; uniform int uMode; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam;
+in vec3 vP; in vec2 vUV; in float vD;
+layout(location=0) out vec4 o0;
+void main(){
+  if (uMode == 1){ o0 = vec4(vD, 0.0, 0.0, 1.0); return; }
+  if (uMode == 2){ o0 = vec4(vP, 1.0); return; }
+  vec3 n = texture(uN, vUV).xyz;
+  n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - vP);
+  if (dot(n, uCam - vP) < 0.0) n = -n;
+  vec3 alb = pow(texture(uC, vUV).rgb, vec3(2.2)) * uAlb * 2.0, l;
+  vec3 e = lightAt(vP, n, l);
+  vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
+  o0 = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+}`;
+// through the shot camera: every screen pixel is a pixel of the shot, lit exactly
+const FS_SHOTIMG = COMMON + SHOT_LIGHT + `
+uniform sampler2D uP, uN, uC; uniform vec4 uFit; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam, uLImg; uniform int uGizmo;
+void main(){
+  vec2 f = (gl_FragCoord.xy - uFit.xy) / uFit.zw;
+  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0){ fragColor = vec4(0.03, 0.035, 0.04, 1.0); return; }
+  ivec2 s = textureSize(uP, 0);
+  ivec2 px = clamp(ivec2(f.x * float(s.x), (1.0 - f.y) * float(s.y)), ivec2(0), s - 1);
+  vec4 p = texelFetch(uP, px, 0);
+  vec3 col;
+  if (p.w < 0.5) col = vec3(0.012, 0.014, 0.018);
+  else {
+    vec3 n = texelFetch(uN, px, 0).xyz;
+    n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - p.xyz);
+    if (dot(n, uCam - p.xyz) < 0.0) n = -n;
+    vec3 alb = pow(texelFetch(uC, px, 0).rgb, vec3(2.2)) * uAlb * 2.0, l;
+    vec3 e = lightAt(p.xyz, n, l);
+    col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
+  }
+  // the light itself, where the camera can see it
+  if (uGizmo == 1 && uLImg.z > 0.0){
+    float d = length(gl_FragCoord.xy - uLImg.xy);
+    if (d < 7.0 && (p.w < 0.5 || uLImg.z < distance(p.xyz, uCam))) col = mix(col, uLCol * 4.0, 1.0 - smoothstep(4.0, 7.0, d));
+  }
+  fragColor = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+}`;
+const VS_GIZMO = HEAD + `uniform mat4 uVP; uniform vec3 uA, uB; uniform float uSize;
+void main(){ gl_Position = uVP * vec4(gl_VertexID == 0 ? uA : uB, 1.0); gl_PointSize = uSize; }`;
+const FS_GIZMO = HEAD + `uniform vec3 uCol; out vec4 o; void main(){ vec2 c = gl_PointCoord - 0.5; if (dot(c, c) > 0.25) discard; o = vec4(uCol, 1.0); }`;
+PR.shotMesh = program(VS_SHOTMESH, FS_SHOTMESH, 'shot mesh');
+PR.shotImg = program(VS_FULL, FS_SHOTIMG, 'shot view');
+PR.gizmo = program(VS_GIZMO, FS_GIZMO, 'light gizmo');
+
+function shadowTarget(n) {
+  let t = SHOT.sm;
+  if (t && t.w === n) return t;
+  const tx = makeTex(n, n, 'f32', false);
+  gl.bindTexture(gl.TEXTURE_2D, tx);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, n, n);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tx, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  return (SHOT.sm = {tex:tx, fb, rb, w:n, h:n});
+}
+const m4 = {
+  persp(fy, asp, n, f) { const t = 1 / Math.tan(fy / 2); return [t / asp, 0, 0, 0, 0, t, 0, 0, 0, 0, (f + n) / (n - f), -1, 0, 0, 2 * f * n / (n - f), 0]; },
+  look(e, c, up) {
+    const z = v3.norm(v3.sub(e, c)), x = v3.norm(v3.cross(up, z)), y = v3.cross(z, x);
+    return [x[0], y[0], z[0], 0, x[1], y[1], z[1], 0, x[2], y[2], z[2], 0, -v3.dot(x, e), -v3.dot(y, e), -v3.dot(z, e), 1];
+  },
+  mul(a, b) { const o = new Array(16).fill(0); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) o[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k]; return o; },
+};
+function shotLightUniforms(p, c, L, fin, ext) {
+  tex(p, 'uGobo', fin.tex, 0); tex(p, 'uShadow', SHOT.sm.tex, 1);
+  i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', ext.single);
+  f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim); f3(p, 'uLCol', ...hex3(c.color));
+  f1(p, 'uTanC', ext.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', ext.rep); f1(p, 'uBlur', ext.blur); f1(p, 'uBlurLod', ext.lod);
+  f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', ext.sunSize); f1(p, 'uGoboRes', fin.w);
+  f1(p, 'uShT', ext.shT); f1(p, 'uShHalf', ext.shHalf); f1(p, 'uShFar', ext.shFar); f1(p, 'uShRes', SHOT.sm.w);
+}
+const meshStep = () => (S.shot.detail | 0) === 0 ? 2 : 1;
+function meshDraw(pm, mode, fr) {
+  const stp = meshStep(), grid = [Math.ceil(fr.W / stp) - 1, Math.ceil(fr.H / stp) - 1];
+  tex(pm, 'uP', SHOT.tex.P, 2); tex(pm, 'uN', SHOT.tex.N, 3); tex(pm, 'uC', SHOT.tex.C, 4);
+  gl.uniform2i(pm.u('uGrid'), grid[0], grid[1]); i1(pm, 'uStep', stp); i1(pm, 'uMode', mode);
+  f1(pm, 'uPixAng', fr.cam.vfov * DEG / fr.H * stp); f3(pm, 'uSC', ...fr.Cm);
+  gl.drawArrays(gl.TRIANGLES, 0, grid[0] * grid[1] * 6);
+}
+function drawShot(fin, c, L, ext) {
+  const fr = SHOT.frame;
+  // the shadow map covers what the light can reach: the spot's cone, or the shot around the sun's aim point
+  const toCtr = Math.hypot(...v3.sub(fr.ctr, L.aim));
+  ext.shT = ext.tanC * (c.shape === 1 ? 1.45 : 1.05);
+  ext.shHalf = Math.min(fr.R + toCtr, Math.max(ext.sunSize * 3, 25));
+  ext.shFar = 6 * (fr.R + toCtr);
+  if (c.ltype === 0) ext.shFar = Math.max(v3.dot(v3.sub(fr.ctr, L.pos), L.f) + fr.R * 3, 1);
+  const sm = shadowTarget(2048);
+  const pm = PR.shotMesh;
+  gl.useProgram(pm.p); gl.bindVertexArray(vao);
+  // keep the shadow map off every sampler while it is being drawn
+  tex(pm, 'uGobo', fin.tex, 0); tex(pm, 'uShadow', fin.tex, 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sm.fb); gl.viewport(0, 0, sm.w, sm.h);
+  gl.clearColor(1e9, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  i1(pm, 'uType', c.ltype); f3(pm, 'uLPos', ...L.pos); f3(pm, 'uLF', ...L.f); f3(pm, 'uLR', ...L.r); f3(pm, 'uLU', ...L.u); f3(pm, 'uAim', ...L.aim);
+  f1(pm, 'uShT', ext.shT); f1(pm, 'uShHalf', ext.shHalf); f1(pm, 'uShFar', ext.shFar); f3(pm, 'uCam', ...fr.Cm);
+  meshDraw(pm, 1, fr);
+  gl.disable(gl.DEPTH_TEST);
+  if ((S.shot.view | 0) === 0) {
+    // through the shot camera, letterboxed into the preview
+    const sc = Math.min(cv.width / fr.W, cv.height / fr.H), fw = fr.W * sc, fh = fr.H * sc;
+    const fit = [(cv.width - fw) / 2, (cv.height - fh) / 2, fw, fh];
+    SHOT.fit = fit;
+    let li = [0, 0, -1];
+    if (c.ltype === 0) {
+      const P = fr.cam.P, um = fr.um, up = S.shot.upZ;
+      const raw = up ? [L.pos[0] / um, -L.pos[2] / um, L.pos[1] / um] : L.pos.map(v => v / um);
+      const q = P.map(r => r[0] * raw[0] + r[1] * raw[1] + r[2] * raw[2] + r[3]);
+      const fwd = up ? [fr.cam.fwd[0], fr.cam.fwd[2], -fr.cam.fwd[1]] : fr.cam.fwd;
+      if (v3.dot(v3.sub(L.pos, fr.Cm), fwd) > 0) li = [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, Math.hypot(...v3.sub(L.pos, fr.Cm))];
+    }
+    pass(PR.shotImg, null, p => {
+      shotLightUniforms(p, c, L, fin, ext);
+      tex(p, 'uP', SHOT.tex.P, 2); tex(p, 'uN', SHOT.tex.N, 3); tex(p, 'uC', SHOT.tex.C, 4);
+      gl.uniform4f(p.u('uFit'), ...fit); f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uExpo', c.expo); f3(p, 'uCam', ...fr.Cm);
+      f3(p, 'uLImg', ...li); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+    });
+    return;
+  }
+  // orbiting the rough 3D model
+  const {p:cpos, t0} = camPos(CAM());
+  const near = Math.max(0.02, CAM().dist * 0.01);
+  const vp = m4.mul(m4.persp((SHOT.vfov || 40) * DEG, cv.width / cv.height, near, near * 1e5), m4.look(cpos, t0, [0, 1, 0]));
+  SHOT.vp = vp; SHOT.cpos = cpos;
+  bindTarget(null);
+  gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(pm.p);
+  shotLightUniforms(pm, c, L, fin, ext);
+  gl.uniformMatrix4fv(pm.u('uVP'), false, vp); f3(pm, 'uCam', ...cpos);
+  f1(pm, 'uAlb', c.alb); f1(pm, 'uAmb', c.amb); f1(pm, 'uExpo', c.expo);
+  meshDraw(pm, 0, fr);
+  if (c.gizmo) {
+    const g = PR.gizmo; gl.useProgram(g.p);
+    gl.uniformMatrix4fv(g.u('uVP'), false, vp);
+    // the shot camera, the light and its aim point
+    f3(g, 'uA', ...fr.Cm); f1(g, 'uSize', 9); f3(g, 'uCol', 0.35, 0.7, 1); gl.drawArrays(gl.POINTS, 0, 1);
+    f3(g, 'uA', ...L.aim); f1(g, 'uSize', 8); f3(g, 'uCol', 1, 0.6, 0.2); gl.drawArrays(gl.POINTS, 0, 1);
+    if (c.ltype === 0) {
+      f3(g, 'uA', ...L.pos); f1(g, 'uSize', 13); f3(g, 'uCol', ...hex3(c.color)); gl.drawArrays(gl.POINTS, 0, 1);
+      f3(g, 'uA', ...L.pos); f3(g, 'uB', ...L.aim); f3(g, 'uCol', 0.8, 0.8, 0.8); gl.drawArrays(gl.LINES, 0, 2);
+    }
+  }
+  gl.disable(gl.DEPTH_TEST);
+}
+// the shot frame for the current time (sequences follow the timeline at its frame rate)
+function shotSync() {
+  if (!SHOT.frames.length) return;
+  const n = SHOT.frames.length > 1 ? SHOT.frames[Math.min(SHOT.frames.length - 1, Math.floor(S.t * S.fps + 1e-6) % SHOT.frames.length)] : SHOT.frames[0];
+  if ((!SHOT.frame || SHOT.frame.n !== n) && SHOT.loading === null) shotShowFrame(n);
+}
+// pick the 3D point under the cursor, to aim the light there
+function shotPick(e) {
+  const fr = SHOT.frame; if (!fr) return null;
+  const r = cv.getBoundingClientRect(), dpr = cv.width / r.width;
+  const x = (e.clientX - r.left) * dpr, y = (r.bottom - e.clientY) * dpr;
+  if (S.shot.view === 0) {
+    const f = SHOT.fit; if (!f) return null;
+    const u = (x - f[0]) / f[2], v = (y - f[1]) / f[3];
+    if (u < 0 || v < 0 || u > 1 || v > 1) return null;
+    const px = Math.min(fr.W - 1, Math.floor(u * fr.W)), py = Math.min(fr.H - 1, Math.floor((1 - v) * fr.H)), i = py * fr.W + px;
+    return fr.P[i * 4 + 3] ? [fr.P[i * 4], fr.P[i * 4 + 1], fr.P[i * 4 + 2]] : null;
+  }
+  // orbit view: render positions and read the one under the cursor
+  const t = tgt('shotPick', cv.width, cv.height, 'f32');
+  if (!SHOT.pickRb || SHOT.pickRb.w !== cv.width || SHOT.pickRb.h !== cv.height) {
+    const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, cv.width, cv.height);
+    SHOT.pickRb = {rb, w:cv.width, h:cv.height};
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, SHOT.pickRb.rb);
+  gl.viewport(0, 0, cv.width, cv.height); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  const pm = PR.shotMesh; gl.useProgram(pm.p); gl.bindVertexArray(vao);
+  tex(pm, 'uShadow', SHOT.tex.C, 1); tex(pm, 'uGobo', SHOT.tex.C, 0);
+  f3(pm, 'uCam', ...SHOT.cpos); gl.uniformMatrix4fv(pm.u('uVP'), false, SHOT.vp);
+  meshDraw(pm, 2, fr);
+  gl.disable(gl.DEPTH_TEST);
+  const px = new Float32Array(4); gl.readPixels(Math.floor(x), Math.floor(y), 1, 1, gl.RGBA, gl.FLOAT, px);
+  return px[3] > 0.5 ? [px[0], px[1], px[2]] : null;
+}
+function shotOrbitCam() {
+  const fr = SHOT.frame; if (!fr) return null;
+  const tg = fr.pivot, d = v3.sub(fr.Cm, tg), dist = Math.hypot(...d);
+  return {az:Math.atan2(d[0], d[2]) / DEG, el:Math.asin(clamp(d[1] / dist, -1, 1)) / DEG, dist, tx:tg[0], ty:tg[1], tz:tg[2]};
+}
+function shotDefs() {
+  const L = SHOT.layerNames;
+  const defs = [
+    {type:'buttons', items:[['Load utility EXRs…', () => $('shotFile').click()]]},
+    {type:'note', l:SHOT.status || 'Choose the world-position pass of your shot (plus normals and surface colour if you have them), or drop the EXRs on the preview. A numbered sequence plays with the timeline. Files are read in this tab only and never uploaded.'},
+  ];
+  if (shotReady()) defs.push(
+    {k:'view', l:'View', opts:['Through the shot camera', 'Orbit the rough 3D model']},
+    {type:'note', l:'Click the shot to aim the light at that spot.'},
+  );
+  if (L.length) defs.push(
+    {k:'pos', l:'Position layer', opts:L, vals:L},
+    {k:'nrm', l:'Normal layer', opts:['(from position)', ...L], vals:['', ...L]},
+    {k:'col', l:'Colour layer', opts:['(grey)', ...L], vals:['', ...L]},
+    {k:'units', l:'Scene units', opts:UNIT_OPTS},
+    {k:'upZ', l:'Z is up (Blender, Max)', type:'chk'},
+    {k:'detail', l:'Model detail', opts:['Full resolution', 'Half (faster)', 'Quarter (fastest)']},
+  );
+  return defs;
+}
+function shotParamChanged(k) {
+  if (k === 'view') { if (S.shot.view === 1) { const oc = shotOrbitCam(); if (oc) S.cams[S.mode] = oc; } buildPanel(); viewDirty = true; save(); return; }
+  if (SHOT.frame) { SHOT.cache.clear(); shotShowFrame(SHOT.frame.n, false); }
+  save();
+}
+// file picker and drag-and-drop
+(() => {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.id = 'shotFile'; inp.multiple = true; inp.accept = '.exr'; inp.hidden = true;
+  document.body.append(inp);
+  inp.onchange = () => { if (inp.files.length) shotLoadFiles(inp.files); inp.value = ''; };
+  const plate = $('plate');
+  plate.addEventListener('dragover', e => { if (S.view === 'scene') { e.preventDefault(); plate.classList.add('dropping'); } });
+  plate.addEventListener('dragleave', () => plate.classList.remove('dropping'));
+  plate.addEventListener('drop', e => { plate.classList.remove('dropping'); if (S.view !== 'scene') return; e.preventDefault(); if (e.dataTransfer.files.length) shotLoadFiles(e.dataTransfer.files); });
+  // click (not drag) to aim the light
+  let down = null;
+  cv.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+  cv.addEventListener('pointerup', e => {
+    if (!down || S.view !== 'scene' || (SC().set | 0) !== 4 || !shotReady()) return;
+    if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+    const p = shotPick(e);
+    if (p) { const c = SC(); c.aimX = p[0]; c.aimY = p[1]; c.aimZ = p[2]; viewDirty = true; save(); }
+  });
+})();
+
+/* =====================================================================
    LOOP
    ===================================================================== */
 let dirty = true, viewDirty = false, last = performance.now(), msAvg = 0, hudTimer = 0;
@@ -4494,7 +5293,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {SHOT, shotLoadFiles, shotPick, EXR, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
 requestAnimationFrame(tick);
 })();
 
