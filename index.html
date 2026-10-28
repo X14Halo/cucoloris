@@ -247,16 +247,16 @@ const WATER_TYPES = [
   {name:'Lake or river', sal:0, b:0.8},
 ];
 const SPECIES = [
-  {name:'Oak', kind:'sc', H:11, R:5.0, base:0.3, env:'dome', seg:0.32, infl:1.7, kill:0.45, attract:2400, trop:-0.12, droop:0,
+  {flutU:1.2, name:'Oak', kind:'sc', H:11, R:5.0, base:0.3, env:'dome', seg:0.32, infl:1.7, kill:0.45, attract:2400, trop:-0.12, droop:0,
    shape:0, len:0.11, wid:0.065, lai:1.6, cluster:0.32, transl:0.04, flutHz:2.4, flutAmp:0.08, fn:0.3, tilt:0.7},
-  {name:'Maple', kind:'sc', H:12, R:4.6, base:0.25, env:'ovoid', seg:0.3, infl:1.6, kill:0.42, attract:2400, trop:0.05, droop:0,
+  {flutU:1.2, name:'Maple', kind:'sc', H:12, R:4.6, base:0.25, env:'ovoid', seg:0.3, infl:1.6, kill:0.42, attract:2400, trop:0.05, droop:0,
    shape:1, len:0.12, wid:0.13, lai:2.0, cluster:0.32, transl:0.04, flutHz:2.2, flutAmp:0.08, fn:0.3, tilt:0.6},
-  {name:'Birch', kind:'sc', H:13, R:3.2, base:0.3, env:'narrow', seg:0.28, infl:1.4, kill:0.38, attract:2200, trop:0.2, droop:0.6,
+  {flutU:0.8, name:'Birch', kind:'sc', H:13, R:3.2, base:0.3, env:'narrow', seg:0.28, infl:1.4, kill:0.38, attract:2200, trop:0.2, droop:0.6,
    shape:2, len:0.055, wid:0.04, lai:1.8, cluster:0.22, transl:0.06, flutHz:3.0, flutAmp:0.12, fn:0.35, tilt:1.0},
-  {name:'Quaking aspen', kind:'sc', H:12, R:2.8, base:0.4, env:'narrow', seg:0.28, infl:1.3, kill:0.38, attract:2000, trop:0.3, droop:0.1,
+  {flutU:0.5, name:'Quaking aspen', kind:'sc', H:12, R:2.8, base:0.4, env:'narrow', seg:0.28, infl:1.3, kill:0.38, attract:2000, trop:0.3, droop:0.1,
    shape:3, len:0.06, wid:0.058, lai:1.8, cluster:0.2, transl:0.08, flutHz:3.5, flutAmp:0.25, fn:0.35, tilt:1.0},
-  {name:'Scots pine', kind:'pine', H:16, R:3.0, base:0.55, seg:0.3, infl:1.5, kill:0.4, attract:2000, trop:-0.15, droop:0.15, shape:5, len:0.24, wid:0.13, lai:1.6, cluster:0.28, tilt:0.6, transl:0.0, flutHz:3.0, flutAmp:0.02, fn:0.25},
-  {name:'Coconut palm', kind:'palm', H:9, R:4.2, shape:4, len:0.65, wid:0.04, transl:0.05, flutHz:1.6, flutAmp:0.05, fn:0.4},
+  {flutU:2.0, name:'Scots pine', kind:'pine', H:16, R:3.0, base:0.55, seg:0.3, infl:1.5, kill:0.4, attract:2000, trop:-0.15, droop:0.15, shape:5, len:0.24, wid:0.13, lai:1.6, cluster:0.28, tilt:0.6, transl:0.0, flutHz:3.0, flutAmp:0.02, fn:0.25},
+  {flutU:1.2, name:'Coconut palm', kind:'palm', H:9, R:4.2, shape:4, len:0.65, wid:0.04, transl:0.05, flutHz:1.6, flutAmp:0.05, fn:0.4},
 ];
 
 const LEVELS = {exposure:-1.3, rolloff:0.35, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false};
@@ -361,13 +361,12 @@ const MODES = {
       {name:'Wind', params:[
         {k:'windSpeed', l:'Wind speed', min:0, max:15, step:0.1, u:'m/s', h:'At canopy height. 1–3 light air to light breeze, 4–6 gentle to moderate breeze, 8+ fresh breeze.'},
         {k:'windDir', l:'Wind direction (to the sun)', min:0, max:360, step:1, u:'°'},
-        {k:'gustAmt', l:'Gusts', min:0, max:3, step:0.01, u:'×', h:'Occasional stronger gusts on top of the steady breeze. 0 is a steady light wind; gusts lean the canopy downwind and it rebounds as they pass.'},
-        {k:'gustRate', l:'Gusts per minute', min:0, max:15, step:0.5, h:'Measured in a breeze: about 5 per minute, irregularly spaced.'},
-        {k:'indep', l:'Branch independence', min:0, max:1, step:0.01, h:'How much each branch follows its own local eddies rather than the shared gusts.'},
+        {k:'gustAmt', l:'Large gusts', min:0, max:3, step:0.01, u:'×', h:'Extra energy in the big, slow eddies that make the whole canopy surge and veer together. 0 is an ordinary breeze.'},
+                {k:'indep', l:'Local eddies', min:0, max:1, step:0.01, h:'How much of the turbulence is in eddies smaller than the tile, which sweep through the canopy and move each branch at its own time, rather than surges of the whole canopy.'},
         {k:'turb', l:'Turbulence', min:0.05, max:0.6, step:0.01, h:'Turbulence intensity (σu / U). Inside and above canopies it is typically 0.3–0.5.'},
-        {k:'swayBranch', l:'Branch sway', min:0, max:4, step:0.01, u:'×', h:'Slow motion of limbs and large branches, about 0.3–1 Hz. 1 is gentle.'},
-        {k:'swayTwig', l:'Twig sway', min:0, max:4, step:0.01, u:'×', h:'Smaller, quicker motion of twigs and leaf sprays, about 1.5–3.5 Hz.'},
-        {k:'flutter', l:'Leaf flutter', min:0, max:4, step:0.01, u:'×', h:'Individual leaves twisting on their stalks, about 2–4 Hz.'},
+        {k:'swayBranch', l:'Limb flexibility', min:0, max:4, step:0.01, u:'×', h:'How far the limbs bend under the wind. 1 is a typical hardwood; palms are much more flexible already.'},
+        {k:'swayTwig', l:'Branch and twig flexibility', min:0, max:4, step:0.01, u:'×', h:'How easily the smaller branches and leaf sprays bend. They are stiffer but lighter, so they swing faster.'},
+        {k:'flutter', l:'Leaf flutter', min:0, max:4, step:0.01, u:'×', h:'Leaves twisting on their stalks once the local wind passes a threshold (aspen at about 0.5 m/s, oak nearer 1.2 m/s), and leaning over as it rises.'},
       ]},
     ],
     presets:[
@@ -883,6 +882,7 @@ uniform sampler2D uDisp; uniform float uT, uLx, uLy, uCot, uSinE, uZr, uDS;
 out vec2 vUV; flat out int vSlice; flat out float vShape;
 
 uniform float uTwA, uGustE, uTwCoh, uLoopT; uniform vec3 uTwF; uniform int uWrap;
+uniform vec4 uWk[32], uWa[32]; uniform int uNW; uniform vec3 uWm; uniform float uZtop, uFlutU, uLeanK;
 // node data .w = local eddy strength (gusts reach each spray on their own), +10 when the node is a twig
 float nodeE(float w){ return w >= 9.5 ? w - 10.0 : w; }
 float qf(float f){ return uLoopT > 0.0 ? max(1.0, floor(f * uLoopT + 0.5)) / uLoopT : f; }
@@ -903,10 +903,18 @@ void main(){
   int node = int(aNode + 0.5);
   vec4 dd = texelFetch(uDisp, ivec2(node % 1024, node / 1024), 0);
   vec3 disp = dd.xyz + twigMove(node, dd.w, aPos.xy);
-  // leaves flutter when a gust reaches their spray and settle when it passes
-  float th = aFlut.w * (0.5 + 0.5 * smoothstep(0.5, 1.6, nodeE(dd.w))) * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
+  // the air at this leaf: mean wind (weaker down in the crown) plus the same eddies that drive the branches
+  float zr = clamp(1.0 - aPos.z / uZtop, 0.0, 1.5);
+  vec3 Wv = uWm * exp(-2.0 * zr);
+  float tp = exp(-zr);
+  for (int i = 0; i < 32; i++){ if (i >= uNW) break; Wv += uWa[i].xyz * tp * cos(dot(uWk[i].xy, aPos.xy) - uWk[i].z * uT + uWk[i].w); }
+  float spd = length(Wv.xy);
+  // leaves flutter once the local wind passes a threshold, harder the stronger it blows
+  float th = aFlut.w * smoothstep(0.4 * uFlutU, 2.2 * uFlutU, spd) * (0.6 + 0.4 * min(spd / (3.0 * uFlutU), 2.0)) * (sin(TAU * aFlut.x * uT + aFlut.z) + 0.45 * sin(TAU * aFlut.y * uT + aFlut.z * 1.7));
   vec3 ax = aAxis.xyz;
   vec3 n = rot(aNorm.xyz, ax, th);
+  // and they are pushed over downwind, turning toward edge-on as the wind rises (reconfiguration)
+  if (spd > 0.05){ vec3 la = normalize(vec3(-Wv.y, Wv.x, 0.0)); float lean = min(uLeanK * spd * spd, 0.9); n = rot(n, la, lean); ax = rot(ax, la, lean * 0.5); }
   vec3 side = normalize(cross(ax, n));
   vec3 P = aPos.xyz + disp + n * (0.06 * aAxis.w * th);
   vec3 W = P + ax * (c.x * aAxis.w) + side * (c.y * aNorm.w);
@@ -2031,28 +2039,36 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
 
 /* Branch hierarchy for wind: trunk (level 0), primary branches or fronds (level 1),
    secondary branches (level 2). */
+/* Branch hierarchy for the wind: level 1 = limbs leaving the trunk, level 2 = branches off a
+   limb's main axis, level 3 = twigs and leaf sprays off a branch's main axis. Each group records
+   where it attaches and to which parent group, and each node its arc length along its group. */
+const newG = () => ({lv:[[], [], []], ng:[[], [], []], ns:[[], [], []]});
 function hierarchy(B, start, end, G) {
   const n = end - start;
   const sz = new Float64Array(n).fill(1);
   for (let i = n - 1; i > 0; i--) { const p = B.par[start + i] - start; if (p >= 0) sz[p] += sz[i]; }
   const main = new Int32Array(n).fill(-1), best = new Float64Array(n);
-  for (let i = 1; i < n; i++) { const p = B.par[start + i] - start; if (!B.trunk[start + i] && sz[i] > best[p]) { best[p] = sz[i]; main[p] = i; } }
-  const g1 = new Int32Array(n).fill(-1), g2 = new Int32Array(n).fill(-1), ax1 = new Uint8Array(n);
-  const s1 = new Float64Array(n), s2 = new Float64Array(n);
+  for (let i = 1; i < n; i++) { const p = B.par[start + i] - start; if (p >= 0 && !B.trunk[start + i] && sz[i] > best[p]) { best[p] = sz[i]; main[p] = i; } }
+  const g = [new Int32Array(n).fill(-1), new Int32Array(n).fill(-1), new Int32Array(n).fill(-1)];
+  const sl = [new Float64Array(n), new Float64Array(n), new Float64Array(n)];
+  const axL = new Uint8Array(n);            // which level's main axis this node lies on (0 = trunk)
   for (let i = 1; i < n; i++) {
     const gi = start + i;
     if (B.par[gi] < 0) continue;
     const p = B.par[gi] - start, gp = start + p;
     const l = Math.hypot(B.x[gi] - B.x[gp], B.y[gi] - B.y[gp], B.z[gi] - B.z[gp]);
     if (B.trunk[gi]) continue;
-    if (B.trunk[gp]) { g1[i] = G.g1.length; G.g1.push({tree:B.tree[gi], x:B.x[gp], y:B.y[gp], z:B.z[gp], len:0}); ax1[i] = 1; s1[i] = l; }
-    else if (ax1[p] && i === main[p]) { g1[i] = g1[p]; ax1[i] = 1; s1[i] = s1[p] + l; }
-    else if (ax1[p]) { g1[i] = g1[p]; s1[i] = s1[p]; g2[i] = G.g2.length; G.g2.push({tree:B.tree[gi], x:B.x[gp], y:B.y[gp], z:B.z[gp], len:0}); s2[i] = l; }
-    else { g1[i] = g1[p]; s1[i] = s1[p]; g2[i] = g2[p]; s2[i] = s2[p] + l; }
-    if (g1[i] >= 0) G.g1[g1[i]].len = Math.max(G.g1[g1[i]].len, s1[i]);
-    if (g2[i] >= 0) G.g2[g2[i]].len = Math.max(G.g2[g2[i]].len, s2[i]);
+    for (let L = 0; L < 3; L++) { g[L][i] = g[L][p]; sl[L][i] = sl[L][p]; }
+    let L;
+    if (B.trunk[gp] || axL[p] === 0) L = 0;                   // a new limb
+    else if (i === main[p] || axL[p] >= 3) { L = axL[p] - 1; axL[i] = axL[p]; sl[L][i] += l; G.lv[L][g[L][i]].len = Math.max(G.lv[L][g[L][i]].len, sl[L][i]); continue; }
+    else L = axL[p];                                          // a side branch one level down
+    const par = L === 0 ? -1 : g[L - 1][p];
+    g[L][i] = G.lv[L].length; sl[L][i] = l; axL[i] = L + 1;
+    for (let k = L + 1; k < 3; k++) { g[k][i] = -1; sl[k][i] = 0; }
+    G.lv[L].push({tree:B.tree[gi], node:gp, par, x:B.x[gp], y:B.y[gp], z:B.z[gp], len:l, nl:0, dx:B.x[gi] - B.x[gp], dy:B.y[gi] - B.y[gp], dz:B.z[gi] - B.z[gp]});
   }
-  for (let i = 0; i < n; i++) { G.ng1[start + i] = g1[i]; G.ng2[start + i] = g2[i]; G.ns1[start + i] = s1[i]; G.ns2[start + i] = s2[i]; }
+  for (let i = 0; i < n; i++) for (let L = 0; L < 3; L++) { G.ng[L][start + i] = g[L][i]; G.ns[L][start + i] = sl[L][i]; }
 }
 
 const treeCache = new Map();
@@ -2079,7 +2095,7 @@ function genTrees(P) {
   if ((P.framing | 0) === 1) {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 11);
     const B = newBuilder();
-    const G = {g1:[], g2:[], ng1:[], ng2:[], ns1:[], ns2:[]};
+    const G = newG();
     const zt = P.canopyTop, zbE = Math.max(0.3, zt - P.canopyDepth), zm = 0.5 * (zt + zbE), zr = P.recvHeight || 0;
     const cot = 1 / Math.tan(Math.max(P.sunElev, 5) * DEG);
     const bx = 0.5 * Lx + (zm - zr) * cot, by = 0.5 * Ly;
@@ -2105,7 +2121,7 @@ function genTrees(P) {
   if (sp.kind !== 'palm') {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 5);
     const B = newBuilder();
-    const G = {g1:[], g2:[], ng1:[], ng2:[], ns1:[], ns2:[]};
+    const G = newG();
     const nS = growPatch(sp, r0, B, P, Lx, Ly, P.canopyTop);
     hierarchy(B, 0, B.x.length, G);
     return {B, G, sp, nTrees:nS, Lx, Ly, patch:true};
@@ -2125,7 +2141,7 @@ function genTrees(P) {
     pos.push(bestP);
   }
   const B = newBuilder();
-  const G = {g1:[], g2:[], ng1:[], ng2:[], ns1:[], ns2:[]};
+  const G = newG();
   pos.forEach((c, t) => {
     const one = growOne(P, sp, t), b = one.B;
     const off = B.x.length;
@@ -2206,170 +2222,217 @@ function uploadTrees(T, P) {
   TR.zmax = zmax + 0.6;
 }
 
-/* Wind: a von Kármán gust spectrum drives every group through its own damped
-   oscillator response. Frequencies snap to whole cycles of the loop. */
+/* =====================================================================
+   WIND — a time-domain simulation, not an animation.
+   The wind is a turbulent velocity field: a mean speed that dies away
+   down into the crown, plus eddies with a von Kármán spectrum. Eddies
+   smaller than the tile are carried across it at the convection speed
+   (so a gust visibly sweeps through the canopy); larger ones arrive as
+   whole-tile surges. Every limb, branch and twig spray is a damped
+   cantilever (its first bending mode) with its own natural frequency,
+   pushed by aerodynamic drag on the *relative* velocity of the air
+   (|V|^0.4·V: leafy crowns streamline, so drag grows slower than V²;
+   using the relative velocity also gives the aerodynamic damping), and
+   carried by its parent's motion (base excitation, which makes tips whip).
+   Stronger wind therefore bends things further and drives them harder,
+   while each part still swings at its own natural frequency.
+   The field is periodic in space and in time; after the start-up
+   transient dies away the response repeats exactly, so one period is
+   recorded and played back as a seamless loop.
+   ===================================================================== */
+function windModes(T, P, tl) {
+  const r = rng(P.seed * 911 + 13);
+  const U = Math.max(P.windSpeed, 0.05), wd = P.windDir * DEG, wx = Math.cos(wd), wy = Math.sin(wd);
+  const Lx = T.Lx || 10, Ly = T.Ly || 10, Tl = tl.loop ? tl.len : Math.min(tl.len, 120);
+  const sig = (P.turb ?? 0.35) * U, Uc = 0.8 * U, Lu = 12;
+  const q = w => Math.round(w * Tl / (2 * Math.PI)) * 2 * Math.PI / Tl;
+  const fSp = clamp(0.25 + 0.5 * (P.indep ?? 0.5), 0.1, 0.9);       // share of the eddies smaller than the tile
+  const gust = 1 + 1.5 * (P.gustAmt || 0);
+  const modes = [];
+  const comp = () => { const a = gauss(r), b = 0.75 * gauss(r), c = 0.5 * gauss(r); return [a * wx - b * wy, a * wy + b * wx, c]; };
+  // eddies smaller than the tile: wavevectors on the tile's lattice, carried downwind
+  const cand = [];
+  for (let i = -24; i <= 24; i++) for (let j = -24; j <= 24; j++) {
+    if (!i && !j) continue;
+    const kx = 2 * Math.PI * i / Lx, ky = 2 * Math.PI * j / Ly, k = Math.hypot(kx, ky);
+    if (2 * Math.PI / k < 0.5) continue;
+    const kl = k * 2.0, E = Math.pow(kl, 4) / Math.pow(1 + kl * kl, 17 / 6);     // von Kármán energy spectrum (L ≈ 2 m in the crown)
+    cand.push([kx, ky, k, E / (k)]);                                             // lattice density ∝ k in 2D
+  }
+  let wsum = 0; cand.forEach(c => wsum += c[3]);
+  const NS = 22;
+  for (let m = 0; m < NS && cand.length; m++) {
+    let x = r() * wsum, i = 0; while (i < cand.length - 1 && x > cand[i][3]) { x -= cand[i][3]; i++; }
+    const [kx, ky, k] = cand[i];
+    const om = q((kx * wx + ky * wy) * Uc + 0.35 * sig * k * gauss(r));     // frozen turbulence + slow evolution
+    const d = comp(), a = sig * Math.sqrt(fSp * 2 / NS);
+    modes.push([kx, ky, om, r() * 2 * Math.PI, a * d[0], a * d[1], a * d[2]]);
+  }
+  // eddies bigger than the tile: the whole canopy surges and veers together
+  const NU = 10, fs = [];
+  for (let i = 0; i < NU; i++) fs.push(Math.pow(10, -1.6 + 1.9 * (i + r()) / NU));
+  const S = f => (Lu / U) / Math.pow(1 + 70.8 * (f * Lu / U) ** 2, 5 / 6);
+  let Ssum = 0; const sf = fs.map((f, i) => { const df = f * 0.5; const v = S(f) * df; Ssum += v; return v; });
+  fs.forEach((f, i) => {
+    const om = Math.max(q(2 * Math.PI * f), 2 * Math.PI / Tl), d = comp();
+    const a = sig * Math.sqrt((1 - fSp) * gust * 2 * sf[i] / Ssum);
+    modes.push([0, 0, om, r() * 2 * Math.PI, a * d[0], a * d[1], a * d[2]]);
+  });
+  return {modes, U, wx, wy, sig};
+}
 function windSetup(T, P, tl) {
   const {B, G, sp} = T;
-  const U = Math.max(P.windSpeed, 0.05), Lu = 25;
-  const wd = P.windDir * DEG, wx = Math.cos(wd), wy = Math.sin(wd);
-  let fs = [];
-  for (let i = 0; i < 22; i++) fs.push(0.02 * Math.pow(8 / 0.02, i / 21));
-  if (tl.loop) fs = [...new Set(fs.map(f => Math.max(1, Math.round(f * tl.len))))].map(k => k / tl.len);
-  const df = fs.map((f, i) => ((fs[i + 1] || f * 1.3) - (fs[i - 1] || f / 1.3)) / 2);
-  const Sf = f => (Lu / U) / Math.pow(1 + 70.8 * (f * Lu / U) ** 2, 5 / 6);
-  const amp = fs.map((f, i) => Math.sqrt(Sf(f) * df[i]));
-  const r = rng(P.seed * 31 + 7);
-  const phi = fs.map(() => r() * Math.PI * 2);
-  const U5 = (U / 5) ** 2;
-  const groups = [];
-  // Wind inside a crown dies away below the top (U ∝ e^(-a(1 - z/h))), and drag goes as U²:
-  // the upper canopy works hard while the lower layers barely stir, which layers the motion.
-  const ztop = T.patch ? P.canopyTop : Math.max(...B.treeH), depth = T.patch ? Math.max(P.canopyDepth, 1) : ztop * 0.45;
-  const hz = z => Math.exp(-1.8 * clamp((ztop - z) / depth, 0, 1.3));
-  const gain = () => Math.exp(0.45 * gauss(r));   // some limbs are springier or more exposed than others
-  B.treeInfo.forEach(t => groups.push({lvl:0, x:t.x, y:t.y, zz:t.H * 0.75, size:t.R, fn:sp.fn * Math.pow(11 / t.H, 0.8), z:0.09, target:Math.min(0.022 * (t.H / 10) * U5 * P.swayBranch, 0.06 * t.H) * (T.patch ? 0.3 : 1), vert:0}));
+  const WM = windModes(T, P, tl), M = WM.modes.length, U = WM.U;
   const palm = sp.kind === 'palm';
-  G.g1.forEach(g => groups.push({lvl:1, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(1.4 / Math.sqrt(Math.max(g.len, 0.5)), 0.5, 3), z:0.08, target:(palm ? 0.03 : 0.05 * clamp(g.len / 3, 0.4, 2)) * U5 * P.swayBranch, vert:0.5}));
-  G.g2.forEach(g => groups.push({lvl:2, x:g.x, y:g.y, zz:g.z, size:g.len, fn:clamp(2.2 / Math.sqrt(Math.max(g.len, 0.3)), 1, 5), z:0.12, target:0.03 * U5 * P.swayTwig, vert:0.6}));
-  groups.forEach(g => { g.hz = 1; g.gain = g.lvl === 0 ? 1 : gain(); });   // height attenuation is applied per node
-  // Local eddies: a field of gust patches 1–4 m across, carried downwind. Each spray responds to
-  // the patch it sits in, so neighbouring branches move at different times and strengths.
-  const Lx = T.Lx || 10, Ly = T.Ly || 10, Uadv = 0.8 * U;
-  const ed = [];
-  for (let tries = 0; ed.length < 9 && tries < 400; tries++) {
-    const m = Math.round((r() * 2 - 1) * Lx / 0.9), nn = Math.round((r() * 2 - 1) * Ly / 0.9);
-    const kx = 2 * Math.PI * m / Lx, ky = 2 * Math.PI * nn / Ly, k = Math.hypot(kx, ky);
-    if (!k || 2 * Math.PI / k < 0.9 || 2 * Math.PI / k > 4.5) continue;
-    let om = (kx * wx + ky * wy) * Uadv + 0.25 * (r() - 0.5);
-    if (tl.loop) om = Math.round(om * tl.len / (2 * Math.PI)) * 2 * Math.PI / tl.len;
-    ed.push([kx, ky, om, r() * 2 * Math.PI]);
+  const ztop = T.patch ? P.canopyTop : Math.max(...B.treeH);
+  const prof = z => Math.exp(-2.0 * clamp(1 - z / ztop, 0, 1.5));          // mean wind dies away down into the crown
+  const tprof = z => Math.exp(-1.0 * clamp(1 - z / ztop, 0, 1.5));
+  // groups: trees (whole-crown sway), then limbs, branches, twig sprays
+  const groups = [];
+  B.treeInfo.forEach((t, i) => groups.push({lvl:0, par:-1, c:0, x:t.x, y:t.y, z:t.H * 0.75, len:t.H, fn:sp.fn * Math.pow(11 / t.H, 0.8), defl:(palm ? 0.03 : 0.015) * (T.patch ? 0.3 : 1) * P.swayBranch}));
+  const off = [groups.length];
+  const fnL = [[1.4, 0.45, 2.5], [2.0, 0.9, 4.0], [2.6, 1.8, 6.0]], deflL = [0.05, 0.07, 0.09];
+  const nodeW = (L, gi, node) => { const gg = G.lv[L][gi]; return Math.pow(clamp(G.ns[L][node] / Math.max(gg.len, 0.05), 0, 1), 1.5); };
+  for (let L = 0; L < 3; L++) {
+    G.lv[L].forEach((g, gi) => {
+      const par = L === 0 ? g.tree : off[L - 1] + g.par;
+      // where the parent's own bending carries this group's base
+      const c = L === 0 ? Math.pow(clamp(B.z[g.node] / Math.max(B.treeH[B.tree[g.node]], 1), 0, 1.3), 2) : nodeW(L - 1, g.par, g.node);
+      const len = Math.max(g.len, 0.05);
+      let fn = clamp(fnL[L][0] / Math.sqrt(len), fnL[L][1], fnL[L][2]);
+      if (palm && L === 0) fn = clamp(0.9 / Math.sqrt(len / 3), 0.5, 1.5);
+      // sample the wind part-way out along the group
+      const e = Math.hypot(g.dx, g.dy, g.dz) || 1, h = 0.5 * len;
+      groups.push({lvl:L + 1, par, c, x:g.x + g.dx / e * h, y:g.y + g.dy / e * h, z:g.z + g.dz / e * h, len, fn,
+                   defl:(palm && L === 0 ? 0.12 : deflL[L]) * (L === 0 ? P.swayBranch : P.swayTwig)});
+    });
+    off.push(groups.length);
   }
-  const eAmp = Math.sqrt(2 / Math.max(ed.length, 1)), eCon = 0.55 + 0.6 * (P.indep ?? 0.5);
-  // the breeze never stops: local eddies only make it a little stronger here and a little weaker there
-  const eRaw = (x, y, t) => { let v = 0; for (const e of ed) v += Math.cos(e[0] * x + e[1] * y - e[2] * t + e[3]); return clamp(1 + 0.4 * eCon * eAmp * v, 0.45, 1.8); };
-  let eMean = 0; { const r3 = rng(99); for (let i = 0; i < 400; i++) eMean += eRaw(r3() * Lx, r3() * Ly, r3() * 50); eMean /= 400; }
-  const eddy = (x, y, t) => eRaw(x, y, t) / eMean;
-  // Gusts: discrete gust events (measured ~5 per minute in a breeze, each rising in ~1 s and
-  // dying over a few seconds) make an intermittent wind-speed envelope e(t). Drag goes as e², so
-  // the canopy leans and rebounds with each gust. The envelope is periodic over the sequence, so
-  // loops stay seamless; the gust front rolls across the canopy at the wind speed.
-  const TL0 = tl.len, M = 1024;
-  const env = new Float64Array(M).fill(1);
-  const nG = P.gustAmt > 0 ? Math.round((P.gustRate || 0) / 60 * TL0 + (r() < ((P.gustRate || 0) / 60 * TL0) % 1 ? 0.5 : 0)) : 0;
-  for (let k = 0; k < nG; k++) {
-    const t0 = (k + 0.15 + 0.7 * r()) / nG * TL0, A = 0.9 * P.gustAmt * Math.exp(0.4 * gauss(r));
-    const tr = 0.7 + 0.8 * r(), td = 1.8 + 3.0 * r();
-    for (let m = 0; m < M; m++) {
-      let dt = m / M * TL0 - t0; dt = ((dt % TL0) + TL0) % TL0;
-      for (let w = 0; w < 3; w++) { const d = dt + w * TL0; env[m] += A * (1 - Math.exp(-d / tr)) * Math.exp(-d / td); }
-    }
-  }
-  let emean = 0; for (let m = 0; m < M; m++) emean += env[m]; emean /= M;
-  const K = nG ? Math.min(Math.floor(3.5 * TL0), 200) : 0;
-  const gc = [];     // Fourier coefficients of the drag fluctuation e² − mean
-  for (let k = 1; k <= K; k++) {
-    let re = 0, im = 0;
-    for (let m = 0; m < M; m++) { const v = (env[m] / emean) ** 2; const a = -2 * Math.PI * k * m / M; re += v * Math.cos(a); im += v * Math.sin(a); }
-    gc.push([k / TL0, 2 * Math.hypot(re, im) / M, Math.atan2(im, re)]);
-  }
-  fs = fs.concat(gc.map(c => c[0]));
-  const nT = fs.length - gc.length, nF = fs.length;
-  const coef = new Float32Array(groups.length * nF * 6);
-  const turbW = (0.35 + 0.65 * (P.indep ?? 0.6)) * (P.turb / 0.35);
-  groups.forEach((g, gi) => {
-    g.fn *= 0.75 + 0.5 * r();                 // every branch has its own natural frequency
-    const resp = f => { const rr = f / g.fn, re = 1 - rr * rr, im = 2 * g.z * rr; return [1 / Math.hypot(re, im), Math.atan2(im, re)]; };
-    // independent turbulence: each branch sees its own eddies
-    let ms = 0;
-    for (let i = 0; i < nT; i++) {
-      const [Hm, arg] = resp(fs[i]);
-      const a = amp[i] * Hm, o = (gi * nF + i) * 6;
-      coef[o] = a; coef[o + 1] = r() * Math.PI * 2 - arg;
-      coef[o + 2] = a * 0.6; coef[o + 3] = r() * Math.PI * 2;
-      coef[o + 4] = a * g.vert; coef[o + 5] = r() * Math.PI * 2;
-      ms += a * a / 2;
-    }
-    const s = ms > 0 ? g.target * turbW / Math.sqrt(ms) : 0;
-    for (let i = 0; i < nT; i++) { const o = (gi * nF + i) * 6; coef[o] *= s; coef[o + 2] *= s; coef[o + 4] *= s; }
-    // coherent gust response, delayed by the gust front's travel time to this branch
-    let mg = 0;
-    const tau = (g.x * wx + g.y * wy) / U;
-    for (let k = 0; k < gc.length; k++) {
-      const [f, c, ph] = gc[k], [Hm, arg] = resp(f);
-      const a = c * Hm, o = (gi * nF + nT + k) * 6;
-      coef[o] = a; coef[o + 1] = ph - 2 * Math.PI * f * tau - arg;
-      coef[o + 2] = a * 0.25; coef[o + 3] = ph - 2 * Math.PI * f * tau - arg + 1.3;
-      coef[o + 4] = a * g.vert * 0.5; coef[o + 5] = ph - 2 * Math.PI * f * tau - arg + 0.7;
-      mg += a * a / 2;
-    }
-    const sg = mg > 0 ? g.target * 0.8 * P.gustAmt / Math.sqrt(mg) : 0;
-    for (let k = 0; k < gc.length; k++) { const o = (gi * nF + nT + k) * 6; coef[o] *= sg; coef[o + 2] *= sg; coef[o + 4] *= sg; }
+  const ng = groups.length;
+  // per group: stiffness, damping, drag coefficient (per unit modal mass) from the static bend at 5 m/s
+  const r = rng(P.seed * 37 + 3);
+  const om = new Float64Array(ng), kap = new Float64Array(ng), par = new Int32Array(ng), cc = new Float64Array(ng);
+  const pz = new Float64Array(ng), tz = new Float64Array(ng), sampleOf = new Int32Array(ng);
+  groups.forEach((g, i) => {
+    g.fn *= 0.85 + 0.3 * r();
+    om[i] = 2 * Math.PI * g.fn;
+    kap[i] = g.defl * g.len * om[i] * om[i] / Math.pow(5, 1.4) * Math.exp(0.35 * gauss(r));
+    par[i] = g.par; cc[i] = g.c; pz[i] = prof(g.z); tz[i] = tprof(g.z);
+    // twig sprays feel the same eddy as the branch they hang from
+    sampleOf[i] = g.lvl === 3 && g.par >= 0 ? sampleOf[g.par] : i;
   });
-  // per-leaf flutter (flutter frequency depends only weakly on wind speed)
-  const nL = TR.nLeaves;
-  const fl = new Float32Array(nL * 4);
-  const famp = sp.flutAmp * P.flutter * smooth(0.2, 3, U) * (0.6 + 0.4 * clamp(U / 6, 0, 1.5));
-  const q = f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f;
+  // wind phasors per sampling group
+  const samplers = [...new Set(sampleOf)];
+  const sIdx = new Int32Array(ng); samplers.forEach((g, k) => { sIdx[g] = k; });
+  const nsamp = samplers.length;
+  const cs = new Float64Array(nsamp * M * 2);
+  const dt = 1 / 120, Tl = tl.loop ? tl.len : Math.min(tl.len, 120);
+  const rot = WM.modes.map(m => [Math.cos(m[2] * dt), Math.sin(m[2] * dt)]);
+  const setPhase = t => samplers.forEach((g, k) => WM.modes.forEach((m, j) => {
+    const th = m[0] * groups[g].x + m[1] * groups[g].y - m[2] * t + m[3];
+    cs[(k * M + j) * 2] = Math.cos(th); cs[(k * M + j) * 2 + 1] = Math.sin(th);
+  }));
+  const W = new Float64Array(nsamp * 3);
+  const windAt = () => {
+    for (let k = 0; k < nsamp; k++) {
+      let a = 0, b = 0, c = 0;
+      for (let j = 0; j < M; j++) {
+        const o = (k * M + j) * 2, cth = cs[o], sth = cs[o + 1], m = WM.modes[j];
+        a += m[4] * cth; b += m[5] * cth; c += m[6] * cth;
+        const [cr, sr] = rot[j];
+        cs[o] = cth * cr + sth * sr; cs[o + 1] = sth * cr - cth * sr;     // advance by ω·dt
+      }
+      W[k * 3] = a; W[k * 3 + 1] = b; W[k * 3 + 2] = c;
+    }
+  };
+  // state: displacement and velocity relative to the parent's carried base; absolute velocity and acceleration
+  const qx = new Float64Array(ng * 3), qv = new Float64Array(ng * 3), av = new Float64Array(ng * 3), aa = new Float64Array(ng * 3);
+  const zeta = 0.035;
+  const step = () => {
+    windAt();
+    for (let i = 0; i < ng; i++) {
+      const k = sIdx[sampleOf[i]], p = par[i], c = cc[i];
+      const mx = U * pz[i] * WM.wx, my = U * pz[i] * WM.wy;
+      let vax = 0, vay = 0, vaz = 0, pax = 0, pay = 0, paz = 0;
+      if (p >= 0) { vax = c * av[p * 3]; vay = c * av[p * 3 + 1]; vaz = c * av[p * 3 + 2]; pax = c * aa[p * 3]; pay = c * aa[p * 3 + 1]; paz = c * aa[p * 3 + 2]; }
+      const o = i * 3;
+      // air velocity relative to the moving branch
+      const Vx = mx + tz[i] * W[k * 3] - (vax + qv[o]), Vy = my + tz[i] * W[k * 3 + 1] - (vay + qv[o + 1]), Vz = tz[i] * W[k * 3 + 2] - (vaz + qv[o + 2]);
+      const sp2 = Math.pow(Vx * Vx + Vy * Vy + 0.36 * Vz * Vz + 1e-6, 0.2) * kap[i];
+      const w2 = om[i] * om[i], wz2 = w2 * 1.44, d = 2 * zeta * om[i];
+      const ax = sp2 * Vx - w2 * qx[o] - d * qv[o] - pax;
+      const ay = sp2 * Vy - w2 * qx[o + 1] - d * qv[o + 1] - pay;
+      const az = 0.6 * sp2 * Vz - wz2 * qx[o + 2] - d * qv[o + 2] - paz;
+      qv[o] += ax * dt; qv[o + 1] += ay * dt; qv[o + 2] += az * dt;
+      qx[o] += qv[o] * dt; qx[o + 1] += qv[o + 1] * dt; qx[o + 2] += qv[o + 2] * dt;
+      av[o] = vax + qv[o]; av[o + 1] = vay + qv[o + 1]; av[o + 2] = vaz + qv[o + 2];
+      aa[o] = pax + ax; aa[o + 1] = pay + ay; aa[o + 2] = paz + az;
+    }
+  };
+  // run until the start-up transient has died away, then record one period
+  const warm = Math.max(18, 4 / (zeta * 2 * Math.PI * Math.min(...groups.map(g => g.fn))));
+  const warmSteps = Math.round(Math.min(warm, 40) / dt);
+  setPhase(-warmSteps * dt);
+  for (let s2 = 0; s2 < warmSteps; s2++) step();
+  const rate = Math.max(12, Math.min(30, 6e6 / (ng * 3 * Tl)));
+  const F = Math.max(2, Math.round(Tl * rate)), spf = 1 / (rate * dt);
+  const rec = new Float32Array(F * ng * 3);
+  let acc = 0, f = 0;
+  setPhase(0);
+  const nSteps = Math.round(Tl / dt);
+  for (let s2 = 0; s2 <= nSteps; s2++) {
+    const tNow = s2 * dt;
+    while (f < F && f / rate <= tNow + 1e-9) { rec.set(qx.subarray(0, ng * 3), f * ng * 3); f++; }
+    if (s2 < nSteps) step();
+  }
+  // remove the last trace of transient so the loop closes exactly
+  const end = Float32Array.from(qx);
+  for (let fr = 0; fr < F; fr++) { const w = fr / F; for (let i = 0; i < ng * 3; i++) rec[fr * ng * 3 + i] -= w * (end[i] - rec[i]); }
+  // node weights: each level's bending shape along its group
+  const n = B.x.length, wts = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const H = B.treeH[B.tree[i]];
+    wts[i * 4] = Math.pow(clamp(B.z[i] / H, 0, 1.3), 2);
+    for (let L = 0; L < 3; L++) { const gi = G.ng[L][i]; wts[i * 4 + 1 + L] = gi >= 0 ? nodeW(L, gi, i) : 0; }
+  }
+  // per-leaf flutter: frequency rises a little with wind; whether it flutters at all is decided per frame by the local wind
+  const nL = TR.nLeaves, fl = new Float32Array(nL * 4);
+  const qf = f2 => tl.loop ? Math.max(1, Math.round(f2 * tl.len)) / tl.len : f2;
+  const famp = sp.flutAmp * P.flutter;
+  const fBase = sp.flutHz * (0.75 + 0.25 * clamp(U / 3, 0.3, 2.5));
   for (let i = 0; i < nL; i++) {
-    // most leaves are held stiffly; a few on long, flat stalks flutter hard
-    const f = sp.flutHz * (0.6 + 0.6 * r()), a = r();
-    fl[i * 4] = q(f); fl[i * 4 + 1] = q(f * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = famp * (0.12 + 1.5 * a * a * a);
+    const f2 = fBase * (0.75 + 0.5 * r()), a = r();
+    fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = famp * (0.15 + 1.4 * a * a);
   }
   gl.bindBuffer(gl.ARRAY_BUFFER, TR.flutBuf);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, fl);
-  // node weights
-  const n = B.x.length;
-  const w = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const H = B.treeH[B.tree[i]];
-    w[i * 3] = Math.pow(clamp(B.z[i] / H, 0, 1.3), 2);
-    const g1 = G.ng1[i], g2 = G.ng2[i];
-    w[i * 3 + 1] = g1 >= 0 ? Math.pow(clamp(G.ns1[i] / Math.max(G.g1[g1].len, 0.1), 0, 1), 1.5) : 0;
-    w[i * 3 + 2] = g2 >= 0 ? Math.pow(clamp(G.ns2[i] / Math.max(G.g2[g2].len, 0.1), 0, 1), 1.5) : 0;
-  }
-  const twF = [1.2, 1.9, 2.7].map(f => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f);
-  const twA = 0.0035 * Math.pow(U / 2, 1.5) * P.swayTwig;
-  const nzh = new Float32Array(n); for (let i = 0; i < n; i++) nzh[i] = hz(B.z[i]);
-  TR.wind = {env:Float32Array.from(env, v => v / emean), T:TL0, nG, nT, twF, twA, fs, coef, groups, w, wx, wy, eddy, nzh, nTree:B.treeInfo.length, nG1:G.g1.length, famp, fnTree:groups[0].fn, rmsTop:groups[0].target};
+  // wind modes for the leaves (evaluated on the GPU at every leaf)
+  const wk = new Float32Array(32 * 4), wa = new Float32Array(32 * 4);
+  WM.modes.slice(0, 32).forEach((m, j) => { wk.set([m[0], m[1], m[2], m[3]], j * 4); wa.set([m[4], m[5], m[6], 0], j * 4); });
+  let rms = 0; const top = off[1] > off[0] ? off[0] : 0;
+  for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; rms += rec[o] ** 2 + rec[o + 1] ** 2; }
+  let mean = [0, 0]; for (let fr = 0; fr < F; fr++) { const o = (fr * ng + top) * 3; mean[0] += rec[o] / F; mean[1] += rec[o + 1] / F; }
+  rms = Math.sqrt(Math.max(rms / F - mean[0] ** 2 - mean[1] ** 2, 0));
+  TR.wind = {rec, F, rate, ng, groups, off, wts, Tl, wk, wa, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
+             twA:0, twF:[1, 1, 1], nG:0, fnLimb:groups[off[0]] ? groups[off[0]].fn : groups[0].fn, rmsTop:rms, lean:Math.hypot(...mean), nGroups:ng - off[0]};
 }
-function gustAt(t) {
-  const W = TR.wind; if (!W || !W.nG) return 1;
-  const M = W.env.length, x = ((((t % W.T) + W.T) % W.T) / W.T) * M, i = Math.floor(x) % M, f = x - Math.floor(x);
-  return W.env[i] * (1 - f) + W.env[(i + 1) % M] * f;
-}
+function gustAt() { return 1; }
 function windEval(T, t) {
   const {B, G} = T, W = TR.wind;
-  const nF = W.fs.length, ng = W.groups.length;
-  const gd = new Float32Array(ng * 3);
-  const om = W.fs.map(f => 2 * Math.PI * f * t);
-  const gf = Math.pow(gustAt(t), 1.5), nTb = W.nT ?? nF;
-  const gE = W.gE || (W.gE = new Float32Array(ng));
-  for (let g = 0; g < ng; g++) {
-    const G0 = W.groups[g];
-    const E = W.eddy(G0.x, G0.y, t);
-    gE[g] = E * gf;
-    let a = 0, c = 0, v = 0;
-    for (let i = 0; i < nF; i++) {
-      const sc = (i < nTb ? gf * E : 1) * G0.hz * G0.gain;
-      const o = (g * nF + i) * 6;
-      a += sc * W.coef[o] * Math.cos(om[i] + W.coef[o + 1]);
-      c += sc * W.coef[o + 2] * Math.cos(om[i] + W.coef[o + 3]);
-      v += sc * W.coef[o + 4] * Math.cos(om[i] + W.coef[o + 5]);
-    }
-    gd[g * 3] = a * W.wx - c * W.wy; gd[g * 3 + 1] = a * W.wy + c * W.wx; gd[g * 3 + 2] = v;
-  }
-  const d = TR.dispData, n = B.x.length;
-  const o1 = W.nTree, o2 = W.nTree + W.nG1;
+  const tt = ((t % W.Tl) + W.Tl) % W.Tl, x = tt * W.rate, f0 = Math.floor(x) % W.F, f1 = (f0 + 1) % W.F, u = x - Math.floor(x);
+  const ng = W.ng, a = f0 * ng * 3, b = f1 * ng * 3, rec = W.rec;
+  const g = W.gq || (W.gq = new Float32Array(ng * 3));
+  for (let i = 0; i < ng * 3; i++) g[i] = rec[a + i] * (1 - u) + rec[b + i] * u;
+  const d = TR.dispData, n = B.x.length, off = W.off, wt = W.wts;
   for (let i = 0; i < n; i++) {
-    const t0 = B.tree[i], g1 = G.ng1[i], g2 = G.ng2[i];
-    const w0 = W.w[i * 3], w1 = W.w[i * 3 + 1], w2 = W.w[i * 3 + 2];
-    let x = gd[t0 * 3] * w0, y = gd[t0 * 3 + 1] * w0, z = 0;
-    const hzn = W.nzh[i];
-    if (g1 >= 0) { const k = (o1 + g1) * 3; x += gd[k] * w1 * hzn; y += gd[k + 1] * w1 * hzn; z += gd[k + 2] * w1 * hzn; }
-    if (g2 >= 0) { const k = (o2 + g2) * 3; x += gd[k] * w2 * hzn; y += gd[k + 1] * w2 * hzn; z += gd[k + 2] * w2 * hzn; }
-    // local eddy strength for this node's spray (twigs flagged with +10)
-    const gq = g2 >= 0 ? o2 + g2 : g1 >= 0 ? o1 + g1 : t0;
-    d[i * 4] = x; d[i * 4 + 1] = y; d[i * 4 + 2] = z; d[i * 4 + 3] = (B.rad[i] === 0.0015 ? 10 : 0) + Math.min(gE[gq] * W.nzh[i], 9);
+    const t0 = B.tree[i] * 3, w0 = wt[i * 4];
+    let x2 = g[t0] * w0, y2 = g[t0 + 1] * w0, z2 = g[t0 + 2] * w0;
+    for (let L = 0; L < 3; L++) {
+      const gi = G.ng[L][i]; if (gi < 0) continue;
+      const k = (off[L] + gi) * 3, w = wt[i * 4 + 1 + L];
+      x2 += g[k] * w; y2 += g[k + 1] * w; z2 += g[k + 2] * w;
+    }
+    d[i * 4] = x2; d[i * 4 + 1] = y2; d[i * 4 + 2] = z2; d[i * 4 + 3] = 0;
   }
   gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, TR.rows, gl.RGBA, gl.FLOAT, d);
@@ -2397,8 +2460,18 @@ function treesFor(P, tl = S.tl.trees) {
     uploadTrees(TR.data, P);
     TR.sig = sig; TR.windSig = '';
   }
-  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.gustRate, P.indep, tl.loop, tl.len].join('|');
-  if (ws !== TR.windSig) { windSetup(TR.data, P, tl); TR.windSig = ws; }
+  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.indep, tl.loop, tl.len].join('|');
+  if (ws !== TR.windSig) {
+    // a new tree needs its wind now; a wind change on the same tree is simulated just after this frame,
+    // so the panel stays responsive and the preview says what is happening
+    if (!TR.wind || TR.wind.ng === undefined || TR.windTree !== TR.sig) { windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; }
+    else if (TR.windPending !== ws) {
+      TR.windPending = ws;
+      const hud = $('hud'); const chip = document.createElement('span'); chip.className = 'chip ok'; chip.textContent = 'Simulating the wind…'; hud && hud.append(chip);
+      clearTimeout(TR.windTimer);
+      TR.windTimer = setTimeout(() => { if (TR.windPending === ws && TR.sig === TR.windTree) { windSetup(TR.data, P, tl); TR.windSig = ws; } TR.windPending = null; dirty = true; }, 250);
+    }
+  }
   return TR.data;
 }
 function renderTrees(P, res, t, tl) {
@@ -2415,7 +2488,7 @@ function renderTrees(P, res, t, tl) {
   gl.clearBufferfv(gl.COLOR, 0, [1, 1, 1, 1]); gl.clearBufferfv(gl.COLOR, 1, [1, 1, 1, 1]);
   gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
-  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds); };
+  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); const Wd = TR.wind; gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds); };
   if (P.woody) {
     const p = PR.seg; gl.useProgram(p.p); gl.bindVertexArray(TR.segVAO);
     common(p); f1(p, 'uPx', 1 / res); f1(p, 'uTile', P.tileSize);
@@ -2453,8 +2526,8 @@ function renderTrees(P, res, t, tl) {
   info = fr + (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
          `Light space: the tile is ${P.tileSize.toFixed(1)} m square across the beam. Project it along the sun and the renderer stretches it ${(1 / sinE).toFixed(2)}× on flat ground\n` +
          `Foliage ${zBot.toFixed(1)}–${zTop.toFixed(1)} m above the lit surface: shadow edges soften by ${(2 * dLo * Math.tan(th) * 100).toFixed(1)}–${(2 * dHi * Math.tan(th) * 100).toFixed(1)} cm (real sun Ø ${P.sunDisk.toFixed(2)}°); gaps throw round sun spots that size\n` +
-         `Branch sway ${W.fnTree.toFixed(2)} Hz, ±${(W.rmsTop * 100 * 1.4).toFixed(1)} cm · twigs ±${(W.twA * 1000 * 1.4).toFixed(1)} mm at 1–3 Hz · leaf flutter ≈ ${T.sp.flutHz.toFixed(1)} Hz` +
-         `\n${W.nG ? W.nG + ' gust' + (W.nG > 1 ? 's' : '') + ' roll across the canopy every ' + fmtLen(tl.len) : 'No gusts: steady breeze'} · each branch has its own natural frequency and eddies` +
+         `Wind ${P.windSpeed.toFixed(1)} m/s at the tree tops, turbulence ${Math.round((P.turb ?? 0.35) * 100)}% · simulated: ${W.nGroups} limbs, branches and twig sprays, each a damped cantilever pushed by drag on the moving air`+
+         `\nLimbs sway near ${W.fnLimb.toFixed(2)} Hz, ±${(W.rmsTop * 100).toFixed(1)} cm, leaning ${(W.lean * 100).toFixed(1)} cm downwind · leaves flutter about ${(T.sp.flutHz * (0.75 + 0.25 * clamp(P.windSpeed / 3, 0.3, 2.5))).toFixed(1)} Hz when the local wind is strong enough` +
          (tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
 }
