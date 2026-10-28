@@ -193,6 +193,7 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
       <summary><span class="sect-label">Timeline</span></summary>
       <div class="ctrls" id="timeline"></div>
     </details>
+    <button class="pchip alt" id="resetAll" style="align-self:flex-start">Reset everything to defaults</button>
     <p class="hint">Hover a label for what it means physically; double-click it to reset. Space plays and pauses. Speeds default to real time.</p>
   </aside>
 </div>
@@ -316,17 +317,18 @@ const MODES = {
       {name:'Light path', params:[
         {k:'sunElev', l:'Sun elevation', min:5, max:75, step:0.5, u:'°', h:'Lower sun stretches the pattern into horizontal bands; higher sun stretches it upward.'},
         {k:'sunAz', l:'Sun angle to the wall', min:-75, max:75, step:0.5, u:'°', h:'0 = the sun faces the wall squarely across the water.'},
+        {k:'fade', l:'Edge fade', min:0, max:0.5, step:0.01, h:'Fades the pattern out toward the top, bottom and sides so the light has no hard edge or seam anywhere. 0 keeps the full tile (it then repeats sideways).'},
         {k:'lean', l:'Surface lean', min:-30, max:50, step:0.5, u:'°', h:'Positive leans the surface out over the water, like a flared bow; negative leans it away, like a sloping rock.'},
         SUN_DISK,
       ]},
       MOTION,
     ],
     presets:[
-      {name:'Yacht hull, harbour', v:{seed:9, tileSize:3, wavelength:0.7, slope:0.015, tail:0.35, peak:1.4, directional:0.1, windDir:60, opposing:0.5, ripple:0, ripPatch:0.75, uneven:0.35, distRate:0, distSize:0.1, distAmt:0.1, chop:0.2, sunElev:50, sunAz:15, lean:15, sunDisk:0.53, timeScale:1}},
-      {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.45, peak:1.4, directional:0.4, opposing:0.6, ripple:0, sunElev:40, sunAz:-15, lean:0}},
-      {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.35, directional:0.15, windDir:45, opposing:0.1, sunElev:45, sunAz:20, lean:-8}},
+      {name:'Yacht hull, harbour', v:{seed:9, tileSize:3, wavelength:0.7, slope:0.015, tail:0.35, peak:1.4, directional:0.1, windDir:60, opposing:0.5, ripple:0, ripPatch:0.75, uneven:0.35, distRate:0, distSize:0.1, distAmt:0.1, chop:0.2, sunElev:50, fade:0.2, sunAz:0, lean:15, sunDisk:0.53, timeScale:1}},
+      {name:'Seawall, choppy', v:{tileSize:4, wavelength:1.2, slope:0.026, tail:0.45, peak:1.4, directional:0.4, opposing:0.6, ripple:0, sunElev:40, sunAz:0, lean:0}},
+      {name:'Rock face by a lake', v:{tileSize:3, wavelength:0.45, slope:0.02, tail:0.35, directional:0.15, windDir:45, opposing:0.1, sunElev:45, sunAz:0, lean:-8}},
       {name:'Pool wall above water', v:{distRate:6, distSize:0.12, distAmt:0.1, tileSize:1.5, wavelength:0.25, slope:0.015, tail:0.25, opposing:0.7, sunElev:55, sunAz:0, lean:0}},
-      {name:'Low sun bands', v:{tileSize:2, wavelength:0.6, slope:0.012, tail:0.25, opposing:0.4, sunElev:22, sunAz:10, lean:0}},
+      {name:'Low sun bands', v:{tileSize:2, wavelength:0.6, slope:0.012, tail:0.25, opposing:0.4, sunElev:22, sunAz:0, lean:0}},
     ],
     post:{...LEVELS},
   },
@@ -389,7 +391,7 @@ for (const m of ['under', 'over', 'hull']) {
   MODES[m].groups.forEach(g => g.params.forEach(d => { all[d.k] = d; }));
   const pick = ks => ks.filter(k => all[k]).map(k => all[k]);
   MODES[m].groups = [
-    {name:'Shot setup', params:pick(['waterType', 'depth', 'tileSize', 'sunElev', 'sunAz', 'lean'])},
+    {name:'Shot setup', params:pick(['waterType', 'depth', 'tileSize', 'sunElev', 'sunAz', 'lean', 'fade'])},
     {name:'Waves', params:pick(['wavelength', 'slope', 'tail', 'chop', 'peak', 'directional', 'windDir', 'opposing', 'ripple', 'ripPatch'])},
     IMPERF,
     {name:'Optics', params:pick(['scatterK', 'sunDisk', 'dispersion', 'bakeColor'])},
@@ -642,6 +644,7 @@ try {
 let saveTimer = 0;
 function save() {
   clearTimeout(saveTimer);
+  if (window.__noSave) return;
   saveTimer = setTimeout(() => {
     try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, ver:4})); } catch (e) {}
   }, 300);
@@ -3386,6 +3389,19 @@ void main(){
 }`;
 PR.shape = program(VS_FULL, FS_SHAPE, 'shapes');
 PR.pool = program(VS_FULL, FS_POOL, 'light pool');
+const FS_FADE = COMMON + `
+uniform sampler2D uSrc; uniform float uF;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec2 e = smoothstep(vec2(0.0), vec2(uF), uv) * smoothstep(vec2(0.0), vec2(uF), 1.0 - uv);
+  fragColor = vec4(texture(uSrc, uv).rgb * e.x * e.y, 1.0);
+}`;
+PR.fade = program(VS_FULL, FS_FADE, 'edge fade');
+function fadePass(src, f) {
+  const out = tgt('fadeOut', src.w, src.h, 'f16');
+  pass(PR.fade, out, p => { tex(p, 'uSrc', src.tex, 0); f1(p, 'uF', f); });
+  return out;
+}
 function renderShapes(P, res, t, tl) {
   const out = renderShapesRaw(P, res, t, tl, 'shOut');
   return shapePost(P, res, tl, out);
@@ -3465,6 +3481,7 @@ function render() {
     out = acc;
   }
   if (usesPool()) out = poolPass(out);
+  if (S.mode === 'hull' && S.p.hull.fade > 0) out = fadePass(out, S.p.hull.fade);
   const Pp = S.post[S.mode];
   const fin = tgt('final', S.res, S.res, 'u8', true);
   pass(PR.post, fin, p => {
@@ -3780,7 +3797,7 @@ function sceneLight() {
   const P = S.p[S.mode], fol = followsSun();
   const hull = S.mode === 'hull' && fol;
   // hulls and walls are lit by the sun mirrored in the water: from below, with the pattern starting at the waterline
-  const az = (fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? (hull ? -P.sunElev : P.sunElev) : c.el) * DEG;
+  const az = (hull ? 0 : fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? (hull ? -P.sunElev : P.sunElev) : c.el) * DEG;
   if (hull) { aim[1] = 0.5 * sceneTile() * c.sunScale; aim[2] = 0; }
   const dir = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];   // aim → light
   const pos = v3.add(aim, v3.mul(dir, c.dist));
@@ -3803,7 +3820,7 @@ function drawScene(fin) {
   const blur = c.blur / 100 * (c.ltype === 1 ? 1 : c.rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
   const kind = MODES[S.mode].kind;
-  const single = S.mode === 'hull' ? 3 : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   pass(PR.scene, null, p => {
     tex(p, 'uGobo', fin.tex, 0);
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
@@ -4009,6 +4026,20 @@ function setView(v) {
   buildPanel(); fit(); viewDirty = true; save(); updateHud(0);
 }
 $('vw-gobo').onclick = () => setView('gobo');
+// reset everything: a second click within a few seconds confirms, then the tool restarts with factory settings
+{
+  const rb = $('resetAll'); let armed = 0;
+  if (rb) rb.onclick = () => {
+    if (Date.now() - armed < 4000) {
+      window.__noSave = true; clearTimeout(saveTimer);
+      try { localStorage.removeItem(STORE); localStorage.removeItem('cucLab.paint'); } catch (e) {}
+      location.reload();
+      return;
+    }
+    armed = Date.now(); rb.textContent = 'Click again to reset every setting and your painting';
+    setTimeout(() => { if (Date.now() - armed >= 3900) rb.textContent = 'Reset everything to defaults'; }, 4000);
+  };
+}
 $('vw-scene').onclick = () => setView('scene');
 document.body.classList.toggle('in-scene', S.view === 'scene');
 for (const k of ['gobo', 'scene']) $('vw-' + k).setAttribute('aria-selected', k === S.view);
@@ -4082,7 +4113,7 @@ function updateHud(ms) {
   add(`${S.res}²`);
   add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
   const tileNow = m.tileableNow !== undefined ? m.tileableNow : m.tileable && !usesPool() && !(m.kind === 'trees' && (S.p[S.mode].framing | 0) === 1);
-  add(tileNow ? 'Seamless tile' : m.kind === 'hull' || m.target === 2 ? 'Tiles sideways' : 'Single frame', 'ok');
+  add(tileNow ? 'Seamless tile' : m.target === 2 && !(S.p.hull.fade > 0) ? 'Tiles sideways' : 'Single frame', 'ok');
   add(tl.loop ? `Loop ${fmtLen(tl.len)}` : `Sequence ${fmtLen(tl.len)}`, tl.loop ? 'ok' : '');
   if (tl.shutter > 0 && QUAL[S.quality].sub > 1) add(S.playing && !S.mbPlay ? 'Motion blur when paused' : `${tl.shutter}° shutter`);
 }
