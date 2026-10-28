@@ -670,7 +670,7 @@ for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v
    ===================================================================== */
 const small = Math.min(innerWidth, innerHeight) < 700 || matchMedia('(pointer:coarse)').matches;
 const S = {
-  mode:'under', p:{}, post:{}, tl:{}, fps:24, t:0, playing:true,
+  mode:'trees', p:{}, post:{}, tl:{}, fps:24, t:0, playing:true,
   res: small ? 512 : 1024, quality: small ? 'draft' : 'high', tiles:1, heat:false, seams:false, view:'gobo',
 };
 for (const m of Object.keys(MODES)) { S.p[m] = {...DEFAULTS[m]}; S.post[m] = {...MODES[m].post}; S.tl[m] = {...MODES[m].tl}; }
@@ -689,7 +689,7 @@ try {
     }
     S.savedVer = saved.ver;
     for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup']) if (saved[k] !== undefined) S[k] = saved[k];
-    if (!MODES[S.mode]) S.mode = 'under';
+    if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
 let saveTimer = 0;
@@ -3770,7 +3770,8 @@ function render() {
     out = acc;
   }
   if (usesPool()) out = poolPass(out);
-  if (S.mode === 'hull' && S.p.hull.fade > 0) out = fadePass(out, S.p.hull.fade);
+  // in a shot the hull pattern runs the length of the hull, so it is not faded at the sides
+  if (S.mode === 'hull' && S.p.hull.fade > 0 && !(shotActive() && S.view === 'scene')) out = fadePass(out, S.p.hull.fade);
   const Pp = S.post[S.mode];
   const fin = tgt('final', S.res, S.res, 'u8', true);
   pass(PR.post, fin, p => {
@@ -4016,7 +4017,7 @@ const sceneDefaults = m => {
   if (d.ltype === 0 && tile && !['windows', 'shapes'].includes(MODES[m].kind)) d.rep = clamp(+(2 * d.dist * Math.tan(d.cone * 0.5 * DEG) / tile).toFixed(2), 1, 12);
   return d;
 };
-const canFollow = () => S.p[S.mode].sunElev !== undefined && (MODES[S.mode].kind || (S.mode === 'hull' && !shotActive()));
+const canFollow = () => S.p[S.mode].sunElev !== undefined && (MODES[S.mode].kind || (S.mode === 'hull' && (!shotActive() || !!shotAnchor('hull'))));
 const followsSun = () => SC().follow && SC().ltype === 1 && canFollow();
 // v4 changed the default set-up of several scenes, so older saved scenes start fresh
 if (!S.scenes || !(S.savedVer >= 5)) S.scenes = {};
@@ -4040,8 +4041,7 @@ const SCENE_GROUPS = () => {
   ];
   const real = SC().real;
   if (!sun) light.push(
-    ...(real && sceneFramed() ? [] : [{k:'cone', l:'Projection angle', min:5, max:160, step:0.5, u:'°', h:'Full angle the gobo is projected across (the cone angle). The square image fills this angle edge to edge.'},
-    ...[]]),
+    {k:'cone', l:'Projection angle', min:5, max:160, step:0.5, u:'°', h:real && sceneFramed() ? 'Full angle the gobo is projected across. A framed gobo (single element, light pool, window) fills this angle edge to edge, so a wider angle spreads it over more of the set.' : 'Full angle the gobo is projected across (the cone angle). The square image fills this angle edge to edge; with real-world scale on, the tile repeats inside it at its true size.'},
     {k:'shape', l:'Beam shape', opts:['Round cone', 'Square (whole image)'], h:'Round: the cone trims the gobo to a circle inscribed in the image, as most spotlights do. Square: the full image is projected.'},
     {k:'soft', l:'Edge softness', min:0, max:1, step:0.01, h:'Fraction of the beam radius over which the cone edge fades out.'},
     ...(real ? [] : [{k:'rep', l:'Gobo tiling', min:1, max:12, step:0.05, fmt:v => v.toFixed(2) + '×', h:'How many copies of the tile fit across the projection.'}]),
@@ -4061,7 +4061,7 @@ const SCENE_GROUPS = () => {
   place.push(
     ...(fol && SC().follow ? [] : [{k:'az', l:sun ? 'Sun azimuth' : 'Placement azimuth', min:shot ? -180 : -85, max:shot ? 180 : 85, step:0.5, u:'°', h:shot ? 'Around the aim point, measured in the shot\'s world axes.' : 'Around the aim point; 0° is straight out from the wall.'},
     {k:'el', l:sun ? 'Sun elevation' : 'Placement elevation', min:sun && S.mode !== 'hull' ? 2 : -89, max:90, step:0.5, u:'°', h:sun ? 'Height of the sun above the horizon.' : 'Angle of the light above the aim point; negative puts it below, pointing up (as for light reflected off water).'}]),
-    ...(shot ? [{type:'note', l:`${sun ? 'Pattern centre' : 'Aimed at'} ${[SC().aimX, SC().aimY, SC().aimZ].map(v => v.toFixed(2)).join(', ')} m. Click anywhere in the shot to aim there.`}] : [
+    ...(shot ? [{type:'note', l:fol && SC().follow && shotAnchor(S.mode) ? `The pattern's sun is lined up with the shot's ${S.mode === 'hull' ? 'hull at the waterline' : 'window'}, so the light comes in where it would. Turn off "Use the pattern's sun angle" to place the light freely.` : `${sun ? 'Pattern centre' : 'Aimed at'} ${[SC().aimX, SC().aimY, SC().aimZ].map(v => v.toFixed(2)).join(', ')} m. Click anywhere in the shot to aim there.`}] : [
     {k:'aimX', l:sun ? 'Pattern centre X' : 'Aim point X', min:-6, max:6, step:0.05, u:'m', h:'Left/right.'},
     {k:'aimY', l:sun ? 'Pattern centre Y' : 'Aim point Y', min:0, max:5, step:0.05, u:'m', h:'Height above the floor or water.'},
     {k:'aimZ', l:sun ? 'Pattern centre Z' : 'Aim point Z', min:-1, max:8, step:0.05, u:'m', h:'Distance out from the wall.'}]),
@@ -4099,6 +4099,18 @@ function sceneLight() {
   // hulls and walls are lit by the sun mirrored in the water: from below, with the pattern starting at the waterline
   const az = (hull ? 0 : fol ? (P.sunAz !== undefined ? P.sunAz : c.az) : c.az) * DEG, el = (fol ? (hull ? -P.sunElev : P.sunElev) : c.el) * DEG;
   if (hull) { aim[1] = 0.5 * sceneTile() * c.sunScale; aim[2] = 0; }
+  // in a shot, the pattern's sun is turned to match the shot's own window or hull, and centred on it
+  const an = fol && shotAnchor(S.mode);
+  if (an) {
+    if (S.mode === 'hull') {
+      const az2 = an.azOff * DEG, el2 = -P.sunElev * DEG, a = [an.at[0], an.at[1] + 0.5 * sceneTile() * c.sunScale, an.at[2]];
+      const dir = [Math.cos(el2) * Math.sin(az2), Math.sin(el2), Math.cos(el2) * Math.cos(az2)], f = v3.mul(dir, -1);
+      return {aim:a, pos:v3.add(a, v3.mul(dir, c.dist)), f, ...basis(f, c.roll * DEG)};
+    }
+    const az2 = (an.azOff + (P.sunAz !== undefined ? P.sunAz : c.az)) * DEG, el2 = P.sunElev * DEG;
+    const dir = [Math.cos(el2) * Math.sin(az2), Math.sin(el2), Math.cos(el2) * Math.cos(az2)], f = v3.mul(dir, -1);
+    return {aim:[...an.at], pos:v3.add(an.at, v3.mul(dir, c.dist)), f, ...basis(f, c.roll * DEG)};
+  }
   const dir = [Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az)];   // aim → light
   const pos = v3.add(aim, v3.mul(dir, c.dist));
   const f = v3.mul(dir, -1);
@@ -4120,10 +4132,17 @@ function drawScene(fin) {
   const tile0 = sceneTile();
   // real-world scale: a seamless tile repeats at its true width; a framed gobo fills the projection at its true width
   let cone = c.cone, rep = c.rep, sunScale = c.sunScale;
+  // a framed gobo (single element, light pool, a window) fills the projection angle; when the framing first
+  // switches to one, the spot opens up to about twice the gobo's real width, so it reaches the ground and wall around the subject
+  const framed = sceneFramed();
+  if (c._framed !== framed) {
+    c._framed = framed;
+    if (framed && c.ltype === 0 && c.real) { c.cone = clamp(+(2 * Math.atan(tile0 / c.dist) / DEG).toFixed(1), 50, 100); cone = c.cone; setTimeout(buildPanel, 0); }
+  }
   if (c.real) {
     sunScale = 1;
     if (c.ltype === 0) {
-      if (sceneFramed()) { rep = 1; cone = clamp(2 * Math.atan(tile0 / (2 * c.dist)) / DEG, 5, 160); }
+      if (framed) rep = 1;
       else rep = Math.max(1, 2 * c.dist * Math.tan(cone * 0.5 * DEG) / tile0);
     }
   }
@@ -4131,7 +4150,7 @@ function drawScene(fin) {
   const blur = c.blur / 100 * (c.ltype === 1 ? 1 : rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
   const kind = MODES[S.mode].kind;
-  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 && !shotActive() ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   const sunSize = sceneTile() * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
   const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
   const lightLines = () => c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
@@ -4173,28 +4192,41 @@ function matchScale() {
   }
 }
 
-// camera: drag to orbit, right/shift-drag to pan, wheel to dolly, double-click to reset
+/* camera: Maya controls (Alt + left tumble, Alt + middle track, Alt + right dolly, wheel zoom), plus plain
+   left drag to orbit and right, middle or shift drag to pan; double-click resets. Dragging or zooming while
+   looking through a shot camera leaves it for the orbit view, starting exactly where the shot camera is. */
 (() => {
   let drag = null;
   cv.addEventListener('contextmenu', e => { if (S.view === 'scene') e.preventDefault(); });
+  cv.addEventListener('mousedown', e => { if (S.view === 'scene' && e.button === 1) e.preventDefault(); });
   const shotCamView = () => inShot() && (S.shot.view | 0) === 0;
+  const leaveShotCam = () => { S.shotCams[S.shotSel] = shotOrbitCam(); S.shot.view = 1; buildPanel(); };
   cv.addEventListener('pointerdown', e => {
-    if (S.view !== 'scene' || shotCamView() || (scenePaintOn() && !e.altKey && e.button === 0)) return;
-    drag = {x:e.clientX, y:e.clientY, pan:e.button === 2 || e.shiftKey, cam:{...CAM()}};
+    if (S.view !== 'scene' || (scenePaintOn() && !e.altKey && e.button === 0)) return;
+    const mode = e.altKey ? ['orbit', 'pan', 'dolly'][e.button] || 'orbit' : e.button === 2 || e.button === 1 || e.shiftKey ? 'pan' : 'orbit';
+    drag = {x:e.clientX, y:e.clientY, mode, cam:null};
     cv.setPointerCapture(e.pointerId);
   });
   cv.addEventListener('pointermove', e => {
     if (!drag) return;
-    const cam = CAM();
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y, k = 1 / cv.clientHeight;
-    if (drag.pan) {
+    if (!drag.cam) {
+      if (Math.hypot(dx, dy) < 3) return;
+      if (shotCamView()) leaveShotCam();
+      drag.cam = {...CAM()};
+    }
+    const cam = CAM(), sh = inShot();
+    if (drag.mode === 'pan') {
       const ca = drag.cam.az * DEG, ce = drag.cam.el * DEG;
       const f = v3.mul([Math.cos(ce) * Math.sin(ca), Math.sin(ce), Math.cos(ce) * Math.cos(ca)], -1), b = basis(f);
-      const s = 2 * Math.tan(20 * DEG) * drag.cam.dist * k;
+      const s = 2 * Math.tan((sh ? (SHOT.vfov || 40) / 2 : 20) * DEG) * drag.cam.dist * k;
       const m = v3.add(v3.mul(b.r, -dx * s), v3.mul(b.u, dy * s));
-      if (inShot()) { cam.tx = drag.cam.tx + m[0]; cam.ty = drag.cam.ty + m[1]; cam.tz = drag.cam.tz + m[2]; }
+      if (sh) { cam.tx = drag.cam.tx + m[0]; cam.ty = drag.cam.ty + m[1]; cam.tz = drag.cam.tz + m[2]; }
       else { cam.tx = clamp(drag.cam.tx + m[0], -8, 8); cam.ty = clamp(drag.cam.ty + m[1], 0, 6); cam.tz = clamp(drag.cam.tz + m[2], -1, 10); }
-    } else if (inShot()) {
+    } else if (drag.mode === 'dolly') {
+      const d = drag.cam.dist * Math.exp(-(dx + dy) * k * 2.5);
+      cam.dist = sh ? clamp(d, 0.2, 5000) : clamp(d, 1, 30);
+    } else if (sh) {
       cam.az = drag.cam.az - dx * k * 180;
       cam.el = clamp(drag.cam.el + dy * k * 120, -89, 89);
     } else {
@@ -4203,11 +4235,12 @@ function matchScale() {
     }
     viewDirty = true;
   });
-  const end = () => { if (drag) { drag = null; save(); } };
+  const end = () => { if (drag) { if (drag.cam) save(); drag = null; } };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
   cv.addEventListener('wheel', e => {
-    if (S.view !== 'scene' || shotCamView()) return;
+    if (S.view !== 'scene') return;
     e.preventDefault();
+    if (shotCamView()) leaveShotCam();
     CAM().dist = inShot() ? clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 0.2, 5000) : clamp(CAM().dist * Math.exp(e.deltaY * 0.0012), 1, 30); viewDirty = true; save();
   }, {passive:false});
   cv.addEventListener('dblclick', () => { if (S.view !== 'scene' || scenePaintOn()) return; if (shotActive()) { delete S.shotCams[S.shotSel]; } else S.cams[S.mode] = camDefault(S.mode); viewDirty = true; save(); });
@@ -4284,8 +4317,8 @@ function buildModes() {
 }
 function buildPanel() {
   const hint = document.querySelector('.camhint');
-  if (hint) hint.textContent = S.view === 'scene' && scenePaintOn() ? 'Painting into the gobo where the light lands · Alt-drag to orbit · Right-drag to pan' : S.view === 'scene' && inShot() ? ((S.shot.view | 0) === 0 ? 'Seen through the shot camera · Click to aim the light there' : 'Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Click to aim the light · Double-click resets')
-                                                          : 'Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets';
+  if (hint) hint.textContent = S.view === 'scene' && scenePaintOn() ? 'Painting into the gobo where the light lands · Alt-drag to orbit · Right-drag to pan' : S.view === 'scene' && inShot() ? ((S.shot.view | 0) === 0 ? 'Seen through the shot camera · Click to aim the light · Alt-drag or scroll to move around (Maya controls)' : 'Alt + left tumble · Alt + middle track · Alt + right dolly · Scroll zoom · F frames the aim · Click to aim the light')
+                                                          : 'Drag or Alt + left to orbit · Alt + middle or right-drag to pan · Alt + right dolly · Scroll zoom · Double-click resets';
   const m = MODES[S.mode], store = S.p[S.mode];
   const pr = $('presets'); pr.innerHTML = '';
   m.presets.forEach(ps => {
@@ -4377,7 +4410,7 @@ function setView(v) {
   for (const k of ['gobo', 'scene']) $('vw-' + k).setAttribute('aria-selected', k === v);
   document.body.classList.toggle('in-scene', v === 'scene');
   cv.setAttribute('aria-label', v === 'scene' ? 'Scene preview: the gobo projected through a light onto a grey set' : 'Gobo preview');
-  buildPanel(); fit(); viewDirty = true; save(); updateHud(0);
+  buildPanel(); fit(); viewDirty = true; dirty = true; save(); updateHud(0);
 }
 $('vw-gobo').onclick = () => setView('gobo');
 // reset everything: a second click within a few seconds confirms, then the tool restarts with factory settings
@@ -4425,7 +4458,7 @@ function updateTransport() {
   const len = TL().len;
   const total = Math.max(1, Math.round(len * S.fps));
   const f = Math.min(total - 1, Math.floor(S.t * S.fps + 1e-6));
-  const sd = shotActive() && shotDef(S.shotSel);
+  const sd = shotActive() && SHOT.frames.length > 1 && shotDef(S.shotSel);
   tc.textContent = sd ? `${sd.shot} · frame ${sd.first + Math.min(f, sd.last - sd.first)} (${sd.first}–${sd.last})` : `${S.t.toFixed(2)} s · frame ${f + 1}/${total}`;
   scrub.value = Math.round(S.t / len * 1000); setPct(scrub);
 }
@@ -4899,7 +4932,7 @@ const EXR = (() => {
    ===================================================================== */
 const SHOT = {src:null, frames:[], cache:new Map(), frame:null, loading:null, status:'', tex:null};
 if (!S.shot) S.shot = {};
-S.shot = {view:0, detail:1, ...S.shot};
+S.shot = {view:0, detail:1, disp:0, ...S.shot};
 S.shotSel = S.shotSel || ''; S.shotLights = S.shotLights || {}; S.shotCams = S.shotCams || {}; S.tlBackup = S.tlBackup || {};
 const DETAIL = [1, 2, 4];
 const shotReady = () => !!(SHOT.frame && SHOT.tex);
@@ -4911,19 +4944,31 @@ const shotActive = () => !!S.shotSel && !!SHOT.src;
    their utility passes are rendered on the fly, then go through exactly the same steps a real shot's would
    (camera solved from the position pass, pixels turned into a rough model). */
 const SHOTS = [
-  {id:'ph_dock_0040', seq:'dock010', shot:'sh0040', label:'dock010 / sh0040 · boats at the dock, slow push-in', first:1001, last:1240,
-   cam:t => { const k = smooth(0, 1, t / 10); return {eye:[6.6 - 1.6 * k, 2.4 - 0.25 * k, -17.6 + 3.2 * k], at:[-0.4 - 0.4 * k, 1.0 + 0.1 * k, -2.2 + 0.6 * k], vfov:33}; }},
-  {id:'ph_dock_0070', seq:'dock010', shot:'sh0070', label:'dock010 / sh0070 · figure on the dock, locked off', first:1001, last:1120,
-   cam:() => ({eye:[4.1, 2.45, 2.3], at:[0.25, 1.45, -1.6], vfov:30})},
+  {id:'ph_court', seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard (tree dapple)', first:1001, last:1001,
+   cam:{eye:[2.4, 1.6, 6.8], at:[0, 1.0, 0], vfov:34},
+   lights:{trees:{ltype:1, follow:true, aim:[0, 1.15, 0], amb:0.2}}},
+  {id:'ph_harbour', seq:'harbour020', shot:'sh0030', mode:'hull', scene:1, label:'harbour020 / sh0030 · boat at the quay (water caustics on the hull)', first:1001, last:1001,
+   cam:{eye:[7.0, 2.1, 24.0], at:[-1.0, 2.6, -2.0], vfov:40},
+   anchors:{hull:{at:[0, 0, -0.4], azOff:0}}, lights:{hull:{ltype:1, follow:true, amb:0.25, ev:0.5}}},
+  {id:'ph_room', seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room (window light)', first:1001, last:1001,
+   cam:{eye:[2.55, 1.55, 2.25], at:[-1.0, 0.7, -0.9], vfov:52},
+   anchors:{windows:{at:[-3.0, 1.5, 0], azOff:-90}}, lights:{windows:{ltype:1, follow:true, amb:0.12, ev:1}}},
 ];
 const shotDef = id => SHOTS.find(x => x.id === id);
+// where a pattern's own light geometry sits in a shot: the window opening, or the hull at the waterline
+const shotAnchor = m => (shotActive() && (shotDef(S.shotSel).anchors || {})[m]) || null;
 // the per-shot light for a pattern, and the shared orbit camera; both are made on first use from the shot itself
 function shotLight(m) {
   const k = S.shotSel, all = (S.shotLights[k] = S.shotLights[k] || {});
   if (all[m]) return all[m];
   const d = {...sceneDefaults(m), sphere:false, follow:false, amb:0.22};
   if (!SHOT.frame) return ((SHOT.tmpL = SHOT.tmpL || {})[m] = SHOT.tmpL[m] || d);
-  return (all[m] = shotDefaultLight(d, SHOT.frame));
+  shotDefaultLight(d, SHOT.frame);
+  // each placeholder shot comes with a light already set up for the pattern it was made for
+  const o = (shotDef(k).lights || {})[m];
+  if (o) { const {aim, ...rest} = o; Object.assign(d, rest); if (aim) [d.aimX, d.aimY, d.aimZ] = aim; }
+  const an = shotAnchor(m); if (an) [d.aimX, d.aimY, d.aimZ] = an.at;
+  return (all[m] = d);
 }
 function shotCam() {
   const k = S.shotSel;
@@ -4945,7 +4990,7 @@ function shotDefaultLight(sc, fr) {
   sc.ev = sc.ltype === 0 ? +clamp(Math.log2(sc.dist * sc.dist / 25), -6, 6).toFixed(1) : 0;
   return sc;
 }
-function selectShot(id) {
+function selectShot(id, fromMenu) {
   const def = shotDef(id);
   SHOT.cache = new Map(); SHOT.frame = null; SHOT.loading = null; SHOT.tmpL = null; SHOT.tmpCam = null;
   if (SHOT.tex) { Object.values(SHOT.tex).forEach(t => gl.deleteTexture(t)); SHOT.tex = null; }
@@ -4958,6 +5003,9 @@ function selectShot(id) {
     S.shotSel = id; SHOT.src = placeholderSource(def);
     SHOT.frames = []; for (let n = def.first; n <= def.last; n++) SHOT.frames.push(n);
     SHOT.status = `Building ${def.seq} / ${def.shot} from its utility passes…`;
+    SHOT.panelBuilt = false; S.shot.view = 0;
+    // picking a shot from the menu switches to the pattern it was set up for
+    if (fromMenu && def.mode && MODES[def.mode]) { S.mode = def.mode; buildModes(); }
     if (S.view !== 'scene') setView('scene');
   }
   const sel = $('shotSel'); if (sel) sel.value = S.shotSel;
@@ -4966,7 +5014,11 @@ function selectShot(id) {
 }
 // while a shot is selected the timeline runs over its frame range
 function syncShotTimeline() {
-  if (!shotActive() || !SHOT.frames.length) return;
+  if (!shotActive() || SHOT.frames.length < 2) {
+    // a single frame shot leaves the pattern's own timeline alone
+    if (S.tlBackup[S.mode] !== undefined) { TL().len = S.tlBackup[S.mode]; delete S.tlBackup[S.mode]; if ($('timeline')) buildTimeline(); }
+    return;
+  }
   const L = SHOT.frames.length / S.fps;
   if (Math.abs(TL().len - L) < 1e-9) return;
   if (!(S.mode in S.tlBackup)) S.tlBackup[S.mode] = TL().len;
@@ -5008,7 +5060,7 @@ async function decodeFrameNow(n, key) {
   if (!got.pos) throw new Error(`Frame ${n} has no position pass.`);
   const W = got.pos.W, H = got.pos.H, N = W * H;
   const [px, py, pz] = got.pos.data;
-  const A = got.a ? got.a.data[0] : null;
+  const A = got.a ? got.a.data[0] : null, MT = got.matte ? got.matte.data[0] : null;
   // which pixels hold geometry
   const valid = new Uint8Array(N);
   for (let i = 0; i < N; i++) valid[i] = (!A || A[i] > 0.002) && isFinite(px[i] + py[i] + pz[i]) && (px[i] !== 0 || py[i] !== 0 || pz[i] !== 0) ? 1 : 0;
@@ -5035,7 +5087,7 @@ async function decodeFrameNow(n, key) {
   for (let i = 0; i < N; i++) {
     if (!valid[i]) continue;
     const q = tr(px[i], py[i], pz[i]);
-    P[i * 4] = q[0]; P[i * 4 + 1] = q[1]; P[i * 4 + 2] = q[2]; P[i * 4 + 3] = 1;
+    P[i * 4] = q[0]; P[i * 4 + 1] = q[1]; P[i * 4 + 2] = q[2]; P[i * 4 + 3] = MT && MT[i] > 0.5 ? 0.75 : 1;
     for (let k = 0; k < 3; k++) { bmin[k] = Math.min(bmin[k], q[k]); bmax[k] = Math.max(bmax[k], q[k]); }
   }
   // normals: the layer if there is one, else from the shape of the position pass
@@ -5243,6 +5295,14 @@ vec3 lightAt(vec3 p, vec3 n, out vec3 l){
 }
 vec3 aces(vec3 x){ return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 vec3 srgb(vec3 c){ return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+// the utility passes themselves, for checking what the scene was built from
+uniform int uDisp; uniform vec3 uSC, uCtr; uniform float uRad, uDMed;
+vec3 passView(vec3 p, vec3 n, vec3 c){
+  if (uDisp == 1) return c;
+  if (uDisp == 2) return 0.5 + 0.5 * n;
+  if (uDisp == 3) return clamp(0.5 + 0.5 * (p - uCtr) / uRad, 0.0, 1.0);
+  return vec3(1.0 - clamp(distance(p, uSC) / (uDMed * 2.5), 0.0, 1.0));
+}
 `;
 // the pixels as a mesh: two triangles per cell, dropped where they would bridge a depth jump
 const VS_SHOTMESH = HEAD + `
@@ -5277,7 +5337,7 @@ void main(){
   ivec2 o0 = k < 3 ? ivec2(0, 0) : ivec2(1, 0), o1 = k < 3 ? ivec2(1, 0) : ivec2(1, 1), o2 = ivec2(0, 1);
   ivec2 me = c + (k % 3 == 0 ? o0 : k % 3 == 1 ? o1 : o2);
   vec4 a = fetchP(c + o0), b = fetchP(c + o1), d = fetchP(c + o2), p = fetchP(me);
-  if (a.w * b.w * d.w < 0.5 || !joined(c + o0, c + o1) || !joined(c + o1, c + o2) || !joined(c + o0, c + o2)){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  if (a.w * b.w * d.w < 0.3 || (uMode == 1 && min(a.w, min(b.w, d.w)) < 0.9) || !joined(c + o0, c + o1) || !joined(c + o1, c + o2) || !joined(c + o0, c + o2)){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vP = p.xyz; vUV = (vec2(me * uStep) + 0.5) / vec2(textureSize(uP, 0));
   if (uMode == 1){
     // shadow map from the light: linear depth, perspective for a spot, orthographic for the sun
@@ -5297,6 +5357,7 @@ void main(){
   vec3 n = texture(uN, vUV).xyz;
   n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - vP);
   if (dot(n, uCam - vP) < 0.0) n = -n;
+  if (uDisp > 0){ o0 = vec4(passView(vP, texture(uN, vUV).xyz, texture(uC, vUV).rgb), 1.0); return; }
   vec3 alb = pow(texture(uC, vUV).rgb, vec3(2.2)) * uAlb * 2.0, l;
   vec3 e = lightAt(vP, n, l);
   vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
@@ -5317,6 +5378,7 @@ void main(){
     vec3 n = texelFetch(uN, px, 0).xyz;
     n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - p.xyz);
     if (dot(n, uCam - p.xyz) < 0.0) n = -n;
+    if (uDisp > 0){ fragColor = vec4(passView(p.xyz, texelFetch(uN, px, 0).xyz, texelFetch(uC, px, 0).rgb), 1.0); return; }
     vec3 alb = pow(texelFetch(uC, px, 0).rgb, vec3(2.2)) * uAlb * 2.0, l;
     vec3 e = lightAt(p.xyz, n, l);
     col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
@@ -5357,6 +5419,8 @@ const m4 = {
   mul(a, b) { const o = new Array(16).fill(0); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) o[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k]; return o; },
 };
 function shotLightUniforms(p, c, L, fin, ext) {
+  const fr = SHOT.frame;
+  i1(p, 'uDisp', S.shot.disp | 0); f3(p, 'uSC', ...fr.Cm); f3(p, 'uCtr', ...fr.ctr); f1(p, 'uRad', fr.R); f1(p, 'uDMed', fr.dMed);
   tex(p, 'uGobo', fin.tex, 0); tex(p, 'uShadow', SHOT.sm.tex, 1);
   i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', ext.single);
   f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim); f3(p, 'uLCol', ...hex3(c.color));
@@ -5480,16 +5544,31 @@ function shotOrbitCam() {
   return {az:Math.atan2(d[0], d[2]) / DEG, el:Math.asin(clamp(d[1] / dist, -1, 1)) / DEG, dist, tx:tg[0], ty:tg[1], tz:tg[2]};
 }
 function shotDefs() {
-  const def = shotDef(S.shotSel);
+  const def = shotDef(S.shotSel), fr = SHOT.frame;
   return [
-    {type:'note', l:`PLACEHOLDER: ${def.seq} / ${def.shot} is a little stand-in scene made for this mockup, not one of your shots. In the real tool, picking a shot in the Shot menu would find that shot's utility passes in the pipeline (world position, normals and surface colour for every frame) and build its scene and camera from them, exactly the way this one is built from its own generated passes.`},
-    {k:'view', l:'View', opts:['Through the shot camera', 'Orbit the rough 3D model']},
+    {type:'note', l:`PLACEHOLDER: ${def.seq} / ${def.shot} is a little set made up for this mockup, not one of your shots. Its utility passes (world position, normals, surface colour and a water matte) were rendered from the shot camera, and the scene and camera you see were rebuilt from those passes alone. The real tool would do the same with your shot's utility passes from the pipeline.`},
+    {k:'view', l:'View', opts:['Through the shot camera', 'Orbit the scene']},
+    ...((S.shot.view | 0) === 1 ? [{type:'buttons', items:[['Back to the shot camera', () => { S.shot.view = 0; buildPanel(); viewDirty = true; save(); }], ['Frame the light\'s aim point', () => frameAim()]]}] : []),
+    {k:'disp', l:'Show', opts:['Lit preview', 'Surface colour pass', 'Normal pass', 'Position pass', 'Depth (from position)'], h:'The utility passes the scene was built from.'},
     {k:'detail', l:'Model detail', opts:['Full resolution', 'Half (faster)', 'Quarter (fastest)']},
-    {type:'note', l:'Click the shot to aim the light there. The timeline runs over the shot\'s frame range.'},
+    {type:'note', l:'Maya controls: Alt + left drag tumbles, Alt + middle drag tracks, Alt + right drag dollies, and the scroll wheel zooms. Plain drags work too. F frames the aim point. Click the scene to aim the light.' + (fr ? ` Built from ${fr.W}×${fr.H} passes.` : '')},
   ];
 }
+// point the orbit camera at the light's aim point
+function frameAim() {
+  if (S.view !== 'scene') return;
+  if (inShot() && (S.shot.view | 0) === 0) { S.shotCams[S.shotSel] = shotOrbitCam(); S.shot.view = 1; }
+  const L = sceneLight(), cam = CAM(), d = Math.max(0.5, Math.min(cam.dist, sceneTile() * 2.5));
+  Object.assign(cam, {tx:L.aim[0], ty:L.aim[1], tz:L.aim[2], dist:inShot() ? d : clamp(d, 1, 30)});
+  buildPanel(); viewDirty = true; save();
+}
+document.addEventListener('keydown', e => {
+  const ae = document.activeElement;
+  if ((e.key === 'f' || e.key === 'F') && !e.metaKey && !e.ctrlKey && !(ae && /INPUT|SELECT|TEXTAREA/.test(ae.tagName))) frameAim();
+});
 function shotParamChanged(k) {
-  if (k === 'view') { if (S.shot.view === 1 && !S.shotCams[S.shotSel]) shotCam(); buildPanel(); viewDirty = true; save(); return; }
+  if (k === 'view') { if (S.shot.view === 1) S.shotCams[S.shotSel] = shotOrbitCam(); buildPanel(); viewDirty = true; save(); return; }
+  if (k === 'disp') { viewDirty = true; save(); return; }
   if (SHOT.frame) { SHOT.cache.clear(); shotShowFrame(SHOT.frame.n); }
   save();
 }
@@ -5503,7 +5582,7 @@ function shotParamChanged(k) {
     const og = document.createElement('optgroup'); og.label = 'Placeholder shots (mockup)';
     for (const d of SHOTS) { const o = document.createElement('option'); o.value = d.id; o.textContent = 'PLACEHOLDER · ' + d.label; og.append(o); }
     sel.append(og);
-    sel.onchange = () => selectShot(sel.value);
+    sel.onchange = () => selectShot(sel.value, true);
   }
   if (S.shotSel && shotDef(S.shotSel)) setTimeout(() => selectShot(S.shotSel), 0); else S.shotSel = '';
 })();
@@ -5520,158 +5599,221 @@ function shotParamChanged(k) {
 })();
 
 /* =====================================================================
-   PLACEHOLDER SHOT: a small lakeside scene (dock, three boats, a figure,
-   a boathouse on the shore) whose utility passes are rendered here, so
-   the shot pipeline above has something to build from. The water is a
-   flat plane, as a utility pass would show it without render-time
-   displacement. The boats bob a little, so the passes change per frame.
+   PLACEHOLDER SHOTS: three small sets made up for this mockup. Each is
+   rendered here into utility passes (world position, normals, surface
+   colour, and a water matte) from its shot camera, one frame each, and
+   those passes then go through exactly the steps a real shot's would.
    ===================================================================== */
 const FS_PLACE = COMMON + `
-uniform vec3 uEye, uF, uR, uU; uniform float uTan, uAsp, uTime; uniform int uOut;
-// signed distances
+uniform vec3 uEye, uF, uR, uU; uniform float uTan, uAsp; uniform int uOut, uScene;
 float sdBox(vec3 p, vec3 b){ vec3 q = abs(p) - b; return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0); }
 float sdRBox(vec3 p, vec3 b, float r){ return sdBox(p, b - r) - r; }
 float sdCapsule(vec3 p, vec3 a, vec3 b, float r){ vec3 pa = p - a, ba = b - a; float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0); return length(pa - ba * h) - r; }
 float sdCylY(vec3 p, vec2 c, float r, float y0, float y1){ float d = length(p.xz - c) - r; return max(d, max(y0 - p.y, p.y - y1)); }
 float sdEll(vec3 p, vec3 r){ float k0 = length(p / r), k1 = length(p / (r * r)); return k0 * (k0 - 1.0) / max(k1, 1e-6); }
+float sdTorusZ(vec3 p, float R, float r){ vec2 q = vec2(length(p.xy) - R, p.z); return length(q) - r; }
 mat2 rot(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 vec2 un(vec2 a, vec2 b){ return a.x < b.x ? a : b; }
-// a boat's local frame: position, heading, bobbing, rolling and pitching on the swell
-vec3 boatLocal(vec3 p, vec3 pos, float head, float ph){
-  vec3 q = p - pos;
-  q.y -= 0.035 * sin(uTime * 1.6 + ph);
-  q.xz = rot(head) * q.xz;
-  q.xy = rot(0.025 * sin(uTime * 1.25 + ph * 1.7)) * q.xy;
-  q.yz = rot(0.012 * sin(uTime * 0.9 + ph * 0.6)) * q.yz;
-  return q;
-}
-// an open hull: an ellipsoid cut at the gunwale and hollowed out, with a fuller stern and a finer bow
-float hull(vec3 q, vec3 R, float gun, float wall, bool open){
-  vec3 r = q; r.x *= 1.0 + 0.55 * smoothstep(-0.2, 1.0, q.z / R.z);
-  float e = sdEll(r, R) * 0.7;
-  float h = max(e, q.y - gun);
-  if (open){ float inner = max(sdEll(r, R - wall) * 0.7, -(q.y - (gun - R.y * 0.75))); h = max(h, -inner); }
-  return h;
-}
-vec2 map(vec3 p){
-  vec2 d = vec2(1e9, -1.0);
-  // shore: land above the waterline behind the dock, with a bank sloping into the water
-  float land = p.y - (0.5 - 0.55 * smoothstep(-14.5, -11.5, p.z)); land = max(land * 0.8, -p.y - 2.0);
-  d = un(d, vec2(land, 3.0));
-  // dock: deck boards across a walkway, a T-head, stringers and pilings
-  vec3 dp = p;
-  float walk = sdBox(dp - vec3(0.0, 0.975, -5.5), vec3(1.1, 0.025, 8.5));
-  float head = sdBox(dp - vec3(0.0, 0.975, 2.0), vec3(4.0, 0.025, 1.0));
-  float deck = min(walk, head);
-  // gaps between the boards
-  float gz = abs(fract(dp.z / 0.15) - 0.5) * 0.15, gx = abs(fract(dp.x / 0.15) - 0.5) * 0.15;
-  float gap = (dp.z < 1.0 ? gz : gx) - 0.006;
-  deck = max(deck, -max(gap, -(dp.y - 0.96)) );
-  d = un(d, vec2(deck, 1.0));
-  float str = min(sdBox(vec3(abs(dp.x) - 0.95, dp.y - 0.85, dp.z + 5.5), vec3(0.05, 0.1, 8.5)), sdBox(vec3(dp.x, dp.y - 0.85, dp.z - 2.0), vec3(4.0, 0.1, 0.05)));
-  d = un(d, vec2(str, 2.0));
-  float pil = 1e9;
-  for (int i = 0; i < 6; i++){ float z = -12.0 + 3.0 * float(i); pil = min(pil, sdCylY(dp, vec2(1.18, z), 0.12, -2.0, 1.28)); pil = min(pil, sdCylY(dp, vec2(-1.18, z), 0.12, -2.0, 1.28)); }
-  for (int i = 0; i < 3; i++){ float x = -4.0 + 4.0 * float(i); pil = min(pil, sdCylY(dp, vec2(x, 3.05), 0.12, -2.0, 1.28)); }
-  pil = min(pil, sdCylY(dp, vec2(-4.0, 1.0), 0.12, -2.0, 1.28)); pil = min(pil, sdCylY(dp, vec2(4.0, 1.0), 0.12, -2.0, 1.28));
-  d = un(d, vec2(pil, 2.0));
-  // boathouse on the shore, with a gable roof
-  vec3 bh = p - vec3(-6.0, 0.0, -19.5);
-  float shed = sdBox(bh - vec3(0.0, 2.0, 0.0), vec3(2.8, 1.5, 3.2));
-  d = un(d, vec2(shed, 4.0));
-  vec3 rq = bh - vec3(0.0, 3.5, 0.0);
-  float roof = max(max(abs(rq.x) * 0.6 + rq.y * 0.8 - 1.8, -rq.y), abs(rq.z) - 3.5);
-  roof = max(roof, -(abs(rq.x) * 0.6 + rq.y * 0.8 - 1.6));
-  d = un(d, vec2(roof, 5.0));
-  // trees along the shore
-  for (int i = 0; i < 4; i++){
-    vec2 c = i == 0 ? vec2(4.5, -19.0) : i == 1 ? vec2(9.5, -17.5) : i == 2 ? vec2(-12.5, -18.0) : vec2(14.0, -22.0);
-    float hh = 6.0 + float(i);
-    d = un(d, vec2(sdCylY(p, c, 0.22, 0.0, hh * 0.65), 6.0));
-    d = un(d, vec2(sdEll(p - vec3(c.x, hh * 0.72, c.y), vec3(2.6, 2.2, 2.6)) * 0.8, 7.0));
-  }
-  // rowboat tied alongside the walkway
-  vec3 b1 = boatLocal(p, vec3(2.05, 0.18, -6.0), 0.06, 0.0);
-  d = un(d, vec2(hull(b1, vec3(0.62, 0.45, 2.0), 0.3, 0.05, true), 8.0));
-  float seats = min(sdBox(b1 - vec3(0.0, 0.12, 0.3), vec3(0.55, 0.02, 0.13)), sdBox(b1 - vec3(0.0, 0.12, -0.9), vec3(0.5, 0.02, 0.13)));
-  d = un(d, vec2(seats, 9.0));
-  // sailboat on the other side, mast up
-  vec3 b2 = boatLocal(p, vec3(-3.7, 0.15, -4.5), -0.03, 2.1);
-  d = un(d, vec2(hull(b2, vec3(1.35, 1.0, 4.3), 0.62, 0.0, false), 10.0));
-  d = un(d, vec2(sdRBox(b2 - vec3(0.0, 0.9, -0.3), vec3(0.75, 0.3, 1.3), 0.12), 11.0));
-  d = un(d, vec2(sdCapsule(b2, vec3(0.0, 0.6, 1.3), vec3(0.0, 10.5, 1.3), 0.06), 12.0));
-  d = un(d, vec2(sdCapsule(b2, vec3(0.0, 1.85, 1.3), vec3(0.0, 1.75, -3.2), 0.05), 12.0));
-  // motorboat off the end of the dock
-  vec3 b3 = boatLocal(p, vec3(5.6, 0.12, 5.6), 1.05, 4.2);
-  d = un(d, vec2(hull(b3, vec3(1.0, 0.75, 2.7), 0.55, 0.05, true), 13.0));
-  d = un(d, vec2(sdBox(b3 - vec3(0.0, 0.85, 0.6), vec3(0.75, 0.22, 0.02)), 14.0));
-  d = un(d, vec2(sdRBox(b3 - vec3(0.35, 0.45, 0.2), vec3(0.3, 0.35, 0.35), 0.05), 9.0));
-  // a figure standing on the dock: the stand-in for a character
-  vec3 f = p - vec3(0.3, 1.0, -1.5);
-  f.xz = rot(-0.6) * f.xz;
-  float body = min(sdCapsule(f, vec3(0.1, 0.06, 0.0), vec3(0.1, 0.85, 0.0), 0.075), sdCapsule(f, vec3(-0.1, 0.06, 0.0), vec3(-0.1, 0.85, 0.0), 0.075));
-  d = un(d, vec2(body, 15.0));
-  float torso = min(sdCapsule(f, vec3(0.0, 0.98, 0.0), vec3(0.0, 1.38, 0.0), 0.18), min(sdCapsule(f, vec3(0.23, 1.42, 0.0), vec3(0.3, 0.98, 0.05), 0.055), sdCapsule(f, vec3(-0.23, 1.42, 0.0), vec3(-0.3, 0.98, 0.05), 0.055)));
-  d = un(d, vec2(torso, 16.0));
-  d = un(d, vec2(length(f - vec3(0.0, 1.63, 0.0)) - 0.11, 17.0));
+float h1(float x){ return fract(sin(x * 78.233 + 12.9898) * 43758.5453); }
+// a person, about 1.75 m tall, standing at the origin and facing +z
+vec2 person(vec3 p, vec2 d){
+  vec3 q = vec3(abs(p.x), p.y, p.z);
+  d = un(d, vec2(sdRBox(vec3(q.x - 0.1, q.y - 0.05, q.z - 0.05), vec3(0.055, 0.05, 0.13), 0.03), 20.0));
+  d = un(d, vec2(sdCapsule(q, vec3(0.1, 0.12, 0.0), vec3(0.11, 0.88, 0.0), 0.075), 21.0));
+  d = un(d, vec2(sdRBox(p - vec3(0.0, 0.93, 0.0), vec3(0.18, 0.1, 0.11), 0.07), 21.0));
+  d = un(d, vec2(sdRBox(p - vec3(0.0, 1.22, 0.0), vec3(0.2, 0.24, 0.12), 0.09), 22.0));
+  d = un(d, vec2(min(sdCapsule(q, vec3(0.25, 1.4, 0.0), vec3(0.31, 1.13, 0.03), 0.06), sdCapsule(q, vec3(0.31, 1.13, 0.03), vec3(0.3, 0.9, 0.1), 0.05)), 22.0));
+  d = un(d, vec2(length(q - vec3(0.3, 0.86, 0.11)) - 0.05, 23.0));
+  d = un(d, vec2(sdCapsule(p, vec3(0.0, 1.44, 0.0), vec3(0.0, 1.56, 0.01), 0.05), 23.0));
+  d = un(d, vec2(sdEll(p - vec3(0.0, 1.65, 0.02), vec3(0.09, 0.115, 0.1)) * 0.8, 23.0));
+  d = un(d, vec2(max(sdEll(p - vec3(0.0, 1.67, 0.0), vec3(0.1, 0.112, 0.11)) * 0.8, 1.66 - p.y + 0.6 * max(p.z, 0.0)), 24.0));
   return d;
 }
+// ---- 0: a courtyard with a person standing in it ----
+vec2 courtyard(vec3 p){
+  vec2 d = vec2(p.y, 30.0);
+  float wall = sdBox(p - vec3(0.0, 4.5, -7.5), vec3(20.0, 4.5, 0.5));
+  wall = min(wall, sdBox(p - vec3(-8.5, 4.5, 1.0), vec3(0.5, 4.5, 9.0)));
+  // a door and rows of windows, set into the walls
+  float rec = sdBox(p - vec3(1.8, 1.15, -7.0), vec3(0.65, 1.15, 0.2));
+  for (int i = 0; i < 4; i++){ float x = -6.0 + 4.0 * float(i); rec = min(rec, sdBox(p - vec3(x + (i > 1 ? 2.0 : 0.0), 3.8, -7.0), vec3(0.55, 0.75, 0.15))); rec = min(rec, sdBox(p - vec3(x + (i > 1 ? 2.0 : 0.0), 6.8, -7.0), vec3(0.55, 0.75, 0.15))); }
+  for (int i = 0; i < 3; i++){ float z = -4.0 + 4.0 * float(i); rec = min(rec, sdBox(p - vec3(-8.0, 3.8, z), vec3(0.15, 0.75, 0.55))); rec = min(rec, sdBox(p - vec3(-8.0, 1.4, z), vec3(0.15, 0.7, 0.5))); }
+  wall = max(wall, -rec);
+  d = un(d, vec2(wall, 31.0));
+  d = un(d, vec2(sdBox(p - vec3(1.8, 1.15, -7.13), vec3(0.62, 1.12, 0.03)), 32.0));
+  float glass = 1e9;
+  for (int i = 0; i < 4; i++){ float x = -6.0 + 4.0 * float(i) + (i > 1 ? 2.0 : 0.0); glass = min(glass, sdBox(p - vec3(x, 3.8, -7.08), vec3(0.52, 0.72, 0.02))); glass = min(glass, sdBox(p - vec3(x, 6.8, -7.08), vec3(0.52, 0.72, 0.02))); }
+  for (int i = 0; i < 3; i++){ float z = -4.0 + 4.0 * float(i); glass = min(glass, sdBox(p - vec3(-7.92, 3.8, z), vec3(0.02, 0.72, 0.52))); glass = min(glass, sdBox(p - vec3(-7.92, 1.4, z), vec3(0.02, 0.67, 0.47))); }
+  d = un(d, vec2(glass, 33.0));
+  d = un(d, vec2(sdBox(p - vec3(0.0, 0.2, -6.85), vec3(20.0, 0.2, 0.1)), 34.0));
+  // planter with a shrub, a bench, a lamp post
+  d = un(d, vec2(sdRBox(p - vec3(-3.6, 0.3, -4.6), vec3(1.1, 0.3, 0.45), 0.03), 34.0));
+  vec3 s = p - vec3(-3.6, 0.95, -4.6);
+  d = un(d, vec2(min(sdEll(s, vec3(0.9, 0.55, 0.42)), min(sdEll(s - vec3(0.55, 0.2, 0.05), vec3(0.45, 0.45, 0.35)), sdEll(s + vec3(0.5, -0.1, 0.0), vec3(0.4, 0.4, 0.33)))) * 0.8, 35.0));
+  vec3 b = p - vec3(3.3, 0.0, -3.4);
+  d = un(d, vec2(min(sdBox(b - vec3(0.0, 0.45, 0.0), vec3(0.85, 0.03, 0.22)), sdBox(b - vec3(0.0, 0.72, -0.2), vec3(0.85, 0.12, 0.02))), 36.0));
+  d = un(d, vec2(min(sdBox(vec3(abs(b.x) - 0.72, b.y - 0.22, b.z), vec3(0.03, 0.22, 0.2)), sdCylY(p, vec2(-5.2, 1.6), 0.06, 0.0, 3.6)), 37.0));
+  d = un(d, vec2(sdEll(p - vec3(-5.2, 3.75, 1.6), vec3(0.22, 0.28, 0.22)), 33.0));
+  vec3 f = p; f.xz = rot(0.35) * f.xz;
+  return person(f, d);
+}
+// ---- 1: a working boat moored at a harbour quay ----
+const float Z0 = -3.2;
+vec2 harbour(vec3 p){
+  vec2 d = vec2(1e9, -1.0);
+  d = un(d, vec2(sdBox(p - vec3(0.0, -0.6, -18.1), vec3(40.0, 2.4, 11.9)), 40.0));
+  for (int i = 0; i < 4; i++){ float x = -15.0 + 10.0 * float(i); d = un(d, vec2(min(sdCylY(p, vec2(x, -6.9), 0.22, 1.8, 2.35), sdCylY(p, vec2(x, -6.9), 0.3, 2.35, 2.45)), 41.0)); }
+  d = un(d, vec2(sdBox(p - vec3(-6.0, 6.0, -24.0), vec3(18.0, 4.2, 6.0)), 42.0));
+  d = un(d, vec2(max(sdBox(p - vec3(-6.0, 10.6, -24.0), vec3(18.2, 0.6, 6.2)), (p.y - 10.2) * 0.6 + abs(p.z + 24.0) * 0.4 - 1.9), 43.0));
+  // the hull: fine at the bow (+x), sheer rising forward, bulwarks around a working deck
+  float x = p.x;
+  float hb = 2.8 * (1.0 - 0.92 * pow(clamp((x - 3.5) / 9.0, 0.0, 1.0), 1.6)) * (1.0 - 0.35 * pow(clamp((-x - 9.5) / 2.7, 0.0, 1.0), 2.0));
+  hb *= 1.0 - 0.3 * smoothstep(-0.3, -2.4, p.y);
+  float yd = 3.0 + 1.1 * smoothstep(3.0, 12.4, x);
+  float side = abs(p.z - Z0) - hb;
+  float ends = max(x - 12.4, -12.2 - x);
+  float hull = max(max(side * 0.85, ends), max(p.y - yd, -2.4 - p.y));
+  hull = max(hull, -max(side + 0.14, (yd - 0.95) - p.y));
+  d = un(d, vec2(hull, 44.0));
+  d = un(d, vec2(max(side + 0.12, max(abs(p.y - (yd - 0.98)) - 0.03, ends + 0.15)), 48.0));
+  vec3 w = p - vec3(-6.6, 0.0, Z0);
+  d = un(d, vec2(sdRBox(w - vec3(0.0, 3.55, 0.0), vec3(2.9, 1.5, 2.2), 0.08), 45.0));
+  d = un(d, vec2(sdRBox(w - vec3(0.5, 5.75, 0.0), vec3(1.8, 0.75, 1.8), 0.08), 45.0));
+  d = un(d, vec2(sdBox(w - vec3(0.5, 5.95, 0.0), vec3(1.83, 0.3, 1.83)), 50.0));
+  d = un(d, vec2(sdBox(vec3(w.x - 0.5, w.y - 3.9, abs(w.z) - 2.2), vec3(2.2, 0.32, 0.02)), 50.0));
+  d = un(d, vec2(sdCylY(p, vec2(-8.6, Z0), 0.55, 5.0, 8.4), 46.0));
+  d = un(d, vec2(sdCylY(p, vec2(1.8, Z0), 0.13, 2.0, 13.5), 47.0));
+  d = un(d, vec2(sdCapsule(p, vec3(1.8, 3.2, Z0), vec3(7.5, 7.0, Z0), 0.1), 47.0));
+  d = un(d, vec2(sdTorusZ(w - vec3(-1.4, 3.9, 2.23), 0.3, 0.06), 49.0));
+  return d;
+}
+// ---- 2: a living room with one window ----
+vec2 room(vec3 p){
+  vec2 d = vec2(p.y, 60.0);
+  float walls = min(sdBox(p - vec3(0.0, 1.4, -2.65), vec3(3.4, 1.4, 0.15)), sdBox(p - vec3(3.15, 1.4, 0.0), vec3(0.15, 1.4, 2.8)));
+  walls = min(walls, sdBox(p - vec3(0.0, 1.4, 2.65), vec3(3.4, 1.4, 0.15)));
+  float lw = sdBox(p - vec3(-3.15, 1.4, 0.0), vec3(0.15, 1.4, 2.8));
+  lw = max(lw, -sdBox(p - vec3(-3.15, 1.5, 0.0), vec3(0.4, 0.65, 0.55)));
+  d = un(d, vec2(min(walls, lw), 61.0));
+  d = un(d, vec2(sdBox(p - vec3(0.0, 2.85, 0.0), vec3(3.4, 0.05, 2.8)), 62.0));
+  d = un(d, vec2(min(sdBox(p - vec3(-2.95, 0.83, 0.0), vec3(0.1, 0.03, 0.66)), min(sdBox(p - vec3(0.0, 0.05, -2.48), vec3(3.0, 0.05, 0.02)), sdBox(p - vec3(2.98, 0.05, 0.0), vec3(0.02, 0.05, 2.5)))), 63.0));
+  d = un(d, vec2(min(sdBox(p - vec3(-2.98, 0.05, -1.5), vec3(0.02, 0.05, 0.95)), sdBox(p - vec3(-2.98, 0.05, 1.5), vec3(0.02, 0.05, 0.95))), 63.0));
+  // sofa against the back wall
+  vec3 s = p - vec3(0.0, 0.0, -2.0);
+  float sofa = min(sdRBox(s - vec3(0.0, 0.22, 0.0), vec3(1.3, 0.22, 0.45), 0.06), sdRBox(s - vec3(0.0, 0.62, -0.33), vec3(1.3, 0.25, 0.12), 0.06));
+  sofa = min(sofa, sdRBox(vec3(abs(s.x) - 1.2, s.y - 0.55, s.z), vec3(0.12, 0.13, 0.45), 0.05));
+  sofa = min(sofa, sdRBox(vec3(abs(s.x) - 0.55, s.y - 0.5, s.z + 0.02), vec3(0.53, 0.07, 0.4), 0.06));
+  d = un(d, vec2(sofa, 64.0));
+  // coffee table and rug
+  vec3 t = p - vec3(0.05, 0.0, -0.9);
+  d = un(d, vec2(min(sdBox(t - vec3(0.0, 0.4, 0.0), vec3(0.58, 0.02, 0.32)), sdBox(vec3(abs(t.x) - 0.52, t.y - 0.2, abs(t.z) - 0.26), vec3(0.025, 0.2, 0.025))), 65.0));
+  d = un(d, vec2(sdBox(p - vec3(0.1, 0.006, -0.85), vec3(1.8, 0.006, 1.2)), 66.0));
+  // armchair by the window
+  vec3 a = p - vec3(-2.05, 0.0, 1.35); a.xz = rot(0.5) * a.xz;
+  float ch = min(sdRBox(a - vec3(0.0, 0.24, 0.0), vec3(0.42, 0.24, 0.42), 0.06), sdRBox(a - vec3(0.0, 0.62, 0.34), vec3(0.42, 0.3, 0.1), 0.06));
+  ch = min(ch, sdRBox(vec3(abs(a.x) - 0.38, a.y - 0.55, a.z), vec3(0.08, 0.1, 0.4), 0.04));
+  d = un(d, vec2(ch, 67.0));
+  // floor lamp, plant, picture, bookshelf
+  d = un(d, vec2(min(sdCylY(p, vec2(2.3, -2.1), 0.18, 0.0, 0.03), sdCylY(p, vec2(2.3, -2.1), 0.02, 0.0, 1.55)), 68.0));
+  d = un(d, vec2(max(sdCylY(p, vec2(2.3, -2.1), 0.25 - 0.4 * (p.y - 1.5) * 0.25, 1.45, 1.75), -sdCylY(p, vec2(2.3, -2.1), 0.2, 1.44, 1.74)), 69.0));
+  d = un(d, vec2(sdCylY(p, vec2(-2.55, -2.1), 0.2, 0.0, 0.42), 70.0));
+  vec3 g = p - vec3(-2.55, 0.85, -2.1);
+  d = un(d, vec2(min(sdEll(g, vec3(0.32, 0.45, 0.32)), min(sdEll(g - vec3(0.2, 0.3, 0.1), vec3(0.22, 0.3, 0.2)), sdEll(g - vec3(-0.15, 0.4, -0.05), vec3(0.2, 0.32, 0.2)))) * 0.8, 71.0));
+  d = un(d, vec2(sdBox(p - vec3(0.0, 1.55, -2.48), vec3(0.62, 0.38, 0.02)), 72.0));
+  vec3 bs = p - vec3(2.82, 1.0, -0.6);
+  float shelf = sdBox(bs, vec3(0.18, 1.0, 0.75));
+  float slots = 1e9; for (int i = 0; i < 4; i++) slots = min(slots, sdBox(bs - vec3(-0.05, -0.62 + 0.46 * float(i), 0.0), vec3(0.2, 0.19, 0.7)));
+  d = un(d, vec2(max(shelf, -slots), 73.0));
+  float books = 1e9; for (int i = 0; i < 4; i++) books = min(books, sdBox(bs - vec3(0.02, -0.66 + 0.46 * float(i), 0.0), vec3(0.15, 0.14 + 0.03 * float(i % 2), 0.66)));
+  d = un(d, vec2(books, 74.0));
+  return d;
+}
+vec2 map(vec3 p){ return uScene == 0 ? courtyard(p) : uScene == 1 ? harbour(p) : room(p); }
 vec3 albedo(float id, vec3 p){
-  if (id < 0.5) return vec3(0.035, 0.07, 0.075);                       // water
-  if (id < 1.5) return vec3(0.42, 0.31, 0.21) * (0.8 + 0.4 * fract(sin(floor((p.z < 1.0 ? p.z : p.x) / 0.15) * 78.233) * 43758.5)); // deck boards
-  if (id < 2.5) return vec3(0.28, 0.22, 0.17);                          // pilings and stringers
-  if (id < 3.5) return mix(vec3(0.3, 0.27, 0.2), vec3(0.2, 0.28, 0.12), smoothstep(0.2, 0.5, p.y)); // bank and grass
-  if (id < 4.5) return vec3(0.5, 0.17, 0.13);                           // boathouse
-  if (id < 5.5) return vec3(0.18, 0.18, 0.2);                           // roof
-  if (id < 6.5) return vec3(0.24, 0.18, 0.12);                          // trunks
-  if (id < 7.5) return vec3(0.1, 0.2, 0.08);                            // canopies
-  if (id < 8.5) return vec3(0.8, 0.8, 0.76);                            // rowboat
-  if (id < 9.5) return vec3(0.45, 0.33, 0.22);                          // seats, console
-  if (id < 10.5) return vec3(0.86, 0.86, 0.84);                         // sailboat hull
-  if (id < 11.5) return vec3(0.72, 0.68, 0.6);                          // cabin
-  if (id < 12.5) return vec3(0.65, 0.65, 0.65);                         // mast and boom
-  if (id < 13.5) return vec3(0.62, 0.1, 0.08);                          // motorboat
-  if (id < 14.5) return vec3(0.1, 0.12, 0.13);                          // windshield
-  if (id < 15.5) return vec3(0.12, 0.12, 0.15);                         // trousers
-  if (id < 16.5) return vec3(0.16, 0.27, 0.5);                          // jacket
-  return vec3(0.7, 0.52, 0.42);                                         // head
+  int k = int(id + 0.5);
+  if (k == 0) return vec3(0.03, 0.06, 0.065);
+  if (k == 20) return vec3(0.07, 0.06, 0.06);
+  if (k == 21) return vec3(0.17, 0.2, 0.28);
+  if (k == 22) return vec3(0.72, 0.69, 0.62);
+  if (k == 23) return vec3(0.6, 0.43, 0.34);
+  if (k == 24) return vec3(0.08, 0.06, 0.05);
+  if (k == 30){ vec2 c = floor(p.xz / vec2(0.6, 0.4) + vec2(0.0, floor(p.x / 0.6) * 0.5)); vec2 f = fract(p.xz / vec2(0.6, 0.4) + vec2(0.0, floor(p.x / 0.6) * 0.5));
+    float grout = step(0.04, min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y)) * 0.6 / 0.6); return vec3(0.5, 0.47, 0.42) * (0.85 + 0.3 * h1(c.x * 17.0 + c.y)) * mix(0.6, 1.0, grout); }
+  if (k == 31) return vec3(0.68, 0.6, 0.48);
+  if (k == 32) return vec3(0.28, 0.17, 0.1);
+  if (k == 33) return vec3(0.05, 0.06, 0.07);
+  if (k == 34) return vec3(0.5, 0.48, 0.44);
+  if (k == 35) return vec3(0.12, 0.22, 0.08);
+  if (k == 36) return vec3(0.4, 0.27, 0.16);
+  if (k == 37) return vec3(0.12, 0.13, 0.13);
+  if (k == 40) return vec3(0.45, 0.44, 0.41);
+  if (k == 41) return vec3(0.1, 0.1, 0.11);
+  if (k == 42) return vec3(0.42, 0.45, 0.5);
+  if (k == 43) return vec3(0.25, 0.26, 0.28);
+  if (k == 44){ float yd = 3.0 + 1.1 * smoothstep(3.0, 12.4, p.x);
+    if (p.y < 0.35) return p.y < 0.0 ? vec3(0.4, 0.06, 0.05) : vec3(0.03);
+    if (p.y > yd - 0.3) return vec3(0.08, 0.17, 0.4);
+    return vec3(0.8, 0.8, 0.78); }
+  if (k == 45) return vec3(0.82, 0.82, 0.8);
+  if (k == 46) return p.y > 7.8 ? vec3(0.03) : vec3(0.5, 0.08, 0.06);
+  if (k == 47) return vec3(0.55, 0.55, 0.52);
+  if (k == 48) return vec3(0.35, 0.33, 0.3);
+  if (k == 49) return vec3(0.85, 0.3, 0.08);
+  if (k == 50) return vec3(0.04, 0.05, 0.06);
+  if (k == 60){ float b = floor(p.x / 0.18); return vec3(0.5, 0.34, 0.2) * (0.8 + 0.35 * h1(b + floor(p.z / 1.4 + h1(b) * 3.0) * 7.0)); }
+  if (k == 61) return vec3(0.74, 0.71, 0.65);
+  if (k == 62) return vec3(0.85, 0.85, 0.83);
+  if (k == 63) return vec3(0.88, 0.87, 0.84);
+  if (k == 64) return vec3(0.3, 0.36, 0.45);
+  if (k == 65) return vec3(0.32, 0.2, 0.12);
+  if (k == 66){ vec2 r = abs(p.xz - vec2(0.1, -0.85)) - vec2(1.6, 1.0); float inb = step(max(r.x, r.y), 0.0); return mix(vec3(0.55, 0.22, 0.15), vec3(0.75, 0.68, 0.55), inb * (0.7 + 0.3 * step(0.5, fract((p.x + p.z) * 3.0)))); }
+  if (k == 67) return vec3(0.55, 0.42, 0.28);
+  if (k == 68) return vec3(0.1, 0.1, 0.1);
+  if (k == 69) return vec3(0.85, 0.8, 0.7);
+  if (k == 70) return vec3(0.6, 0.35, 0.22);
+  if (k == 71) return vec3(0.1, 0.25, 0.08);
+  if (k == 72) return vec3(0.2, 0.32, 0.45);
+  if (k == 73) return vec3(0.82, 0.8, 0.76);
+  if (k == 74){ float b = floor(p.z / 0.045); return vec3(0.2 + 0.5 * h1(b), 0.15 + 0.35 * h1(b + 3.0), 0.12 + 0.4 * h1(b + 7.0)); }
+  return vec3(0.5);
 }
 void main(){
   vec2 s = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
   vec3 rd = normalize(uF + uTan * (s.x * uAsp * uR + s.y * uU)), ro = uEye;
-  float tw = rd.y < 0.0 ? -ro.y / rd.y : 1e9;
+  float tw = uScene == 1 && rd.y < 0.0 ? -ro.y / rd.y : 1e9;
   float t = 0.02, id = -1.0;
-  for (int i = 0; i < 220; i++){
-    if (t > min(tw, 400.0)) break;
+  for (int i = 0; i < 300; i++){
+    if (t > min(tw, 300.0)) break;
     vec2 h = map(ro + rd * t);
-    if (h.x < 0.0005 * t){ id = h.y; break; }
-    t += max(h.x, 0.002);
+    if (h.x < 0.0004 * t){ id = h.y; break; }
+    t += max(h.x * 0.9, 0.0015);
   }
-  if (id < 0.0 && tw < 400.0){ t = tw; id = 0.0; }
+  if (id < 0.0 && tw < 300.0){ t = tw; id = 0.0; }
   if (id < 0.0){ fragColor = vec4(0.0); return; }
   vec3 p = ro + rd * t;
-  if (uOut == 0){ fragColor = vec4(p, 1.0); return; }
+  // water is marked in the matte (alpha 0.5): it shows in the shot but casts no shadow
+  if (uOut == 0){ fragColor = vec4(p, id < 0.5 ? 0.5 : 1.0); return; }
   vec3 n = vec3(0.0, 1.0, 0.0);
-  if (id > 0.5){ const vec2 e = vec2(0.0015, 0.0); n = normalize(vec3(map(p + e.xyy).x - map(p - e.xyy).x, map(p + e.yxy).x - map(p - e.yxy).x, map(p + e.yyx).x - map(p - e.yyx).x)); }
+  if (id > 0.5){ const vec2 e = vec2(0.0012, 0.0); n = normalize(vec3(map(p + e.xyy).x - map(p - e.xyy).x, map(p + e.yxy).x - map(p - e.yxy).x, map(p + e.yyx).x - map(p - e.yyx).x)); }
   fragColor = uOut == 1 ? vec4(n, 1.0) : vec4(albedo(id, p), 1.0);
 }`;
 PR.place = program(VS_FULL, FS_PLACE, 'placeholder shot');
 function placeholderSource(def) {
   return {units:1, upZ:false, async read(n, step) {
     const W = Math.round(1920 / step), H = Math.round(1080 / step), N = W * H;
-    const c = def.cam((n - def.first) / 24);
+    const c = def.cam;
     const f = v3.norm(v3.sub(c.at, c.eye)), r = v3.norm(v3.cross(f, [0, 1, 0])), u = v3.cross(r, f);
     const t = tgt('placeOut', W, H, 'f32'), buf = new Float32Array(N * 4), out = {};
     for (const [k, mode] of [['pos', 0], ['nrm', 1], ['col', 2]]) {
-      pass(PR.place, t, p => { f3(p, 'uEye', ...c.eye); f3(p, 'uF', ...f); f3(p, 'uR', ...r); f3(p, 'uU', ...u); f1(p, 'uTan', Math.tan(c.vfov * DEG / 2)); f1(p, 'uAsp', W / H); f1(p, 'uTime', (n - def.first) / 24); i1(p, 'uOut', mode); });
+      pass(PR.place, t, p => { f3(p, 'uEye', ...c.eye); f3(p, 'uF', ...f); f3(p, 'uR', ...r); f3(p, 'uU', ...u); f1(p, 'uTan', Math.tan(c.vfov * DEG / 2)); f1(p, 'uAsp', W / H); i1(p, 'uOut', mode); i1(p, 'uScene', def.scene); });
       gl.readPixels(0, 0, W, H, gl.RGBA, gl.FLOAT, buf);
       // rows top-down, as an EXR stores them
-      const ch = [new Float32Array(N), new Float32Array(N), new Float32Array(N)];
-      for (let y = 0; y < H; y++) { const src = (H - 1 - y) * W, dst = y * W; for (let x = 0; x < W; x++) { const i = (src + x) * 4; ch[0][dst + x] = buf[i]; ch[1][dst + x] = buf[i + 1]; ch[2][dst + x] = buf[i + 2]; } }
+      const ch = [new Float32Array(N), new Float32Array(N), new Float32Array(N)], m = k === 'pos' ? new Float32Array(N) : null;
+      for (let y = 0; y < H; y++) { const src = (H - 1 - y) * W, dst = y * W; for (let x = 0; x < W; x++) { const i = (src + x) * 4; ch[0][dst + x] = buf[i]; ch[1][dst + x] = buf[i + 1]; ch[2][dst + x] = buf[i + 2]; if (m) m[dst + x] = buf[i + 3] > 0.25 && buf[i + 3] < 0.75 ? 1 : 0; } }
       out[k] = {W, H, data:ch};
+      if (m) out.matte = {W, H, data:[m]};
     }
-    // the colour pass is linear, as a renderer writes it
-    await new Promise(r => setTimeout(r, 0));
+    await new Promise(res => setTimeout(res, 0));
     return out;
   }};
 }
