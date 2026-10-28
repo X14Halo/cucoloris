@@ -128,6 +128,11 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .phbadge{display:none;font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-ink);background:var(--warn);border-radius:4px;padding:2px 6px}
 body.has-shot .phbadge{display:inline-block}
 .mountrow{display:block}
+.gizlayer{position:absolute;pointer-events:none;left:0;top:0}
+.scenetools{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:none;gap:2px;padding:2px;background:rgba(10,12,15,.82);border:1px solid var(--line);border-radius:9px}
+body.in-scene .scenetools{display:flex}
+.scenetools .mode{padding:5px 11px;font-size:12px}
+.scenetools .mode[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .paintpad{display:block;width:100%;aspect-ratio:1/1;border:1px solid var(--line);border-radius:6px;cursor:crosshair;touch-action:none;background:#fff}
 .viewseg{position:absolute;right:10px;top:10px;padding:2px;background:rgba(10,12,15,.82)}
 .hud{right:150px}
@@ -173,6 +178,8 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
       <div class="hud" id="hud"></div>
       <div class="modes viewseg" role="tablist" aria-label="Preview"><button class="mode" role="tab" id="vw-gobo">Gobo</button><button class="mode" role="tab" id="vw-scene">Scene</button></div>
       <div class="brushring" id="brush" hidden></div>
+      <canvas id="giz" class="gizlayer" aria-hidden="true"></canvas>
+      <div class="scenetools" role="toolbar" aria-label="Scene tools"><button class="mode" id="camReset" title="Back to the default camera (the shot camera when a shot is loaded)">Reset camera</button><button class="mode" id="toolMove" title="Select the light and move it (W)">Move W</button><button class="mode" id="toolRot" title="Select the light and rotate it (E)">Rotate E</button></div>
       <p class="camhint">Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets</p>
       <div class="err" id="err" hidden></div>
     </div>
@@ -3149,6 +3156,9 @@ float lodAt(float L){ return max(0.0, log2(max(2.0 * L * uSunR / sqrt(float(uTap
 vec2 toWin(vec2 q, float z){ float t = (z - q.x * uR.z - q.y * uU.z) / uS.z; return vec2(q.x * uR.x + q.y * uU.x + t * uS.x, q.x * uR.y + q.y * uU.y + t * uS.y); }
 vec2 wuv(vec2 xy){ return xy / uDm + 0.5; }
 float aaG(float d){ return clamp(d / uPxG + 0.5, 0.0, 1.0); }
+// an edge seen through one sun-disk sample, softened to the spacing between samples, so a wide penumbra
+// (the lintel and reveals, far from where the light lands) comes out smooth instead of as a stack of steps
+float aaT(float d, float L){ return clamp(d / max(uPxG, 1.8 * L * uSunR / sqrt(float(uTaps))) + 0.5, 0.0, 1.0); }
 void main(){
   vec2 q = uQ0 + (gl_FragCoord.xy / uRes - 0.5) * uCover;
   // light spread by reeded, textured or frosted glass, sampled around the central ray
@@ -3175,9 +3185,10 @@ void main(){
     float w = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - rho * rho)));
     ws += w;
     // wall reveal: outer and inner faces
-    float v = aaG(sdOpen(toWin(q + (uDist + uZo / uS.z) * d, uZo))) * aaG(sdOpen(toWin(q + (uDist + uZi / uS.z) * d, uZi)));
+    float Lo = uDist + uZo / uS.z, Li = uDist + uZi / uS.z;
+    float v = aaT(sdOpen(toWin(q + Lo * d, uZo)), Lo) * aaT(sdOpen(toWin(q + Li * d, uZi)), Li);
     // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
-    if (uEave > 0.0){ float ze = uZo + uEave; v *= aaG(uEaveY - toWin(q + (uDist + ze / uS.z) * d, ze).y); }
+    if (uEave > 0.0){ float ze = uZo + uEave, Le = uDist + ze / uS.z; v *= aaT(uEaveY - toWin(q + Le * d, ze).y, Le); }
     if (v <= 0.0) continue;
     vec2 xg = toWin(q + uDist * d, 0.0);
     // frame members have depth: their shadow is the union of their slices from front to back
@@ -3786,7 +3797,8 @@ let goboInfo = '';
 function display() {
   const fin = targets.final;
   if (!fin) return;
-  if (S.view === 'scene') { info = goboInfo + '\n' + drawScene(fin).join('\n'); return; }
+  if (S.view === 'scene') { info = goboInfo + '\n' + drawScene(fin).join('\n'); gizDraw(); return; }
+  if (gcv && gcv.width) gizDraw();
   info = goboInfo;
   pass(PR.disp, null, p => {
     tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0);
@@ -4123,7 +4135,7 @@ function camPos(cam) {
   if (!inShot()) p[1] = Math.max(p[1], 0.08);
   return {p, t0};
 }
-let LASTSCENE = null;
+let LASTSCENE = null, VIEWCAM = null;
 function drawScene(fin) {
   const c = SC(), L = sceneLight(), cam = CAM();
   if (c.ltype === 1 && c.el < 2) c.el = 2;
@@ -4157,6 +4169,10 @@ function drawScene(fin) {
     : [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${(2 * c.dist * tanC).toFixed(2)} m wide there`,
        `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`];
   LASTSCENE = {L, tanC, rep, sunSize, ltype:c.ltype, cpos, cf, cb};
+  // how the preview camera maps world points to the screen (for the light manipulator)
+  { const tf = Math.tan(20 * DEG);
+    VIEWCAM = {pos:cpos, f:cf, r:cb.r, u:cb.u, project:X => { const v = v3.sub(X, cpos), z = v3.dot(v, cf); if (z <= 1e-3) return null;
+      const sx = v3.dot(v, cb.r) / (z * tf), sy = v3.dot(v, cb.u) / (z * tf); return [(sx * cv.height + cv.width) / 2, (sy * cv.height + cv.height) / 2, z]; }}; }
   if (shotActive()) {
     shotSync();
     if (shotReady()) { drawShot(fin, c, L, {tanC, rep, blur, lod, single, sunSize}); return [SHOT.status, ...lightLines()]; }
@@ -4947,12 +4963,10 @@ const SHOTS = [
   {id:'ph_court', seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard (tree dapple)', first:1001, last:1001,
    cam:{eye:[2.4, 1.6, 6.8], at:[0, 1.0, 0], vfov:34},
    lights:{trees:{ltype:1, follow:true, aim:[0, 1.15, 0], amb:0.2}}},
-  {id:'ph_harbour', seq:'harbour020', shot:'sh0030', mode:'hull', scene:1, label:'harbour020 / sh0030 · boat at the quay (water caustics on the hull)', first:1001, last:1001,
-   cam:{eye:[7.0, 2.1, 24.0], at:[-1.0, 2.6, -2.0], vfov:40},
-   anchors:{hull:{at:[0, 0, -0.4], azOff:0}}, lights:{hull:{ltype:1, follow:true, amb:0.25, ev:0.5}}},
-  {id:'ph_room', seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room (window light)', first:1001, last:1001,
-   cam:{eye:[2.55, 1.55, 2.25], at:[-1.0, 0.7, -0.9], vfov:52},
-   anchors:{windows:{at:[-3.0, 1.5, 0], azOff:-90}}, lights:{windows:{ltype:1, follow:true, amb:0.12, ev:1}}},
+  {id:'ph_room', seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
+   cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},
+   // the window is behind the camera, off screen: only the gobo says it is there
+   anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}}, lights:{windows:{ltype:1, follow:true, amb:0.14, ev:1}}},
 ];
 const shotDef = id => SHOTS.find(x => x.id === id);
 // where a pattern's own light geometry sits in a shot: the window opening, or the hull at the waterline
@@ -5006,6 +5020,10 @@ function selectShot(id, fromMenu) {
     SHOT.panelBuilt = false; S.shot.view = 0;
     // picking a shot from the menu switches to the pattern it was set up for
     if (fromMenu && def.mode && MODES[def.mode]) { S.mode = def.mode; buildModes(); }
+    if (fromMenu && def.preset) {
+      const ps = MODES[def.preset.mode].presets.find(x => x.name === def.preset.name);
+      if (ps) S.p[def.preset.mode] = {...DEFAULTS[def.preset.mode], ...ps.v, seed:S.p[def.preset.mode].seed};
+    }
     if (S.view !== 'scene') setView('scene');
   }
   const sel = $('shotSel'); if (sel) sel.value = S.shotSel;
@@ -5461,6 +5479,11 @@ function drawShot(fin, c, L, ext) {
     const sc = Math.min(cv.width / fr.W, cv.height / fr.H), fw = fr.W * sc, fh = fr.H * sc;
     const fit = [(cv.width - fw) / 2, (cv.height - fh) / 2, fw, fh];
     SHOT.fit = fit;
+    { const P = fr.cam.P, um = fr.um, up = S.shot.upZ, f = up ? [fr.cam.fwd[0], fr.cam.fwd[2], -fr.cam.fwd[1]] : fr.cam.fwd;
+      const u0 = up ? [fr.cam.up[0], fr.cam.up[2], -fr.cam.up[1]] : fr.cam.up, r = v3.norm(v3.cross(f, u0)), u = v3.cross(r, f);
+      VIEWCAM = {pos:fr.Cm, f, r, u, project:X => { const z = v3.dot(v3.sub(X, fr.Cm), f); if (z <= 1e-3) return null;
+        const raw = up ? [X[0] / um, -X[2] / um, X[1] / um] : X.map(v => v / um), q = P.map(rw => rw[0] * raw[0] + rw[1] * raw[1] + rw[2] * raw[2] + rw[3]);
+        return [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, z]; }}; }
     let li = [0, 0, -1];
     if (c.ltype === 0) {
       const P = fr.cam.P, um = fr.um, up = S.shot.upZ;
@@ -5482,6 +5505,9 @@ function drawShot(fin, c, L, ext) {
   const near = Math.max(0.02, CAM().dist * 0.01);
   const vp = m4.mul(m4.persp((SHOT.vfov || 40) * DEG, cv.width / cv.height, near, near * 1e5), m4.look(cpos, t0, [0, 1, 0]));
   SHOT.vp = vp; SHOT.cpos = cpos;
+  { const f = v3.norm(v3.sub(t0, cpos)), b = basis(f);
+    VIEWCAM = {pos:cpos, f, r:b.r, u:b.u, project:X => { const c4 = [0, 1, 2, 3].map(i => vp[i] * X[0] + vp[4 + i] * X[1] + vp[8 + i] * X[2] + vp[12 + i]); if (c4[3] <= 1e-4) return null;
+      return [(c4[0] / c4[3] * 0.5 + 0.5) * cv.width, (c4[1] / c4[3] * 0.5 + 0.5) * cv.height, c4[3]]; }}; }
   bindTarget(null);
   gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
@@ -5657,70 +5683,41 @@ vec2 courtyard(vec3 p){
   vec3 f = p; f.xz = rot(0.35) * f.xz;
   return person(f, d);
 }
-// ---- 1: a working boat moored at a harbour quay ----
-const float Z0 = -3.2;
-vec2 harbour(vec3 p){
-  vec2 d = vec2(1e9, -1.0);
-  d = un(d, vec2(sdBox(p - vec3(0.0, -0.6, -18.1), vec3(40.0, 2.4, 11.9)), 40.0));
-  for (int i = 0; i < 4; i++){ float x = -15.0 + 10.0 * float(i); d = un(d, vec2(min(sdCylY(p, vec2(x, -6.9), 0.22, 1.8, 2.35), sdCylY(p, vec2(x, -6.9), 0.3, 2.35, 2.45)), 41.0)); }
-  d = un(d, vec2(sdBox(p - vec3(-6.0, 6.0, -24.0), vec3(18.0, 4.2, 6.0)), 42.0));
-  d = un(d, vec2(max(sdBox(p - vec3(-6.0, 10.6, -24.0), vec3(18.2, 0.6, 6.2)), (p.y - 10.2) * 0.6 + abs(p.z + 24.0) * 0.4 - 1.9), 43.0));
-  // the hull: fine at the bow (+x), sheer rising forward, bulwarks around a working deck
-  float x = p.x;
-  float hb = 2.8 * (1.0 - 0.92 * pow(clamp((x - 3.5) / 9.0, 0.0, 1.0), 1.6)) * (1.0 - 0.35 * pow(clamp((-x - 9.5) / 2.7, 0.0, 1.0), 2.0));
-  hb *= 1.0 - 0.3 * smoothstep(-0.3, -2.4, p.y);
-  float yd = 3.0 + 1.1 * smoothstep(3.0, 12.4, x);
-  float side = abs(p.z - Z0) - hb;
-  float ends = max(x - 12.4, -12.2 - x);
-  float hull = max(max(side * 0.85, ends), max(p.y - yd, -2.4 - p.y));
-  hull = max(hull, -max(side + 0.14, (yd - 0.95) - p.y));
-  d = un(d, vec2(hull, 44.0));
-  d = un(d, vec2(max(side + 0.12, max(abs(p.y - (yd - 0.98)) - 0.03, ends + 0.15)), 48.0));
-  vec3 w = p - vec3(-6.6, 0.0, Z0);
-  d = un(d, vec2(sdRBox(w - vec3(0.0, 3.55, 0.0), vec3(2.9, 1.5, 2.2), 0.08), 45.0));
-  d = un(d, vec2(sdRBox(w - vec3(0.5, 5.75, 0.0), vec3(1.8, 0.75, 1.8), 0.08), 45.0));
-  d = un(d, vec2(sdBox(w - vec3(0.5, 5.95, 0.0), vec3(1.83, 0.3, 1.83)), 50.0));
-  d = un(d, vec2(sdBox(vec3(w.x - 0.5, w.y - 3.9, abs(w.z) - 2.2), vec3(2.2, 0.32, 0.02)), 50.0));
-  d = un(d, vec2(sdCylY(p, vec2(-8.6, Z0), 0.55, 5.0, 8.4), 46.0));
-  d = un(d, vec2(sdCylY(p, vec2(1.8, Z0), 0.13, 2.0, 13.5), 47.0));
-  d = un(d, vec2(sdCapsule(p, vec3(1.8, 3.2, Z0), vec3(7.5, 7.0, Z0), 0.1), 47.0));
-  d = un(d, vec2(sdTorusZ(w - vec3(-1.4, 3.9, 2.23), 0.3, 0.06), 49.0));
-  return d;
-}
-// ---- 2: a living room with one window ----
+// ---- 2: a living room; its window is behind the camera, so only the gobo brings the window in ----
 vec2 room(vec3 p){
   vec2 d = vec2(p.y, 60.0);
-  float walls = min(sdBox(p - vec3(0.0, 1.4, -2.65), vec3(3.4, 1.4, 0.15)), sdBox(p - vec3(3.15, 1.4, 0.0), vec3(0.15, 1.4, 2.8)));
-  walls = min(walls, sdBox(p - vec3(0.0, 1.4, 2.65), vec3(3.4, 1.4, 0.15)));
-  float lw = sdBox(p - vec3(-3.15, 1.4, 0.0), vec3(0.15, 1.4, 2.8));
-  lw = max(lw, -sdBox(p - vec3(-3.15, 1.5, 0.0), vec3(0.4, 0.65, 0.55)));
-  d = un(d, vec2(min(walls, lw), 61.0));
-  d = un(d, vec2(sdBox(p - vec3(0.0, 2.85, 0.0), vec3(3.4, 0.05, 2.8)), 62.0));
-  d = un(d, vec2(min(sdBox(p - vec3(-2.95, 0.83, 0.0), vec3(0.1, 0.03, 0.66)), min(sdBox(p - vec3(0.0, 0.05, -2.48), vec3(3.0, 0.05, 0.02)), sdBox(p - vec3(2.98, 0.05, 0.0), vec3(0.02, 0.05, 2.5)))), 63.0));
-  d = un(d, vec2(min(sdBox(p - vec3(-2.98, 0.05, -1.5), vec3(0.02, 0.05, 0.95)), sdBox(p - vec3(-2.98, 0.05, 1.5), vec3(0.02, 0.05, 0.95))), 63.0));
-  // sofa against the back wall
-  vec3 s = p - vec3(0.0, 0.0, -2.0);
+  float walls = min(sdBox(p - vec3(0.0, 1.4, -2.65), vec3(3.4, 1.4, 0.15)), sdBox(p - vec3(3.15, 1.4, 0.0), vec3(0.15, 1.4, 3.2)));
+  walls = min(walls, sdBox(p - vec3(-3.15, 1.4, 0.0), vec3(0.15, 1.4, 3.2)));
+  d = un(d, vec2(walls, 61.0));
+  d = un(d, vec2(sdBox(p - vec3(0.0, 2.85, 0.0), vec3(3.4, 0.05, 3.2)), 62.0));
+  // skirting boards
+  d = un(d, vec2(min(sdBox(p - vec3(0.0, 0.05, -2.48), vec3(3.0, 0.05, 0.02)), min(sdBox(p - vec3(2.98, 0.05, 0.0), vec3(0.02, 0.05, 3.0)), sdBox(p - vec3(-2.98, 0.05, 0.0), vec3(0.02, 0.05, 3.0)))), 63.0));
+  // sofa against the back wall, with two cushions and a throw pillow
+  vec3 s = p - vec3(-0.3, 0.0, -2.0);
   float sofa = min(sdRBox(s - vec3(0.0, 0.22, 0.0), vec3(1.3, 0.22, 0.45), 0.06), sdRBox(s - vec3(0.0, 0.62, -0.33), vec3(1.3, 0.25, 0.12), 0.06));
   sofa = min(sofa, sdRBox(vec3(abs(s.x) - 1.2, s.y - 0.55, s.z), vec3(0.12, 0.13, 0.45), 0.05));
   sofa = min(sofa, sdRBox(vec3(abs(s.x) - 0.55, s.y - 0.5, s.z + 0.02), vec3(0.53, 0.07, 0.4), 0.06));
   d = un(d, vec2(sofa, 64.0));
-  // coffee table and rug
-  vec3 t = p - vec3(0.05, 0.0, -0.9);
-  d = un(d, vec2(min(sdBox(t - vec3(0.0, 0.4, 0.0), vec3(0.58, 0.02, 0.32)), sdBox(vec3(abs(t.x) - 0.52, t.y - 0.2, abs(t.z) - 0.26), vec3(0.025, 0.2, 0.025))), 65.0));
-  d = un(d, vec2(sdBox(p - vec3(0.1, 0.006, -0.85), vec3(1.8, 0.006, 1.2)), 66.0));
-  // armchair by the window
-  vec3 a = p - vec3(-2.05, 0.0, 1.35); a.xz = rot(0.5) * a.xz;
-  float ch = min(sdRBox(a - vec3(0.0, 0.24, 0.0), vec3(0.42, 0.24, 0.42), 0.06), sdRBox(a - vec3(0.0, 0.62, 0.34), vec3(0.42, 0.3, 0.1), 0.06));
+  d = un(d, vec2(sdRBox(s - vec3(0.75, 0.72, -0.16), vec3(0.22, 0.2, 0.07), 0.06), 75.0));
+  // coffee table on a rug, with a bowl
+  vec3 t = p - vec3(-0.25, 0.0, -0.75);
+  d = un(d, vec2(min(sdBox(t - vec3(0.0, 0.4, 0.0), vec3(0.6, 0.02, 0.33)), sdBox(vec3(abs(t.x) - 0.54, t.y - 0.2, abs(t.z) - 0.27), vec3(0.025, 0.2, 0.025))), 65.0));
+  d = un(d, vec2(max(sdEll(t - vec3(0.15, 0.48, 0.05), vec3(0.16, 0.09, 0.16)), -(t.y - 0.5)), 72.0));
+  d = un(d, vec2(sdBox(p - vec3(-0.2, 0.006, -0.6), vec3(1.8, 0.006, 1.3)), 66.0));
+  // armchair angled toward the sofa, a side table beside it
+  vec3 a = p - vec3(-2.15, 0.0, 0.25); a.xz = rot(-1.0) * a.xz;
+  float ch = min(sdRBox(a - vec3(0.0, 0.24, 0.0), vec3(0.42, 0.24, 0.42), 0.06), sdRBox(a - vec3(0.0, 0.62, -0.34), vec3(0.42, 0.3, 0.1), 0.06));
   ch = min(ch, sdRBox(vec3(abs(a.x) - 0.38, a.y - 0.55, a.z), vec3(0.08, 0.1, 0.4), 0.04));
   d = un(d, vec2(ch, 67.0));
+  d = un(d, vec2(min(sdCylY(p, vec2(-2.45, -0.75), 0.25, 0.55, 0.58), sdCylY(p, vec2(-2.45, -0.75), 0.03, 0.0, 0.56)), 65.0));
   // floor lamp, plant, picture, bookshelf
-  d = un(d, vec2(min(sdCylY(p, vec2(2.3, -2.1), 0.18, 0.0, 0.03), sdCylY(p, vec2(2.3, -2.1), 0.02, 0.0, 1.55)), 68.0));
-  d = un(d, vec2(max(sdCylY(p, vec2(2.3, -2.1), 0.25 - 0.4 * (p.y - 1.5) * 0.25, 1.45, 1.75), -sdCylY(p, vec2(2.3, -2.1), 0.2, 1.44, 1.74)), 69.0));
+  d = un(d, vec2(min(sdCylY(p, vec2(1.55, -2.15), 0.18, 0.0, 0.03), sdCylY(p, vec2(1.55, -2.15), 0.02, 0.0, 1.55)), 68.0));
+  d = un(d, vec2(max(sdCylY(p, vec2(1.55, -2.15), 0.25 - 0.1 * (p.y - 1.5), 1.45, 1.75), -sdCylY(p, vec2(1.55, -2.15), 0.2, 1.44, 1.74)), 69.0));
   d = un(d, vec2(sdCylY(p, vec2(-2.55, -2.1), 0.2, 0.0, 0.42), 70.0));
   vec3 g = p - vec3(-2.55, 0.85, -2.1);
   d = un(d, vec2(min(sdEll(g, vec3(0.32, 0.45, 0.32)), min(sdEll(g - vec3(0.2, 0.3, 0.1), vec3(0.22, 0.3, 0.2)), sdEll(g - vec3(-0.15, 0.4, -0.05), vec3(0.2, 0.32, 0.2)))) * 0.8, 71.0));
-  d = un(d, vec2(sdBox(p - vec3(0.0, 1.55, -2.48), vec3(0.62, 0.38, 0.02)), 72.0));
-  vec3 bs = p - vec3(2.82, 1.0, -0.6);
+  d = un(d, vec2(sdBox(p - vec3(-0.3, 1.6, -2.48), vec3(0.7, 0.4, 0.02)), 72.0));
+  vec3 bs = p - vec3(2.82, 1.0, -0.9);
   float shelf = sdBox(bs, vec3(0.18, 1.0, 0.75));
   float slots = 1e9; for (int i = 0; i < 4; i++) slots = min(slots, sdBox(bs - vec3(-0.05, -0.62 + 0.46 * float(i), 0.0), vec3(0.2, 0.19, 0.7)));
   d = un(d, vec2(max(shelf, -slots), 73.0));
@@ -5728,7 +5725,7 @@ vec2 room(vec3 p){
   d = un(d, vec2(books, 74.0));
   return d;
 }
-vec2 map(vec3 p){ return uScene == 0 ? courtyard(p) : uScene == 1 ? harbour(p) : room(p); }
+vec2 map(vec3 p){ return uScene == 0 ? courtyard(p) : room(p); }
 vec3 albedo(float id, vec3 p){
   int k = int(id + 0.5);
   if (k == 0) return vec3(0.03, 0.06, 0.065);
@@ -5766,7 +5763,7 @@ vec3 albedo(float id, vec3 p){
   if (k == 63) return vec3(0.88, 0.87, 0.84);
   if (k == 64) return vec3(0.3, 0.36, 0.45);
   if (k == 65) return vec3(0.32, 0.2, 0.12);
-  if (k == 66){ vec2 r = abs(p.xz - vec2(0.1, -0.85)) - vec2(1.6, 1.0); float inb = step(max(r.x, r.y), 0.0); return mix(vec3(0.55, 0.22, 0.15), vec3(0.75, 0.68, 0.55), inb * (0.7 + 0.3 * step(0.5, fract((p.x + p.z) * 3.0)))); }
+  if (k == 66){ vec2 r = abs(p.xz - vec2(-0.2, -0.6)) - vec2(1.6, 1.1); float inb = step(max(r.x, r.y), 0.0); return mix(vec3(0.55, 0.22, 0.15), vec3(0.75, 0.68, 0.55), inb * (0.7 + 0.3 * step(0.5, fract((p.x + p.z) * 3.0)))); }
   if (k == 67) return vec3(0.55, 0.42, 0.28);
   if (k == 68) return vec3(0.1, 0.1, 0.1);
   if (k == 69) return vec3(0.85, 0.8, 0.7);
@@ -5774,6 +5771,7 @@ vec3 albedo(float id, vec3 p){
   if (k == 71) return vec3(0.1, 0.25, 0.08);
   if (k == 72) return vec3(0.2, 0.32, 0.45);
   if (k == 73) return vec3(0.82, 0.8, 0.76);
+  if (k == 75) return vec3(0.75, 0.55, 0.3);
   if (k == 74){ float b = floor(p.z / 0.045); return vec3(0.2 + 0.5 * h1(b), 0.15 + 0.35 * h1(b + 3.0), 0.12 + 0.4 * h1(b + 7.0)); }
   return vec3(0.5);
 }
@@ -5819,6 +5817,222 @@ function placeholderSource(def) {
 }
 
 /* =====================================================================
+   LIGHT MANIPULATOR
+   Click the light in the Scene view to select it, then move it with
+   Maya-style handles (W: translate along X, Y, Z or in the view plane)
+   or turn it with rotate rings (E: yaw around world Y, tilt around the
+   light's own side axis, roll around its beam). The light keeps its
+   aim relationship: moving carries the aim point along, turning swings
+   the aim point around the light. Alt still drives the camera.
+   ===================================================================== */
+const GIZ = {sel:false, mode:'move', drag:null, hover:null};
+const gcv = $('giz'), gctx = gcv ? gcv.getContext('2d') : null;
+const GCOL = {x:'#e8574a', y:'#7cc95a', z:'#4f8ff0', p:'#f0d264', sel:'#f0b25e'};
+// the light as it is placed now
+function lightNow() {
+  const c = SC(), L = sceneLight(), dir = v3.mul(L.f, -1);
+  // a sun has no real position: its handle sits up the beam from the aim point, close enough to stay in view
+  let gd = c.dist;
+  if (c.ltype === 1 && VIEWCAM) for (let i = 0; i < 12 && gd > 0.3; i++) { const q = toCss(v3.add(L.aim, v3.mul(dir, gd))); if (q && onScreen(q, 70)) break; gd *= 0.75; }
+  const pos = c.ltype === 1 ? v3.add(L.aim, v3.mul(dir, gd)) : L.pos;
+  return {c, L, dir, pos, gd};
+}
+const onScreen = (q, m) => q[0] > m && q[1] > m && q[0] < cv.clientWidth - m && q[1] < cv.clientHeight - m;
+// bring a light that is out of view into view (leaving the shot camera if need be)
+function frameLight() {
+  const {L, pos} = lightNow(), q = toCss(pos);
+  if (q && onScreen(q, 30)) return;
+  if (inShot() && (S.shot.view | 0) === 0) { S.shotCams[S.shotSel] = shotOrbitCam(); S.shot.view = 1; }
+  const cam = CAM(), mid = v3.mul(v3.add(pos, L.aim), 0.5), span = Math.hypot(...v3.sub(pos, L.aim));
+  Object.assign(cam, {tx:mid[0], ty:mid[1], tz:mid[2], dist:inShot() ? Math.max(span * 1.8, 2) : clamp(span * 1.8, 1, 30)});
+  if (!inShot()) { cam.tx = clamp(cam.tx, -8, 8); cam.ty = clamp(cam.ty, 0, 6); cam.tz = clamp(cam.tz, -1, 10); }
+  buildPanel(); viewDirty = true; save();
+}
+const dprNow = () => cv.width / Math.max(cv.clientWidth, 1);
+// world point to CSS pixels on the canvas (y down)
+function toCss(X) {
+  if (!VIEWCAM) return null;
+  const p = VIEWCAM.project(X); if (!p) return null;
+  const d = dprNow(); return [p[0] / d, (cv.height - p[1]) / d, p[2]];
+}
+function gizScale(pos) {
+  // world length that shows as about 70 px on screen at the light
+  const a = toCss(pos), b = toCss(v3.add(pos, VIEWCAM.r));
+  if (!a || !b) return null;
+  return 70 / Math.max(Math.hypot(b[0] - a[0], b[1] - a[1]), 1e-6);
+}
+function ringAxes(Ln) {
+  const f = Ln.L.f, up = [0, 1, 0];
+  let side = v3.cross(f, up); if (Math.hypot(...side) < 1e-4) side = [1, 0, 0];
+  return [{k:'y', a:up, col:GCOL.y, what:'turn'}, {k:'x', a:v3.norm(side), col:GCOL.x, what:'tilt'}, {k:'z', a:f, col:GCOL.z, what:'roll'}];
+}
+// handles in screen space for picking and drawing
+function gizHandles() {
+  const Ln = lightNow(), ctr = toCss(Ln.pos); if (!ctr) return null;
+  const s = gizScale(Ln.pos); if (!s) return null;
+  const H = {Ln, ctr, s, items:[]};
+  if (!GIZ.sel) return H;
+  if (GIZ.mode === 'move') {
+    for (const [k, a] of [['x', [1, 0, 0]], ['y', [0, 1, 0]], ['z', [0, 0, 1]]]) {
+      const e = toCss(v3.add(Ln.pos, v3.mul(a, s))); if (e) H.items.push({k, type:'axis', a, p0:ctr, p1:e, col:GCOL[k]});
+    }
+    H.items.push({k:'p', type:'plane', p0:ctr, col:GCOL.p});
+  } else {
+    for (const R of ringAxes(Ln)) {
+      const a = R.a, t1 = v3.norm(Math.abs(a[1]) < 0.9 ? v3.cross(a, [0, 1, 0]) : v3.cross(a, [1, 0, 0])), t2 = v3.cross(a, t1), pts = [];
+      for (let i = 0; i <= 64; i++) { const th = i / 64 * 2 * Math.PI; const q = toCss(v3.add(Ln.pos, v3.mul(v3.add(v3.mul(t1, Math.cos(th)), v3.mul(t2, Math.sin(th))), s * 0.85))); pts.push(q ? [q[0], q[1], th] : null); }
+      H.items.push({k:R.k, type:'ring', a, t1, t2, pts, col:R.col});
+    }
+  }
+  return H;
+}
+function distSeg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1;
+  const t = clamp(((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2, 0, 1);
+  return [Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy), t];
+}
+function gizPick(m) {
+  const H = gizHandles(); if (!H) return null;
+  let best = null, bd = 9;
+  for (const it of H.items) {
+    if (it.type === 'axis') { const [d] = distSeg(m, it.p0, it.p1); if (d < bd) { bd = d; best = {it}; } }
+    else if (it.type === 'plane') { if (Math.max(Math.abs(m[0] - it.p0[0]), Math.abs(m[1] - it.p0[1])) < 9) { bd = 0; best = {it}; } }
+    else for (let i = 0; i < 64; i++) { const a = it.pts[i], b = it.pts[i + 1]; if (!a || !b) continue; const [d, t] = distSeg(m, a, b); if (d < bd) { bd = d; best = {it, th:a[2] + t * (b[2] - a[2])}; } }
+  }
+  if (best) return best;
+  if (Math.hypot(m[0] - H.ctr[0], m[1] - H.ctr[1]) < 14) return {light:true};
+  return null;
+}
+// freeze the light as it is placed now into its own settings, so moving it never jumps
+function bakeLight() {
+  const {c, L, dir, pos, gd} = lightNow();
+  c.follow = false;
+  c.el = Math.asin(clamp(dir[1], -1, 1)) / DEG; c.az = Math.atan2(dir[0], dir[2]) / DEG;
+  [c.aimX, c.aimY, c.aimZ] = L.aim;
+  return {pos, f:L.f, roll:c.roll || 0, gd};
+}
+function setLight(pos, f, roll, gd) {
+  const c = SC(), dir = v3.mul(f, -1);
+  c.el = Math.asin(clamp(dir[1], -1, 1)) / DEG; c.az = Math.atan2(dir[0], dir[2]) / DEG; c.roll = roll;
+  const aim = v3.sub(pos, v3.mul(dir, gd ?? c.dist));
+  [c.aimX, c.aimY, c.aimZ] = aim;
+  viewDirty = true;
+}
+const rotAxis = (v, k, th) => {
+  const c = Math.cos(th), s = Math.sin(th);
+  return v3.add(v3.add(v3.mul(v, c), v3.mul(v3.cross(k, v), s)), v3.mul(k, v3.dot(k, v) * (1 - c)));
+};
+function gizDraw() {
+  if (!gctx) return;
+  // keep the overlay exactly over the preview canvas
+  const pr = $('plate').getBoundingClientRect(), r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  gcv.style.left = (r.left - pr.left) + 'px'; gcv.style.top = (r.top - pr.top) + 'px'; gcv.style.width = r.width + 'px'; gcv.style.height = r.height + 'px';
+  const W = Math.round(r.width * d), Hh = Math.round(r.height * d);
+  if (gcv.width !== W || gcv.height !== Hh) { gcv.width = W; gcv.height = Hh; }
+  gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, W, Hh);
+  if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
+  gctx.setTransform(d, 0, 0, d, 0, 0);
+  const H = gizHandles(); if (!H) return;
+  const {Ln, ctr} = H, sun = Ln.c.ltype === 1;
+  // the light's icon, and a line to where it is aimed
+  const aim = toCss(Ln.L.aim);
+  gctx.lineWidth = 1.5;
+  if (aim) { gctx.setLineDash([4, 4]); gctx.strokeStyle = 'rgba(255,255,255,.55)'; gctx.beginPath(); gctx.moveTo(ctr[0], ctr[1]); gctx.lineTo(aim[0], aim[1]); gctx.stroke(); gctx.setLineDash([]);
+    gctx.fillStyle = '#f0a040'; gctx.beginPath(); gctx.arc(aim[0], aim[1], 3.5, 0, 7); gctx.fill(); }
+  gctx.strokeStyle = GIZ.sel ? GCOL.sel : 'rgba(255,255,255,.9)'; gctx.fillStyle = 'rgba(14,17,21,.75)';
+  gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 8, 0, 7); gctx.fill(); gctx.stroke();
+  if (sun) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; gctx.beginPath(); gctx.moveTo(ctr[0] + Math.cos(a) * 10, ctr[1] + Math.sin(a) * 10); gctx.lineTo(ctr[0] + Math.cos(a) * 14, ctr[1] + Math.sin(a) * 14); gctx.stroke(); }
+  else { gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 3, 0, 7); gctx.fillStyle = gctx.strokeStyle; gctx.fill(); }
+  if (!GIZ.sel) return;
+  const act = GIZ.drag ? GIZ.drag.it.k : GIZ.hover;
+  for (const it of H.items) {
+    const hot = act === it.k && (!GIZ.drag || GIZ.drag.it.type === it.type);
+    gctx.strokeStyle = hot ? '#fff' : it.col; gctx.fillStyle = gctx.strokeStyle; gctx.lineWidth = hot ? 3 : 2;
+    if (it.type === 'axis') {
+      gctx.beginPath(); gctx.moveTo(it.p0[0], it.p0[1]); gctx.lineTo(it.p1[0], it.p1[1]); gctx.stroke();
+      const ang = Math.atan2(it.p1[1] - it.p0[1], it.p1[0] - it.p0[0]);
+      gctx.beginPath(); gctx.moveTo(it.p1[0] + Math.cos(ang) * 9, it.p1[1] + Math.sin(ang) * 9);
+      gctx.lineTo(it.p1[0] + Math.cos(ang + 2.6) * 7, it.p1[1] + Math.sin(ang + 2.6) * 7); gctx.lineTo(it.p1[0] + Math.cos(ang - 2.6) * 7, it.p1[1] + Math.sin(ang - 2.6) * 7); gctx.fill();
+    } else if (it.type === 'plane') {
+      gctx.strokeRect(it.p0[0] - 6, it.p0[1] - 6, 12, 12);
+    } else {
+      gctx.beginPath(); let on = false;
+      for (const q of it.pts) { if (!q) { on = false; continue; } if (on) gctx.lineTo(q[0], q[1]); else { gctx.moveTo(q[0], q[1]); on = true; } }
+      gctx.stroke();
+    }
+  }
+  gctx.font = '600 11px system-ui, sans-serif'; gctx.fillStyle = 'rgba(255,255,255,.85)';
+  gctx.fillText(GIZ.mode === 'move' ? 'Move (W)' : 'Rotate (E)', ctr[0] + 14, ctr[1] - 14);
+}
+// pointer handling on the plate, ahead of the camera and aim handlers on the canvas
+(() => {
+  const plate = $('plate');
+  const mpos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  let pend = null;
+  plate.addEventListener('pointerdown', e => {
+    if (S.view !== 'scene' || e.target !== cv || e.altKey || e.button !== 0) return;
+    const m = mpos(e), hit = gizPick(m);
+    if (!hit) { if (GIZ.sel) pend = {x:e.clientX, y:e.clientY}; return; }
+    e.stopPropagation(); e.preventDefault(); GIZ.eatUp = true;
+    if (hit.light && !GIZ.sel) { GIZ.sel = true; buildPanel(); gizDraw(); return; }
+    const base = bakeLight();
+    const it = hit.it || {k:'p', type:'plane'};
+    GIZ.drag = {it, m0:m, base, th0:hit.th, s:gizScale(base.pos)};
+    cv.setPointerCapture(e.pointerId);
+  }, true);
+  plate.addEventListener('pointermove', e => {
+    if (S.view !== 'scene') return;
+    const m = mpos(e);
+    if (!GIZ.drag) { if (GIZ.sel && !e.buttons) { const h = gizPick(m); const k = h && h.it ? h.it.k : null; if (k !== GIZ.hover) { GIZ.hover = k; gizDraw(); } } return; }
+    e.stopPropagation();
+    const D = GIZ.drag, dm = [m[0] - D.m0[0], m[1] - D.m0[1]], b = D.base;
+    if (D.it.type === 'axis') {
+      const a0 = toCss(b.pos), a1 = toCss(v3.add(b.pos, D.it.a)); if (!a0 || !a1) return;
+      const sv = [a1[0] - a0[0], a1[1] - a0[1]], l2 = sv[0] * sv[0] + sv[1] * sv[1] || 1;
+      setLight(v3.add(b.pos, v3.mul(D.it.a, (dm[0] * sv[0] + dm[1] * sv[1]) / l2)), b.f, b.roll, b.gd);
+    } else if (D.it.type === 'plane') {
+      const k = D.s / 70;
+      setLight(v3.add(b.pos, v3.add(v3.mul(VIEWCAM.r, dm[0] * k), v3.mul(VIEWCAM.u, -dm[1] * k))), b.f, b.roll, b.gd);
+    } else {
+      // drag along the ring where it was grabbed: the screen tangent there sets how far it turns
+      const it = D.it, R = D.s * 0.85, th = D.th0;
+      const P = v3.add(b.pos, v3.mul(v3.add(v3.mul(it.t1, Math.cos(th)), v3.mul(it.t2, Math.sin(th))), R));
+      const T = v3.add(v3.mul(it.t1, -Math.sin(th)), v3.mul(it.t2, Math.cos(th)));
+      const p0 = toCss(P), p1 = toCss(v3.add(P, v3.mul(T, R * 0.01))); if (!p0 || !p1) return;
+      const sv = [(p1[0] - p0[0]) / 0.01, (p1[1] - p0[1]) / 0.01], l2 = sv[0] * sv[0] + sv[1] * sv[1] || 1;
+      const ang = (dm[0] * sv[0] + dm[1] * sv[1]) / l2;
+      if (it.k === 'z') setLight(b.pos, b.f, b.roll + ang / DEG, b.gd);
+      else setLight(b.pos, v3.norm(rotAxis(b.f, it.a, ang)), b.roll, b.gd);
+    }
+    gizDraw();
+  }, true);
+  const up = e => {
+    if (GIZ.eatUp) { GIZ.eatUp = false; e.stopPropagation(); }
+    if (GIZ.drag) { e.stopPropagation(); GIZ.drag = null; buildPanel(); save(); gizDraw(); return; }
+    if (pend) { const moved = Math.hypot(e.clientX - pend.x, e.clientY - pend.y) > 4; pend = null; if (!moved) { GIZ.sel = false; GIZ.hover = null; e.stopPropagation(); toolButtons(); buildPanel(); gizDraw(); } }
+  };
+  plate.addEventListener('pointerup', up, true); plate.addEventListener('pointercancel', up, true);
+  document.addEventListener('keydown', e => {
+    const ae = document.activeElement;
+    if (S.view !== 'scene' || e.metaKey || e.ctrlKey || e.altKey || (ae && /INPUT|SELECT|TEXTAREA/.test(ae.tagName))) return;
+    const k = e.key.toLowerCase();
+    if (k === 'w' || k === 'e') { GIZ.mode = k === 'w' ? 'move' : 'rotate'; GIZ.sel = true; toolButtons(); frameLight(); gizDraw(); }
+    if (k === "escape") { GIZ.sel = false; toolButtons(); gizDraw(); }
+  });
+  const tb = (id, f) => { const b = $(id); if (b) b.onclick = f; };
+  tb('toolMove', () => { GIZ.mode = 'move'; GIZ.sel = true; toolButtons(); frameLight(); gizDraw(); });
+  tb('toolRot', () => { GIZ.mode = 'rotate'; GIZ.sel = true; toolButtons(); frameLight(); gizDraw(); });
+  tb('camReset', () => {
+    if (S.view !== 'scene') return;
+    if (shotActive()) { delete S.shotCams[S.shotSel]; S.shot.view = 0; } else S.cams[S.mode] = camDefault(S.mode);
+    buildPanel(); viewDirty = true; save();
+  });
+})();
+function toolButtons() {
+  for (const [id, m] of [['toolMove', 'move'], ['toolRot', 'rotate']]) { const b = $(id); if (b) b.setAttribute('aria-pressed', GIZ.sel && GIZ.mode === m); }
+}
+
+/* =====================================================================
    LOOP
    ===================================================================== */
 let dirty = true, viewDirty = false, last = performance.now(), msAvg = 0, hudTimer = 0;
@@ -5846,7 +6060,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {SHOT, selectShot, shotPick, EXR, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, EXR, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
 requestAnimationFrame(tick);
 })();
 
