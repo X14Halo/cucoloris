@@ -128,6 +128,9 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .phbadge{display:none;font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-ink);background:var(--warn);border-radius:4px;padding:2px 6px}
 body.has-shot .phbadge{display:inline-block}
 .mountrow{display:block}
+.grp.off{opacity:.45}
+.grp.first{border-color:var(--accent)}
+.grp.off .ctrls{pointer-events:none}
 .gizlayer{position:absolute;pointer-events:none;left:0;top:0}
 .scenetools{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:none;gap:2px;padding:2px;background:rgba(10,12,15,.82);border:1px solid var(--line);border-radius:9px}
 body.in-scene .scenetools{display:flex}
@@ -559,7 +562,7 @@ MODES.windows = {
 const SHAPES = ['Light shafts (fan)', 'Curtain shafts', 'Parallel beams', 'Ragged streaks', 'Splotches', 'Cucoloris board', 'Water reflection shimmer', 'Soft spots', 'Art deco fan',
                 'Soft blobs', 'Leafy breakup', 'Soft mottling', 'Dappled holes', 'Branches & leaves', 'Paint your own',
                 'Soft clouds', 'Billows', 'Pools that come and go', 'Marbled flow', 'Uneven wash'];
-const SHAPE_ORDER = [9, 15, 11, 16, 17, 18, 19, 7, 14, 0, 1, 2];
+const SHAPE_ORDER = [9, 15, 11, 16, 17, 18, 19, 7, 0, 1, 2];
 const SHAPE_SEAMLESS = [false, false, false, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true];
 const ORGANIC = new Set([9, 10, 11, 12, 13]);
 const SOFTNOISE = new Set([7, 9, 11, 15, 16, 17, 18, 19]);
@@ -576,11 +579,15 @@ const MOTION_LOOKS = [
 ];
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
-  onParam(k, P) { if (k === 'blend') { const on = (P.blend ?? 0) > 0, ch = on !== this._blendOn; this._blendOn = on; return ch; } return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'pbTool' || k === 'drift'; },
+  onParam(k, P) {
+    if (k === 'paintMode') { if (P.paintMode) { if ((P.shape | 0) !== 14) P.prevShape = P.shape; P.shape = 14; } else P.shape = P.prevShape ?? 9; return true; }
+    if (k === 'pbPool') { P.framing = P.pbPool ? 1 : 0; return true; }
+    if (k === 'blend') { const on = (P.blend ?? 0) > 0, ch = on !== this._blendOn; this._blendOn = on; return ch; } return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'pbTool' || k === 'drift'; },
   get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
     this._blendOn = (P.blend ?? 0) > 0;
+    P.paintMode = sh === 14; P.pbPool = (P.framing | 0) === 1;
     const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
     const g = [
       {k:'framing', l:'Framing', opts:['As designed' + (SHAPE_SEAMLESS[sh] ? ' (seamless tile)' : ''), 'Light pool, dark edges'], h:'A light pool lets light through only in the middle of the frame, fading softly to black toward the edges.'},
@@ -615,9 +622,15 @@ MODES.shapes = {
       {k:'fall', l:'Fade along length', min:0, max:1, step:0.01},
       {k:'brk', l:'Haze breakup', min:0, max:1, step:0.01, h:'Streaky texture inside each shaft, as dust and haze give real light shafts.'},
     );
-    const out = [{name:'Shape', params:g}];
-    if (paint) out.push({name:'Paint', params:paintDefs()});
-    if (look.length) out.push({name:'Look', params:look});
+    // painting has its own section: switching it on sets the generated shapes aside
+    const pp = [{k:'paintMode', l:'Paint your own gobo', type:'chk', h:'Turn on to paint the gobo yourself, on the canvas here, on the Gobo preview or right where the light lands in the Scene view. The generated shapes are set aside while it is on.'}];
+    if (paint) pp.push(
+      {k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole painted gobo, as a percentage of its width.'},
+      {k:'pbPool', l:'Light pool, dark edges', type:'chk', h:'Frames the painting in a soft pool of light that fades to black at the edges.'},
+      ...((P.framing | 0) === 1 ? [{k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01}] : []),
+      ...paintDefs());
+    const out = [{name:'Paint your own', params:pp, first:true}, {name:'Shape', params:g, off:paint}];
+    if (look.length) out.push({name:'Look', params:look, off:paint});
     if (fan || beams) out.push({name:'Motion', params:[
       {k:'motion', l:'Shimmer', min:0, max:1, step:0.01, h:'Each shaft slowly brightens and dims on its own and wavers a touch, with dust drifting through it.'},
       {k:'shimSpd', l:'Shimmer speed', min:0.1, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '×'},
@@ -627,7 +640,7 @@ MODES.shapes = {
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
         {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(sh !== 17 && sh !== 7 && !paint ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
         ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
         {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
@@ -4310,7 +4323,8 @@ function drawScene(fin) {
   // how the preview camera maps world points to the screen (for the light manipulator)
   { const tf = Math.tan(20 * DEG);
     VIEWCAM = {pos:cpos, f:cf, r:cb.r, u:cb.u, project:X => { const v = v3.sub(X, cpos), z = v3.dot(v, cf); if (z <= 1e-3) return null;
-      const sx = v3.dot(v, cb.r) / (z * tf), sy = v3.dot(v, cb.u) / (z * tf); return [(sx * cv.height + cv.width) / 2, (sy * cv.height + cv.height) / 2, z]; }}; }
+      const sx = v3.dot(v, cb.r) / (z * tf), sy = v3.dot(v, cb.u) / (z * tf); return [(sx * cv.height + cv.width) / 2, (sy * cv.height + cv.height) / 2, z]; },
+      ray:(fx, fy) => { const sx = (fx * 2 - cv.width) / cv.height, sy = (fy * 2 - cv.height) / cv.height; return {ro:cpos, rd:v3.norm(v3.add(cf, v3.add(v3.mul(cb.r, tf * sx), v3.mul(cb.u, tf * sy))))}; }}; }
   if (shotActive()) {
     shotSync();
     if (shotReady()) { drawShot(fin, c, L, {tanC, rep, blur, lod, single, sunSize}); return [SHOT.status, ...lightLines()]; }
@@ -4490,13 +4504,13 @@ function buildPanel() {
   rs.onclick = () => { S.p[S.mode].seed = 1 + Math.floor(Math.random() * 9999); buildPanel(); changed(); };
   pr.append(rs);
   const groups = $('groups'); groups.innerHTML = '';
-  const mk = (title, defs, st, dflt, open = true) => {
-    const d = document.createElement('details'); d.className = 'grp'; d.open = open;
-    const s = document.createElement('summary'); s.innerHTML = '<span class="sect-label"></span>'; s.firstChild.textContent = title;
+  const mk = (title, defs, st, dflt, open = true, off = false, first = false) => {
+    const d = document.createElement('details'); d.className = 'grp' + (off ? ' off' : ''); d.open = open && !off;
+    const s = document.createElement('summary'); s.innerHTML = '<span class="sect-label"></span>'; s.firstChild.textContent = title + (off ? ' · off while painting' : '');
     const c = document.createElement('div'); c.className = 'ctrls';
     const onCh = st === store && m.onParam ? k => { if (m.onParam(k, st)) buildPanel(); changed(); } : changed;
     defs.forEach(def => c.append(control(def, st, S.mode + (st === store ? '' : '-post'), dflt, onCh)));
-    d.append(s, c); groups.append(d);
+    d.append(s, c); if (first) { d.classList.add('first'); groups.prepend(d); } else groups.append(d);
   };
   if (S.view === 'scene') {
     const onScene = k => {
@@ -4532,7 +4546,7 @@ function buildPanel() {
     };
     top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
   }
-  groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode]));
+  groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode], true, !!g.off, !!g.first));
   mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
 }
 function buildTimeline() {
@@ -4927,21 +4941,44 @@ function goboUVAt(p) {
   const v = v3.sub(p, L.pos), z = v3.dot(v, L.f); if (z <= 1e-4) return null;
   return [0.5 + 0.5 * v3.dot(v, L.r) / (z * S0.tanC) * S0.rep, 0.5 + 0.5 * v3.dot(v, L.u) / (z * S0.tanC) * S0.rep];
 }
+/* Painting in the Scene view. A stroke stays on the surface it started on: it follows that surface while the
+   brush is over it, and where the brush slips off an edge (onto a wall far behind a face, or into empty space)
+   it carries on across a plane facing the light at the stroke's depth, so the paint lands where the light
+   would put it instead of leaping to the far surface and dragging a long line across the gobo. */
 (() => {
-  let down = false;
-  const at = e => { const p = sceneHit(e); const uv = p && goboUVAt(p); if (!uv) return null; const u = uv[0] - Math.floor(uv[0]), v = uv[1] - Math.floor(uv[1]); return [u * PAINT.N, (1 - v) * PAINT.N]; };
+  let ST = null;
+  const evPx = e => { const r = cv.getBoundingClientRect(), d = cv.width / r.width; return [(e.clientX - r.left) * d, (r.bottom - e.clientY) * d]; };
+  const toPaint = p => { const uv = goboUVAt(p); if (!uv) return null; return [(uv[0] - Math.floor(uv[0])) * PAINT.N, (1 - (uv[1] - Math.floor(uv[1]))) * PAINT.N]; };
+  const point = e => {
+    if (!VIEWCAM || !VIEWCAM.ray || !LASTSCENE) return null;
+    const {ro, rd} = VIEWCAM.ray(...evPx(e)), hit = sceneHit(e);
+    if (!ST) return hit ? {p:hit, ro, rd} : null;
+    const n = ST.n, dn = v3.dot(rd, n);
+    // stay on the surface while it is near the stroke's depth (seen from the light); let the depth follow it gradually
+    if (hit && Math.abs(v3.dot(hit, n) - ST.d) < ST.tol) { ST.d = v3.dot(hit, n); return {p:hit}; }
+    if (Math.abs(dn) < 1e-4) return null;
+    const t = (ST.d - v3.dot(ro, n)) / dn;
+    return t > 0 ? {p:v3.add(ro, v3.mul(rd, t))} : null;
+  };
   cv.addEventListener('pointerdown', e => {
     if (!scenePaintOn() || e.altKey || e.button !== 0) return;
-    const q = at(e); if (!q) return;
-    paintCanvas(); pushUndo(); down = true; PAINT.last = null; cv.setPointerCapture(e.pointerId);
-    stroke(...q); paintChanged();
+    const h = point(e); if (!h) return;
+    // the stroke's plane faces the light, unless the camera sees it edge-on; then it faces the camera
+    const L = LASTSCENE.L, nl = v3.mul(L.f, -1), n = Math.abs(v3.dot(h.rd, nl)) > 0.25 ? nl : v3.mul(h.rd, -1);
+    ST = {n, d:v3.dot(h.p, n), tol:Math.max(0.12, 0.05 * Math.hypot(...v3.sub(h.p, h.ro)))};
+    const q = toPaint(h.p); if (!q) { ST = null; return; }
+    paintCanvas(); pushUndo(); PAINT.last = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    stroke(...q); ST.q = q; paintChanged();
   });
   cv.addEventListener('pointermove', e => {
-    if (!down) return;
-    const q = at(e); if (!q) { PAINT.last = null; return; }
-    stroke(...q); paintChanged();
+    if (!ST) return;
+    const h = point(e), q = h && toPaint(h.p);
+    if (!q) { PAINT.last = null; ST.q = null; return; }
+    // a sudden leap across the canvas (not across a wrapped edge) starts a new line rather than drawing one
+    if (ST.q) { const N = PAINT.N, wrap = PB().wrap; let dx = Math.abs(q[0] - ST.q[0]), dy = Math.abs(q[1] - ST.q[1]); if (wrap) { dx = Math.min(dx, N - dx); dy = Math.min(dy, N - dy); } if (Math.hypot(dx, dy) > 0.2 * N) PAINT.last = null; }
+    stroke(...q); ST.q = q; paintChanged();
   });
-  const up = () => { down = false; PAINT.last = null; };
+  const up = () => { ST = null; PAINT.last = null; };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 })();
 function paintAction(a) {
@@ -5459,7 +5496,7 @@ function solveCamera(px, py, pz, valid, W, H) {
   const nrm = a => { const l = Math.hypot(...a); return a.map(v => v / l * sg); };
   const rt = nrm(ray(W / 2, 0)), rb = nrm(ray(W / 2, H)), rc = nrm(ray(W / 2, H / 2));
   const vfov = Math.acos(clamp(rt[0] * rb[0] + rt[1] * rb[1] + rt[2] * rb[2], -1, 1)) / DEG;
-  return {P, C, err:cam.err, n:pts.length, vfov, fwd:rc, up:[rt[0] - rb[0], rt[1] - rb[1], rt[2] - rb[2]]};
+  return {P, C, inv, err:cam.err, n:pts.length, vfov, fwd:rc, up:[rt[0] - rb[0], rt[1] - rb[1], rt[2] - rb[2]]};
 }
 /* Direct linear transform with normalised coordinates (Hartley): the eigenvector of AᵀA with the smallest eigenvalue. */
 function dlt(idx, px, py, pz) {
@@ -5725,7 +5762,11 @@ function drawShot(fin, c, L, ext) {
       const u0 = up ? [fr.cam.up[0], fr.cam.up[2], -fr.cam.up[1]] : fr.cam.up, r = v3.norm(v3.cross(f, u0)), u = v3.cross(r, f);
       VIEWCAM = {pos:fr.Cm, f, r, u, project:X => { const z = v3.dot(v3.sub(X, fr.Cm), f); if (z <= 1e-3) return null;
         const raw = up ? [X[0] / um, -X[2] / um, X[1] / um] : X.map(v => v / um), q = P.map(rw => rw[0] * raw[0] + rw[1] * raw[1] + rw[2] * raw[2] + rw[3]);
-        return [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, z]; }}; }
+        return [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, z]; },
+        // the ray through a canvas pixel (device pixels, y up), from the solved camera
+        ray:(fx, fy) => { const px = (fx - fit[0]) / fw * fr.W, py = (1 - (fy - fit[1]) / fh) * fr.H, I = fr.cam.inv;
+          let d = I.map(rw => rw[0] * px + rw[1] * py + rw[2]); if (v3.dot(d, fr.cam.fwd) < 0) d = d.map(v => -v);
+          return {ro:fr.Cm, rd:v3.norm(up ? [d[0], d[2], -d[1]] : d)}; }}; }
     let li = [0, 0, -1];
     if (c.ltype === 0) {
       const P = fr.cam.P, um = fr.um, up = S.shot.upZ;
@@ -5749,7 +5790,9 @@ function drawShot(fin, c, L, ext) {
   SHOT.vp = vp; SHOT.cpos = cpos;
   { const f = v3.norm(v3.sub(t0, cpos)), b = basis(f);
     VIEWCAM = {pos:cpos, f, r:b.r, u:b.u, project:X => { const c4 = [0, 1, 2, 3].map(i => vp[i] * X[0] + vp[4 + i] * X[1] + vp[8 + i] * X[2] + vp[12 + i]); if (c4[3] <= 1e-4) return null;
-      return [(c4[0] / c4[3] * 0.5 + 0.5) * cv.width, (c4[1] / c4[3] * 0.5 + 0.5) * cv.height, c4[3]]; }}; }
+      return [(c4[0] / c4[3] * 0.5 + 0.5) * cv.width, (c4[1] / c4[3] * 0.5 + 0.5) * cv.height, c4[3]]; },
+      ray:(fx, fy) => { const tv = Math.tan((SHOT.vfov || 40) * DEG / 2), sx = (fx / cv.width * 2 - 1) * cv.width / cv.height, sy = fy / cv.height * 2 - 1;
+        return {ro:cpos, rd:v3.norm(v3.add(f, v3.add(v3.mul(b.r, tv * sx), v3.mul(b.u, tv * sy))))}; }}; }
   bindTarget(null);
   gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
