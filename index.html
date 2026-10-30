@@ -976,6 +976,15 @@ vec3 twigMove(int node, float w, vec2 xy){
   float s1 = sin(TAU * qf(uTwF.x * j) * uT + rp.x), s2 = sin(TAU * qf(uTwF.y * j) * uT + rp.y), s3 = sin(TAU * qf(uTwF.z * j) * uT + rp.z);
   return uTwA * E * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
 }
+uniform sampler2D uOvl; uniform int uOvlOn;
+// painted density where this point of the tree sits at rest, seen along the sun: + thins it out, - fills it in
+float paintK(vec3 p0){
+  if (uOvlOn == 0) return 0.0;
+  vec2 g = vec2((p0.x - (p0.z - uZr) * uCot) / uLx, p0.y / uLy);
+  if (uWrap == 1) g = fract(g);
+  return textureLod(uOvl, g, 0.0).r * 2.0 - 1.0;
+}
+float hashI(int i, uint s){ uint h = uint(i) * 2654435761u + s; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 65535u) / 65535.0; }
 vec3 rot(vec3 v, vec3 ax, float a){ return v * cos(a) + cross(ax, v) * sin(a) + ax * dot(ax, v) * (1.0 - cos(a)); }
 void main(){
   int corner = gl_VertexID;
@@ -996,8 +1005,13 @@ void main(){
   // and they are pushed over downwind, turning toward edge-on as the wind rises (reconfiguration)
   if (spd > 0.05){ vec3 la = normalize(vec3(-Wv.y, Wv.x, 0.0)); float lean = min(uLeanK * spd * spd, 0.9); n = rot(n, la, lean); ax = rot(ax, la, lean * 0.5); }
   vec3 side = normalize(cross(ax, n));
+  // painted density: opening up drops leaves (each by its own chance, so the crown thins naturally), filling in
+  // grows them, closing the gaps between; it is tied to where each leaf hangs, so it moves with the tree
+  float pk = paintK(aPos.xyz), ls = 1.0;
+  if (pk > 0.0){ if (hashI(gl_InstanceID / 4, 17u) < pk * 1.08) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; } ls = 1.0 - 0.25 * pk; }
+  else ls = 1.0 - 0.9 * pk;
   vec3 P = aPos.xyz + disp + n * (0.06 * aAxis.w * th);
-  vec3 W = P + ax * (c.x * aAxis.w) + side * (c.y * aNorm.w);
+  vec3 W = P + (ax * (c.x * aAxis.w) + side * (c.y * aNorm.w)) * ls;
   // light space: project along the sun onto the receiver, then view perpendicular to the beam
   vec2 g = vec2((W.x - (W.z - uZr) * uCot) / uLx, W.y / uLy);
   vec2 gc = vec2((P.x - (P.z - uZr) * uCot) / uLx, P.y / uLy);
@@ -1079,9 +1093,21 @@ vec3 twigMove(int node, float w, vec2 xy){
 }
 out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out int vSlice;
 vec3 dsp(float n, vec2 xy){ int i = int(n + 0.5); vec4 d = texelFetch(uDisp, ivec2(i % 1024, i / 1024), 0); return d.xyz + twigMove(i, d.w, xy); }
+uniform sampler2D uOvl; uniform int uOvlOn;
+// painted density where this point of the tree sits at rest, seen along the sun: + thins it out, - fills it in
+float paintK(vec3 p0){
+  if (uOvlOn == 0) return 0.0;
+  vec2 g = vec2((p0.x - (p0.z - uZr) * uCot) / uLx, p0.y / uLy);
+  if (uWrap == 1) g = fract(g);
+  return textureLod(uOvl, g, 0.0).r * 2.0 - 1.0;
+}
+float hashI(int i, uint s){ uint h = uint(i) * 2654435761u + s; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 65535u) / 65535.0; }
 void main(){
   int corner = gl_VertexID;
   vec2 c = (corner == 0) ? vec2(0.0, -1.0) : (corner == 1 || corner == 4) ? vec2(1.0, -1.0) : (corner == 2 || corner == 3) ? vec2(0.0, 1.0) : vec2(1.0, 1.0);
+  // where it is opened right up, the finer twigs go too; the limbs stay
+  float pk = paintK(0.5 * (aA.xyz + aB.xyz));
+  if (pk > 0.55 && max(aA.w, aB.w) < 0.035 && hashI(gl_InstanceID / 4, 29u) < (pk - 0.55) * 2.4) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec3 A = aA.xyz + dsp(aN.x, aA.xy), B = aB.xyz + dsp(aN.y, aB.xy);
   vec2 ga = vec2((A.x - (A.z - uZr) * uCot) / uLx, A.y / uLy), gb = vec2((B.x - (B.z - uZr) * uCot) / uLx, B.y / uLy);
   vec2 t = gb - ga; float tl = length(t);
@@ -2657,7 +2683,9 @@ function renderTrees(P, res, t, tl) {
   gl.clearBufferfv(gl.COLOR, 0, [1, 1, 1, 1]); gl.clearBufferfv(gl.COLOR, 1, [1, 1, 1, 1]);
   gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
-  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); const Wd = TR.wind; gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds); };
+  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); const Wd = TR.wind; gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds);
+    // painted density (Paint over), sampled by every leaf and twig at its resting place
+    const ov = ovlOn() && ovlTarget('trees').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) { tex(p, 'uOvl', ovlTex(ovlTarget('trees')), 3); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex); } };
   if (P.woody) {
     const p = PR.seg; gl.useProgram(p.p); gl.bindVertexArray(TR.segVAO);
     common(p); f1(p, 'uPx', 1 / res); f1(p, 'uTile', P.tileSize);
@@ -3416,10 +3444,26 @@ function renderWindows(P, res, t, tl) {
    beams, streaks, splotches, a cucoloris board, water shimmer, soft
    spots. The tiling ones are exactly periodic; all of them loop.
    ===================================================================== */
-const FS_SHAPE = COMMON + `
+const OVL_GLSL = `
+// paint over: k > 0 opens the pattern up (light grows into the gaps, then clears), k < 0 thickens it
+vec3 ovlMod(vec3 g, float k){
+  if (abs(k) < 0.004) return g;
+  vec3 o;
+  if (k > 0.0){
+    o = max(g, min(g * (1.0 + 6.0 * k), max(g, vec3(1.0))));
+    o = mix(o, max(g, vec3(1.0)), smoothstep(0.65, 1.0, k));
+  } else {
+    float a = -k;
+    o = g * pow(clamp(g, 0.0, 1.0), vec3(3.0 * a));
+    o = mix(o, vec3(0.0), smoothstep(0.65, 1.0, a));
+  }
+  return o;
+}`;
+const FS_SHAPE = COMMON + OVL_GLSL + `
 uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint;
 uniform float uSpread, uAngle, uWidth, uWVar, uSoft, uFall, uBrk, uScale, uAmount, uMotion, uT, uLoopT;
 uniform vec2 uApex; uniform int uPz; uniform float uAim;
+uniform sampler2D uOvl; uniform int uOvlOn; vec2 gOv = vec2(0.0);
 // organic motion
 uniform vec2 uDriftOff; uniform float uMorphZ, uFlowZ; uniform int uPzM, uPzF;
 uniform float uSway, uSwayHz, uWindA, uFlow, uBreath, uBreathT, uGust, uFlutter; uniform ivec2 uWindI;
@@ -3689,13 +3733,14 @@ float breathAt(vec2 uv){
   return uBreath * 0.16 * (0.65 * sin(TAU * f * uT + ph * 6.0) + 0.35 * sin(TAU * qf(f * 0.618) * uT + 1.7));
 }
 
-void main(){
+void shapeMain(){
   vec2 uv0 = gl_FragCoord.xy / uRes;
   float v = 0.0;
   int F = max(1, int(uScale + 0.5));
   bool moving = uShape >= 3 && uShape != 8;
   useZ(uMorphZ, uPzM);
   vec2 uv = moving ? motionUV(uv0) : uv0;
+  gOv = uv;
   float br = moving ? breathAt(uv0) : 0.0;
   gAmt = clamp(uAmount + br, 0.02, 0.98);
   if ((uShape >= 15 && uShape <= 19) || ((uShape == 9 || uShape == 11) && uSway <= 0.0)){
@@ -3798,6 +3843,11 @@ void main(){
   }
   if (uShape == 7) v = mix(uDark, 1.0, v);
   fragColor = vec4(vec3(v), 1.0);
+}
+// the painting rides on the pattern: it is looked up where the drifting, flowing pattern has carried that spot
+void main(){
+  shapeMain();
+  if (uOvlOn == 1) fragColor.rgb = ovlMod(fragColor.rgb, texture(uOvl, gOv).r * 2.0 - 1.0);
 }`;
 /* Light pool: only the middle of the frame lets light through. Shadows thicken toward the
    edge, which is itself organic rather than a clean circle, and the frame ends in black. */
@@ -3876,6 +3926,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
     f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
     tex(p, 'uPaint', paintTex(), 1);
+    const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) tex(p, 'uOvl', ovlTex(ovlTarget('shapes')), 2);
   });
   return out;
 }
@@ -5147,24 +5198,11 @@ function paintDefs() {
    in chosen areas. The layer sits on top of the finished gobo and
    stays put while the pattern moves underneath.
    ===================================================================== */
-const FS_OVL = COMMON + `
+const FS_OVL = COMMON + OVL_GLSL + `
 uniform sampler2D uSrc, uOvl;
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 g = texture(uSrc, uv).rgb;
-  float k = texture(uOvl, uv).r * 2.0 - 1.0;          // 0 leaves the gobo alone
-  vec3 o;
-  if (k > 0.0){
-    // opening up: light grows into the gaps first (they widen and the leaves thin), then everything clears
-    o = max(g, min(g * (1.0 + 6.0 * k), max(g, vec3(1.0))));
-    o = mix(o, max(g, vec3(1.0)), smoothstep(0.65, 1.0, k));
-  } else {
-    // thickening: gaps close in from their edges, then it goes dark
-    float a = -k;
-    o = g * pow(clamp(g, 0.0, 1.0), vec3(3.0 * a)) ;
-    o = mix(o, vec3(0.0), smoothstep(0.65, 1.0, a));
-  }
-  fragColor = vec4(o, 1.0);
+  fragColor = vec4(ovlMod(texture(uSrc, uv).rgb, texture(uOvl, uv).r * 2.0 - 1.0), 1.0);
 }`;
 PR.ovl = program(VS_FULL, FS_OVL, 'paint over');
 function ovlTex(T) {
@@ -5183,7 +5221,8 @@ function ovlTex(T) {
 }
 // applied to the finished gobo, before the output levels
 function ovlApply(src) {
-  if (!ovlOn()) return src;
+  // trees take the painting as leaf density and shapes inside their own moving coordinates; the rest here
+  if (!ovlOn() || ['trees', 'shapes'].includes(MODES[S.mode].kind)) return src;
   const T = ovlTarget(); if (!T.used) return src;
   const out = tgt('ovlOut', src.w, src.h, 'f16');
   pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); });
@@ -5198,10 +5237,11 @@ function ovlAction(a) {
 // the Paint over section, at the top of every pattern's panel
 function ovlGroup() {
   const on = ovlOn(), P = S.ovl, tool = P.pbTool | 0;
-  const defs = [{k:'__on', l:'Paint over the gobo', type:'chk', h:'Paint on top of the pattern in chosen areas: open it up (thinner leaves, a clearing, light back on a face) or thicken it. The pattern keeps moving underneath; the painting stays where you put it.'}];
+  const trees = MODES[S.mode].kind === 'trees';
+  const defs = [{k:'__on', l:trees ? 'Paint leaf density' : 'Paint over the gobo', type:'chk', h:trees ? 'Paint where the canopy should be thinner or fuller. Leaves are removed or grown where you paint (and the finer twigs go where it is cleared right out), so it still looks and moves like a tree.' : 'Paint on top of the pattern in chosen areas to open it up or thicken it. On moving shapes the painting travels with the pattern.'}];
   if (on) defs.push(
     {type:'mount', mount:el => paintPad(el, ovlTarget())},
-    {k:'pbInk', l:'Effect', opts:['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original']},
+    {k:'pbInk', l:'Effect', opts:MODES[S.mode].kind === 'trees' ? ['Thin out the leaves (more light)', 'Fill in the leaves (more shadow)', 'Erase back to the original'] : ['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original']},
     {k:'pbTool', l:'Brush', opts:['Soft round', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Blur (soften the painting)'], vals:[0, 6, 7, 8, 3]},
     {k:'pbSize', l:'Brush size', min:0.5, max:60, step:0.1, u:'%'},
     {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
@@ -5209,7 +5249,7 @@ function ovlGroup() {
     ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
     {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
     {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
-    {type:'note', l:'Paint on the canvas above (warm shows where it is opened up, blue where it is thickened), on the Gobo preview, or in the Scene view right where the light lands — for example on a face that the leaves shade too much.'},
+    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
   );
   return defs;
 }
