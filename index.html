@@ -719,7 +719,7 @@ try {
       if (!(saved.ver >= 10) && m === 'shapes') { S.p[m].breath = 0; if (!(S.p[m].blend > 0)) S.p[m].blend = DEFAULTS[m].blend; }
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
@@ -728,7 +728,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, ver:10})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, ver:10})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -2379,7 +2379,10 @@ function windModes(T, P, tl) {
   });
   return {modes, U, wx, wy, sig};
 }
-function windSetup(T, P, tl) {
+function windSetup(T, P, tl) { const g = windSetupGen(T, P, tl); while (!g.next().done); }
+/* The simulation set-up is a generator so it can run in short slices between frames: changing a wind slider
+   keeps the preview moving with the old wind until the new one is ready, instead of freezing the page. */
+function* windSetupGen(T, P, tl) {
   const {B, G, sp} = T;
   const WM = windModes(T, P, tl), M = WM.modes.length, U = WM.U;
   const palm = sp.kind === 'palm';
@@ -2468,11 +2471,14 @@ function windSetup(T, P, tl) {
       aa[o] = pax + ax; aa[o + 1] = pay + ay; aa[o + 2] = paz + az;
     }
   };
-  // run until the start-up transient has died away
-  const warm = Math.max(18, 4 / (zeta * 2 * Math.PI * Math.min(...groups.map(g => g.fn))));
-  const warmSteps = Math.round(Math.min(warm, 40) / dt);
+  // start every branch already bent by the mean wind, so the start-up transient is small and dies away quickly
+  for (let i = 0; i < ng; i++) {
+    const mx = U * pz[i] * WM.wx, my = U * pz[i] * WM.wy, sp2 = Math.pow(mx * mx + my * my + 1e-6, 0.2) * kap[i], w2 = om[i] * om[i];
+    qx[i * 3] = sp2 * mx / w2; qx[i * 3 + 1] = sp2 * my / w2;
+  }
+  const warmSteps = Math.round(12 / dt);
   setPhase(-warmSteps * dt);
-  for (let s2 = 0; s2 < warmSteps; s2++) step();
+  for (let s2 = 0; s2 < warmSteps; s2++) { step(); if (s2 % 120 === 119) yield; }
   let rec = null, F = 0, rate = 30, live = null;
   if (tl.loop) {
     // looping: record one period of the (now periodic) response
@@ -2486,6 +2492,7 @@ function windSetup(T, P, tl) {
       const tNow = s2 * dt;
       while (f < F && f / rate <= tNow + 1e-9) { rec.set(qx.subarray(0, ng * 3), f * ng * 3); f++; }
       if (s2 < nSteps) step();
+      if (s2 % 120 === 119) yield;
     }
     // remove the last trace of transient so the loop closes exactly
     const end = Float32Array.from(qx);
@@ -2537,6 +2544,7 @@ function windSetup(T, P, tl) {
     const f2 = fBase * (0.75 + 0.5 * r()), a = r();
     fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = famp * (0.15 + 1.4 * a * a);
   }
+  if (TR.data !== T) return;   // the tree changed while this ran
   gl.bindBuffer(gl.ARRAY_BUFFER, TR.flutBuf);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, fl);
   // wind modes for the leaves (evaluated on the GPU at every leaf)
@@ -2551,7 +2559,7 @@ function windSetup(T, P, tl) {
   } else {
     // estimate from the first 10 s of the live run, then rewind
     const o = top * 3, xs = [], ys = [];
-    for (let k = 1; k <= 100; k++) { const q2 = live.at(k * 0.1); xs.push(q2[o]); ys.push(q2[o + 1]); }
+    for (let k = 1; k <= 60; k++) { const q2 = live.at(k * 0.1); xs.push(q2[o]); ys.push(q2[o + 1]); if (k % 10 === 0) yield; }
     const mx = xs.reduce((a2, b2) => a2 + b2, 0) / xs.length, my = ys.reduce((a2, b2) => a2 + b2, 0) / ys.length;
     rms = Math.sqrt(xs.reduce((a2, v, i) => a2 + (v - mx) ** 2 + (ys[i] - my) ** 2, 0) / xs.length); mean = [mx, my];
     live.restore(live.cps[0]);
@@ -2614,10 +2622,21 @@ function treesFor(P, tl = S.tl.trees) {
     // so the panel stays responsive and the preview says what is happening
     if (!TR.wind || TR.wind.ng === undefined || TR.windTree !== TR.sig) { windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; }
     else if (TR.windPending !== ws) {
+      // simulate the new wind in the background, a few milliseconds at a time; the old wind keeps playing meanwhile
       TR.windPending = ws;
-      const hud = $('hud'); const chip = document.createElement('span'); chip.className = 'chip ok'; chip.textContent = 'Simulating the wind…'; hud && hud.append(chip);
+      const hud = $('hud'); if (hud && !hud.querySelector('.windchip')) { const chip = document.createElement('span'); chip.className = 'chip ok windchip'; chip.textContent = 'Simulating the wind…'; hud.append(chip); }
       clearTimeout(TR.windTimer);
-      TR.windTimer = setTimeout(() => { if (TR.windPending === ws && TR.sig === TR.windTree) { windSetup(TR.data, P, tl); TR.windSig = ws; } TR.windPending = null; dirty = true; }, 250);
+      const tree = TR.data, treeSig = TR.sig, P2 = {...P}, tl2 = {...tl};
+      TR.windTimer = setTimeout(() => {
+        const gen = windSetupGen(tree, P2, tl2);
+        const pump = () => {
+          if (TR.windPending !== ws || TR.sig !== treeSig) return;          // superseded
+          const t0 = performance.now();
+          while (performance.now() - t0 < 12) { if (gen.next().done) { TR.windSig = ws; TR.windPending = null; dirty = true; const c = document.querySelector('.windchip'); if (c) c.remove(); return; } }
+          TR.windTimer = setTimeout(pump, 0);
+        };
+        pump();
+      }, 120);
     }
   }
   return TR.data;
@@ -3934,6 +3953,7 @@ function render() {
   if (usesPool()) out = poolPass(out);
   // in a shot the hull pattern runs the length of the hull, so it is not faded at the sides
   if (S.mode === 'hull' && S.p.hull.fade > 0 && !(shotActive() && S.view === 'scene')) out = fadePass(out, S.p.hull.fade);
+  out = ovlApply(out);
   const Pp = S.post[S.mode];
   const fin = tgt('final', S.res, S.res, 'u8', true);
   pass(PR.post, fin, p => {
@@ -4533,6 +4553,15 @@ function buildPanel() {
       d.append(sm, c); groups.append(d);
     });
   }
+  // Paint over: available for every pattern, near the top
+  {
+    S.ovl.__on = ovlOn();
+    const d = document.createElement('details'); d.className = 'grp first'; d.open = true;
+    const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label"></span>'; sm.firstChild.textContent = 'Paint over';
+    const c = document.createElement('div'); c.className = 'ctrls';
+    ovlGroup().forEach(def => c.append(control(def, S.ovl, 'ovl', null, ovlChanged)));
+    d.append(sm, c); groups.prepend(d);
+  }
   // Framing is the first decision for a gobo, so it sits above everything else in the panel
   const top = $('topctl'); top.innerHTML = ''; top.hidden = true;
   const groupsNow = m.groups.map(g => ({...g, params:g.params.filter(d => d.k !== 'framing')}));
@@ -4587,7 +4616,7 @@ $('vw-gobo').onclick = () => setView('gobo');
   if (rb) rb.onclick = () => {
     if (Date.now() - armed < 4000) {
       window.__noSave = true; clearTimeout(saveTimer);
-      try { localStorage.removeItem(STORE); localStorage.removeItem('cucLab.paint'); } catch (e) {}
+      try { localStorage.removeItem(STORE); localStorage.removeItem('cucLab.paint'); Object.keys(localStorage).filter(k => k.startsWith('cucLab.ovl.')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
       location.reload();
       return;
     }
@@ -4659,6 +4688,7 @@ function updateHud(ms) {
   const m = MODES[S.mode], tl = TL();
   hud.innerHTML = '';
   const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
+  if (typeof TR !== 'undefined' && TR.windPending && MODES[S.mode].kind === 'trees') add('Simulating the wind…', 'ok windchip');
   if (S.view === 'scene') {
     const c = SC();
     add('Scene preview', 'ok');
@@ -4712,20 +4742,36 @@ function paintTex() {
   }
   return PAINT.tex;
 }
+/* ---------- paint targets: the Paint-your-own gobo, or a mode's paint-over layer ---------- */
+PAINT.key = PAINT_KEY; PAINT.set = () => S.p.shapes; PAINT.kind = 'gobo';
+const OVL = {};
+if (!S.ovl) S.ovl = {};
+S.ovl = {on:{}, pbTool:0, pbInk:0, pbSize:10, pbSoft:0.8, pbFlow:0.35, pbWrap:true, pbBlur:0.5, ...S.ovl};
+const ovlOn = () => !!(S.ovl.on || {})[S.mode];
+function ovlTarget(m = S.mode) {
+  if (OVL[m]) return OVL[m];
+  const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
+  const T = OVL[m] = {cv:c, ctx:c.getContext('2d'), N, tex:null, dirty:true, undo:[], last:null, saveT:0, key:'cucLab.ovl.' + m, set:() => S.ovl, kind:'ovl', used:false};
+  T.ctx.fillStyle = 'rgb(128,128,128)'; T.ctx.fillRect(0, 0, N, N);
+  try { const url = localStorage.getItem(T.key); if (url) { T.used = true; const im = new Image(); im.onload = () => { T.ctx.drawImage(im, 0, 0, N, N); T.dirty = true; dirty = true; }; im.src = url; } } catch (e) {}
+  return T;
+}
+let CUR = null;   // the target of the stroke in progress
+const PT = () => CUR || (ovlOn() ? ovlTarget() : paintCanvas());
 const PB = () => {
-  const P = S.p.shapes;
+  const P = PT().set();
   return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
           angle:P.pbAngle ?? 20, len:P.pbLen ?? 6, streak:P.pbStreak ?? 0.5, blurAmt:P.pbBlur ?? 0.5};
 };
-function paintSave() {
-  clearTimeout(PAINT.saveT);
-  PAINT.saveT = setTimeout(() => { try { localStorage.setItem(PAINT_KEY, PAINT.cv.toDataURL('image/png')); } catch (e) {} }, 700);
+function paintSave(T = PT()) {
+  clearTimeout(T.saveT);
+  T.saveT = setTimeout(() => { try { localStorage.setItem(T.key, T.cv.toDataURL('image/png')); } catch (e) {} }, 700);
 }
-function paintChanged() { PAINT.dirty = true; dirty = true; paintSave(); padRedraw(); }
-function pushUndo() {
-  const c = document.createElement('canvas'); c.width = c.height = PAINT.N;
-  c.getContext('2d').drawImage(PAINT.cv, 0, 0);
-  PAINT.undo.push(c); if (PAINT.undo.length > 12) PAINT.undo.shift();
+function paintChanged(T = PT()) { T.dirty = true; T.used = true; dirty = true; paintSave(T); padRedraw(); }
+function pushUndo(T = PT()) {
+  const c = document.createElement('canvas'); c.width = c.height = T.N;
+  c.getContext('2d').drawImage(T.cv, 0, 0);
+  T.undo.push(c); if (T.undo.length > 12) T.undo.shift();
 }
 /* ---------- brush sprites: drawn once per dab as a white alpha mask, then tinted with the ink ---------- */
 function sprite(w, h, draw) {
@@ -4773,12 +4819,12 @@ function noiseTile() {
 }
 // one dab of the brush, repeated across the edges when wrapping so the gobo stays seamless
 function dab(x, y) {
-  const b = PB(), N = PAINT.N, ctx = PAINT.ctx, r = Math.max(1, b.size / 100 * N * 0.5);
-  const col = b.ink ? '255,255,255' : '0,0,0';
+  const b = PB(), N = PT().N, ctx = PT().ctx, r = Math.max(1, b.size / 100 * N * 0.5);
+  const col = PT().kind === 'ovl' ? ['255,255,255', '0,0,0', '128,128,128'][b.ink] : b.ink ? '255,255,255' : '0,0,0';
   const ext = b.tool === 4 ? Math.max(r, r * b.len) : b.tool === 5 ? r * 2 : r * 1.6;
   const offs = [[0, 0]];
   if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -ext && x + ox < N + ext && y + oy > -ext && y + oy < N + ext) offs.push([ox, oy]);
-  const rr = rng((PAINT.seed = (PAINT.seed || 1) + 1) * 7919);
+  const rr = rng((PT().seed = (PT().seed || 1) + 1) * 7919);
   // brushes built as a sprite are made once per dab and stamped at each wrapped copy
   let spr = null, sang = 0;
   if (b.tool === 4) {
@@ -4801,7 +4847,7 @@ function dab(x, y) {
       const g = x2.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W / 2); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.5 + 0.4 * (1 - b.soft), 'rgba(0,0,0,0.8)'); g.addColorStop(1, 'rgba(0,0,0,0)');
       x2.fillStyle = g; x2.fillRect(0, 0, W, H);
     });
-    tint(spr, col, b.flow * 0.2); sang = PAINT.dir || 0;
+    tint(spr, col, b.flow * 0.2); sang = PT().dir || 0;
   } else if (b.tool === 7) {
     // mottle: a patch of soft noise that fades out at the brush edge
     const nt = noiseTile(), ox0 = rr() * 192, oy0 = rr() * 192;
@@ -4864,7 +4910,7 @@ function dab(x, y) {
       const tx = t.getContext('2d');
       // fill the margin by repeating the canvas across its edges, so blurring near an edge does not pull in black or white
       tx.filter = `blur(${rad}px)`;
-      for (const ox2 of [-N, 0, N]) for (const oy2 of [-N, 0, N]) tx.drawImage(PAINT.cv, ox2 - x0, oy2 - y0);
+      for (const ox2 of [-N, 0, N]) for (const oy2 of [-N, 0, N]) tx.drawImage(PT().cv, ox2 - x0, oy2 - y0);
       tx.filter = 'none'; tx.globalCompositeOperation = 'destination-in';
       const g = tx.createRadialGradient(w / 2, w / 2, r * (1 - b.soft) * 0.95, w / 2, w / 2, r);
       g.addColorStop(0, `rgba(0,0,0,${b.flow})`); g.addColorStop(1, 'rgba(0,0,0,0)');
@@ -4875,48 +4921,75 @@ function dab(x, y) {
   }
 }
 function stroke(x, y) {
-  const b = PB(), N = PAINT.N, r = b.size / 100 * N * 0.5;
+  const b = PB(), N = PT().N, r = b.size / 100 * N * 0.5;
   const step = Math.max(1, r * ({0:0.25, 3:0.35, 4:1.3, 5:0.22, 6:0.5, 7:0.45, 8:0.8}[b.tool] ?? 0.6));
-  if (!PAINT.last) { dab(x, y); PAINT.last = [x, y]; return; }
-  let [lx, ly] = PAINT.last;
+  if (!PT().last) { dab(x, y); PT().last = [x, y]; return; }
+  let [lx, ly] = PT().last;
   // take the short way across a wrapped edge
   if (b.wrap) { if (x - lx > N / 2) lx += N; if (lx - x > N / 2) lx -= N; if (y - ly > N / 2) ly += N; if (ly - y > N / 2) ly -= N; }
   const d = Math.hypot(x - lx, y - ly), n = Math.floor(d / step);
-  if (d > 0.5) PAINT.dir = Math.atan2(y - ly, x - lx);
+  if (d > 0.5) PT().dir = Math.atan2(y - ly, x - lx);
   for (let i = 1; i <= n; i++) { const t = i / n; dab(lx + (x - lx) * t, ly + (y - ly) * t); }
-  if (n) PAINT.last = [x, y];
+  if (n) PT().last = [x, y];
 }
 const paintShape = () => S.mode === 'shapes' && (S.p.shapes.shape | 0) === 14;
-const paintOn = () => S.view === 'gobo' && paintShape();
-function scenePaintOn() { return S.view === 'scene' && paintShape() && (S.p.shapes.pbScene ?? true); }
+const paintOn = () => S.view === 'gobo' && (ovlOn() || paintShape());
+function scenePaintOn() { return S.view === 'scene' && (ovlOn() || (paintShape() && (S.p.shapes.pbScene ?? true))); }
 /* ---------- the paint pad: a small canvas in the panel ---------- */
-const PAD = {cv:null, hover:null};
-function paintPad(el) {
-  paintCanvas();
+const PADS = new Set();
+function paintPad(el, T = paintCanvas()) {
   const c = document.createElement('canvas'); c.width = c.height = 512; c.className = 'paintpad';
-  c.setAttribute('aria-label', 'Paint canvas');
-  el.append(c); PAD.cv = c;
+  c.setAttribute('aria-label', T.kind === 'ovl' ? 'Paint-over canvas' : 'Paint canvas');
+  el.append(c);
+  const pad = {cv:c, T, hover:null}; PADS.add(pad);
   let down = false;
-  const toPx = e => { const r = c.getBoundingClientRect(); return [clamp((e.clientX - r.left) / r.width, 0, 0.9999) * PAINT.N, clamp((e.clientY - r.top) / r.height, 0, 0.9999) * PAINT.N]; };
-  c.addEventListener('pointerdown', e => { pushUndo(); down = true; PAINT.last = null; try { c.setPointerCapture(e.pointerId); } catch (err) {} stroke(...toPx(e)); paintChanged(); e.preventDefault(); });
-  c.addEventListener('pointermove', e => { PAD.hover = toPx(e); if (down) { stroke(...PAD.hover); paintChanged(); } else padRedraw(); });
-  const up = () => { down = false; PAINT.last = null; };
+  const toPx = e => { const r = c.getBoundingClientRect(); return [clamp((e.clientX - r.left) / r.width, 0, 0.9999) * T.N, clamp((e.clientY - r.top) / r.height, 0, 0.9999) * T.N]; };
+  c.addEventListener('pointerdown', e => { CUR = T; pushUndo(T); down = true; T.last = null; try { c.setPointerCapture(e.pointerId); } catch (err) {} stroke(...toPx(e)); paintChanged(T); e.preventDefault(); });
+  c.addEventListener('pointermove', e => { pad.hover = toPx(e); if (down) { CUR = T; stroke(...pad.hover); paintChanged(T); } else padRedraw(); });
+  const up = () => { down = false; T.last = null; CUR = null; };
   c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up);
-  c.addEventListener('pointerleave', () => { PAD.hover = null; padRedraw(); });
+  c.addEventListener('pointerleave', () => { pad.hover = null; padRedraw(); });
   padRedraw();
+}
+// a small copy of the finished gobo, to paint over in the paint-over pad
+let THUMB = null, thumbT = 0;
+function goboThumb() {
+  const f = targets.final; if (!f) return null;
+  const now = performance.now();
+  if (THUMB && now - thumbT < 400 && !THUMB.stale) return THUMB.cv;
+  thumbT = now;
+  const n = 256, t = tgt('thumb', n, n, 'u8');
+  pass(PR.copy, t, p => { tex(p, 'uSrc', f.tex, 0); f1(p, 'uGain', 1); });
+  const px = new Uint8Array(n * n * 4); gl.readPixels(0, 0, n, n, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  if (!THUMB) { const c = document.createElement('canvas'); c.width = c.height = n; THUMB = {cv:c, id:c.getContext('2d').createImageData(n, n)}; }
+  for (let y = 0; y < n; y++) THUMB.id.data.set(px.subarray((n - 1 - y) * n * 4, (n - y) * n * 4), y * n * 4);
+  THUMB.cv.getContext('2d').putImageData(THUMB.id, 0, 0); THUMB.stale = false;
+  return THUMB.cv;
 }
 let padRaf = 0;
 function padRedraw() {
-  if (!PAD.cv || padRaf) return;
+  if (!PADS.size || padRaf) return;
   padRaf = requestAnimationFrame(() => {
     padRaf = 0;
-    const c = PAD.cv; if (!c.isConnected) return;
-    const x = c.getContext('2d');
-    x.drawImage(PAINT.cv, 0, 0, c.width, c.height);
-    if (PAD.hover) {
-      const k = c.width / PAINT.N, r = Math.max(2, PB().size / 100 * c.width * 0.5);
-      x.lineWidth = 1.5; x.strokeStyle = 'rgba(240,178,94,.95)';
-      x.beginPath(); x.arc(PAD.hover[0] * k, PAD.hover[1] * k, r, 0, 2 * Math.PI); x.stroke();
+    for (const pad of [...PADS]) {
+      const c = pad.cv; if (!c.isConnected) { PADS.delete(pad); continue; }
+      const x = c.getContext('2d'), T = pad.T;
+      if (T.kind === 'ovl') {
+        // the finished gobo, with warm tint where it is opened up and blue where it is thickened
+        const th = goboThumb(); x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+        if (th) { x.imageSmoothingEnabled = true; x.drawImage(th, 0, 0, c.width, c.height); }
+        const N = T.N, id = T.ctx.getImageData(0, 0, N, N), o = x.createImageData(N, N);
+        for (let i = 0; i < N * N; i++) { const k = (id.data[i * 4] - 128) / 127, j = i * 4;
+          if (k > 0) { o.data[j] = 255; o.data[j + 1] = 190; o.data[j + 2] = 60; o.data[j + 3] = Math.min(255, k * 160); }
+          else { o.data[j] = 70; o.data[j + 1] = 140; o.data[j + 2] = 255; o.data[j + 3] = Math.min(255, -k * 160); } }
+        const tmp = document.createElement('canvas'); tmp.width = tmp.height = N; tmp.getContext('2d').putImageData(o, 0, 0);
+        x.drawImage(tmp, 0, 0, c.width, c.height);
+      } else x.drawImage(T.cv, 0, 0, c.width, c.height);
+      if (pad.hover) {
+        const k = c.width / T.N, P = T.set(), r = Math.max(2, (P.pbSize ?? 6) / 100 * c.width * 0.5);
+        x.lineWidth = 1.5; x.strokeStyle = 'rgba(240,178,94,.95)';
+        x.beginPath(); x.arc(pad.hover[0] * k, pad.hover[1] * k, r, 0, 2 * Math.PI); x.stroke();
+      }
     }
   });
 }
@@ -4957,7 +5030,7 @@ function goboUVAt(p) {
 (() => {
   let ST = null;
   const evPx = e => { const r = cv.getBoundingClientRect(), d = cv.width / r.width; return [(e.clientX - r.left) * d, (r.bottom - e.clientY) * d]; };
-  const toPaint = p => { const uv = goboUVAt(p); if (!uv) return null; return [(uv[0] - Math.floor(uv[0])) * PAINT.N, (1 - (uv[1] - Math.floor(uv[1]))) * PAINT.N]; };
+  const toPaint = p => { const uv = goboUVAt(p); if (!uv) return null; const N = PT().N; return [(uv[0] - Math.floor(uv[0])) * N, (1 - (uv[1] - Math.floor(uv[1]))) * N]; };
   const point = e => {
     if (!VIEWCAM || !VIEWCAM.ray || !LASTSCENE) return null;
     const {ro, rd} = VIEWCAM.ray(...evPx(e)), hit = sceneHit(e);
@@ -4976,23 +5049,23 @@ function goboUVAt(p) {
     const L = LASTSCENE.L, nl = v3.mul(L.f, -1), n = Math.abs(v3.dot(h.rd, nl)) > 0.25 ? nl : v3.mul(h.rd, -1);
     ST = {n, d:v3.dot(h.p, n), tol:Math.max(0.12, 0.05 * Math.hypot(...v3.sub(h.p, h.ro)))};
     const q = toPaint(h.p); if (!q) { ST = null; return; }
-    paintCanvas(); pushUndo(); PAINT.last = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+    CUR = PT(); pushUndo(); CUR.last = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     stroke(...q); ST.q = q; paintChanged();
   });
   cv.addEventListener('pointermove', e => {
     if (!ST) return;
     const h = point(e), q = h && toPaint(h.p);
-    if (!q) { PAINT.last = null; ST.q = null; return; }
+    if (!q) { PT().last = null; ST.q = null; return; }
     // a sudden leap across the canvas (not across a wrapped edge) starts a new line rather than drawing one
-    if (ST.q) { const N = PAINT.N, wrap = PB().wrap; let dx = Math.abs(q[0] - ST.q[0]), dy = Math.abs(q[1] - ST.q[1]); if (wrap) { dx = Math.min(dx, N - dx); dy = Math.min(dy, N - dy); } if (Math.hypot(dx, dy) > 0.2 * N) PAINT.last = null; }
+    if (ST.q) { const N = PT().N, wrap = PB().wrap; let dx = Math.abs(q[0] - ST.q[0]), dy = Math.abs(q[1] - ST.q[1]); if (wrap) { dx = Math.min(dx, N - dx); dy = Math.min(dy, N - dy); } if (Math.hypot(dx, dy) > 0.2 * N) PT().last = null; }
     stroke(...q); ST.q = q; paintChanged();
   });
-  const up = () => { ST = null; PAINT.last = null; };
+  const up = () => { if (CUR) CUR.last = null; ST = null; CUR = null; };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 })();
 function paintAction(a) {
-  paintCanvas(); const ctx = PAINT.ctx, N = PAINT.N;
-  if (a === 'undo') { const c = PAINT.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
+  const T = CUR = paintCanvas(), ctx = T.ctx, N = T.N;
+  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
   else {
     pushUndo();
     if (a === 'light' || a === 'shadow') { ctx.fillStyle = a === 'light' ? '#fff' : '#000'; ctx.fillRect(0, 0, N, N); }
@@ -5011,11 +5084,11 @@ function paintAction(a) {
       ctx.putImageData(id, 0, 0);
     }
   }
-  paintChanged();
+  paintChanged(T); CUR = null;
 }
 function paintDefs() {
   return [
-    {type:'mount', mount:el => paintPad(el)},
+    {type:'mount', mount:el => paintPad(el, paintCanvas())},
     {k:'pbTool', l:'Brush', opts:['Soft round', 'Blur (soften an area)', 'Light beam (one shaft)', 'Soft streak (follows the stroke)', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Leaf scatter', 'Splatter'], vals:[0, 3, 4, 5, 6, 7, 8, 1, 2]},
     ...((S.p.shapes.pbTool | 0) === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01, h:'How much each pass of the brush softens what is under it. Go over an area again to soften it further. Strength sets how much of the blur is laid down, softness feathers the brush edge.'}] : []),
     ...((S.p.shapes.pbTool | 0) === 4 ? [{k:'pbAngle', l:'Beam angle', min:-90, max:90, step:0.5, u:'°', h:'0° points straight down the frame.'}, {k:'pbLen', l:'Beam length', min:2, max:16, step:0.1, fmt:v => v.toFixed(1) + '× its width'}] : []),
@@ -5038,7 +5111,7 @@ function paintDefs() {
     const r = cv.getBoundingClientRect(), T = S.tiles || 1;
     let u = (e.clientX - r.left) / r.width * T, v = (e.clientY - r.top) / r.height * T;
     u -= Math.floor(u); v -= Math.floor(v);
-    return [u * PAINT.N, v * PAINT.N];
+    return [u * PT().N, v * PT().N];
   };
   const showRing = e => {
     if (!ring) return;
@@ -5053,8 +5126,8 @@ function paintDefs() {
   };
   cv.addEventListener('pointerdown', e => {
     if (!paintOn()) return;
-    paintCanvas(); pushUndo(); down = true; PAINT.last = null;
-    cv.setPointerCapture(e.pointerId);
+    CUR = PT(); pushUndo(); down = true; CUR.last = null;
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     stroke(...toPx(e)); paintChanged();
   });
   cv.addEventListener('pointermove', e => {
@@ -5062,10 +5135,89 @@ function paintDefs() {
     if (!down || !paintOn()) return;
     stroke(...toPx(e)); paintChanged();
   });
-  const up = () => { down = false; PAINT.last = null; };
+  const up = () => { down = false; if (CUR) CUR.last = null; CUR = null; };
   cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
   cv.addEventListener('pointerleave', () => { if (ring) ring.hidden = true; });
 })();
+
+/* =====================================================================
+   PAINT OVER
+   Any gobo, moving or still, can be painted over: open it up (thin the
+   leaves, make a clearing, lift a shadow off a face) or thicken it,
+   in chosen areas. The layer sits on top of the finished gobo and
+   stays put while the pattern moves underneath.
+   ===================================================================== */
+const FS_OVL = COMMON + `
+uniform sampler2D uSrc, uOvl;
+void main(){
+  vec2 uv = gl_FragCoord.xy / uRes;
+  vec3 g = texture(uSrc, uv).rgb;
+  float k = texture(uOvl, uv).r * 2.0 - 1.0;          // 0 leaves the gobo alone
+  vec3 o;
+  if (k > 0.0){
+    // opening up: light grows into the gaps first (they widen and the leaves thin), then everything clears
+    o = max(g, min(g * (1.0 + 6.0 * k), max(g, vec3(1.0))));
+    o = mix(o, max(g, vec3(1.0)), smoothstep(0.65, 1.0, k));
+  } else {
+    // thickening: gaps close in from their edges, then it goes dark
+    float a = -k;
+    o = g * pow(clamp(g, 0.0, 1.0), vec3(3.0 * a)) ;
+    o = mix(o, vec3(0.0), smoothstep(0.65, 1.0, a));
+  }
+  fragColor = vec4(o, 1.0);
+}`;
+PR.ovl = program(VS_FULL, FS_OVL, 'paint over');
+function ovlTex(T) {
+  if (!T.tex) {
+    T.tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, T.tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  }
+  if (T.dirty) {
+    gl.bindTexture(gl.TEXTURE_2D, T.tex); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, T.cv);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); T.dirty = false;
+    if (THUMB) THUMB.stale = true;
+  }
+  return T.tex;
+}
+// applied to the finished gobo, before the output levels
+function ovlApply(src) {
+  if (!ovlOn()) return src;
+  const T = ovlTarget(); if (!T.used) return src;
+  const out = tgt('ovlOut', src.w, src.h, 'f16');
+  pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); });
+  return out;
+}
+function ovlAction(a) {
+  const T = CUR = ovlTarget(), ctx = T.ctx, N = T.N;
+  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
+  else if (a === 'clear') { pushUndo(T); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, N, N); }
+  paintChanged(T); CUR = null;
+}
+// the Paint over section, at the top of every pattern's panel
+function ovlGroup() {
+  const on = ovlOn(), P = S.ovl, tool = P.pbTool | 0;
+  const defs = [{k:'__on', l:'Paint over the gobo', type:'chk', h:'Paint on top of the pattern in chosen areas: open it up (thinner leaves, a clearing, light back on a face) or thicken it. The pattern keeps moving underneath; the painting stays where you put it.'}];
+  if (on) defs.push(
+    {type:'mount', mount:el => paintPad(el, ovlTarget())},
+    {k:'pbInk', l:'Effect', opts:['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original']},
+    {k:'pbTool', l:'Brush', opts:['Soft round', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Blur (soften the painting)'], vals:[0, 6, 7, 8, 3]},
+    {k:'pbSize', l:'Brush size', min:0.5, max:60, step:0.1, u:'%'},
+    {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
+    {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01, h:'How much each stroke adds. Light strokes thin the pattern out or fill it in; keep going over an area to clear it completely or close it up.'},
+    ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
+    {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
+    {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
+    {type:'note', l:'Paint on the canvas above (warm shows where it is opened up, blue where it is thickened), on the Gobo preview, or in the Scene view right where the light lands — for example on a face that the leaves shade too much.'},
+  );
+  return defs;
+}
+function ovlChanged(k) {
+  if (k === '__on') { S.ovl.on = {...(S.ovl.on || {}), [S.mode]:!!S.ovl.__on}; delete S.ovl.__on; buildPanel(); dirty = true; }
+  else if (k === 'pbTool') buildPanel();
+  save();
+}
 
 /* =====================================================================
    OpenEXR reader (scanline images, single- or multi-part; uncompressed,
@@ -6355,7 +6507,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, EXR, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
 requestAnimationFrame(tick);
 })();
 
