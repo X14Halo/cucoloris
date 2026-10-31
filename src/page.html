@@ -1,0 +1,212 @@
+<title>Cucoloris Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: lighting-workbench — square gobo plate dominates the left, a parameter rail runs down the right; stacks on phones */
+:root{
+  --bg:#0e1115;
+  --panel:#141920;
+  --raise:#1b2129;
+  --line:#27303b;
+  --fg:#dfe5ec;
+  --mute:#8994a2;
+  --accent:#f0b25e;      /* tungsten 3200K */
+  --accent-ink:#1b1206;
+  --sky:#9fbef5;         /* daylight 5600K, used for info readouts */
+  --warn:#e4806b;
+  --f-disp:'Archivo', 'Arial Narrow', system-ui, sans-serif;
+  --f-ui:'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-mono:'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:13px;}
+*{box-sizing:border-box}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{
+  height:100%;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 360px;
+  grid-template-rows:auto minmax(0,1fr);
+  gap:0 18px;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));
+  padding-right:max(16px, env(safe-area-inset-right, 0px));
+  padding-block:0 12px;
+}
+.top{
+  grid-column:1 / -1;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-block:12px;border-bottom:1px solid var(--line);margin-bottom:14px;
+}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.mark{width:26px;height:26px;border-radius:50%;flex:none;
+  background:
+    radial-gradient(circle at 34% 38%, var(--bg) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 64% 30%, var(--bg) 0 2px, transparent 2.5px),
+    radial-gradient(circle at 58% 66%, var(--bg) 0 4px, transparent 4.5px),
+    radial-gradient(circle at 30% 70%, var(--bg) 0 2px, transparent 2.5px),
+    var(--accent);
+}
+.brand h1{margin:0;font-family:var(--f-disp);font-stretch:68%;font-weight:760;font-size:22px;letter-spacing:.04em;text-transform:uppercase;line-height:1}
+.brand p{margin:3px 0 0;color:var(--mute);font-size:12px}
+.modes{display:flex;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px;flex-wrap:wrap}
+.mode{background:none;border:0;padding:7px 14px;border-radius:6px;cursor:pointer;color:var(--mute);font-weight:560;font-stretch:88%;letter-spacing:.02em}
+.mode:hover{color:var(--fg)}
+.mode[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+
+.stage{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.plate{position:relative;flex:1;min-height:0;display:grid;place-items:center;
+  background:
+    linear-gradient(var(--line) 1px, transparent 1px) 0 0/40px 40px,
+    linear-gradient(90deg, var(--line) 1px, transparent 1px) 0 0/40px 40px,
+    #0a0c0f;
+  border:1px solid var(--line);border-radius:6px;overflow:hidden}
+#cv{display:block;background:#000;box-shadow:0 0 0 1px #000, 0 10px 40px rgba(0,0,0,.6)}
+.hud{position:absolute;left:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none}
+.chip{font-family:var(--f-mono);font-size:11px;background:rgba(10,12,15,.78);border:1px solid var(--line);padding:3px 7px;border-radius:4px;color:var(--mute);font-variant-numeric:tabular-nums}
+.chip.ok{color:var(--sky)}
+.err{position:absolute;inset:auto 10px 10px 10px;background:#2a1712;border:1px solid var(--warn);color:#f6d2c8;padding:10px 12px;border-radius:6px;font-family:var(--f-mono);font-size:11.5px;white-space:pre-wrap;max-height:50%;overflow:auto}
+
+.transport{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.ib{width:30px;height:30px;display:grid;place-items:center;border-radius:6px;border:1px solid var(--line);background:var(--raise);cursor:pointer;flex:none}
+.ib:hover{border-color:var(--mute)}
+.ib.play{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ib svg{width:14px;height:14px}
+.tc{font-family:var(--f-mono);font-size:11.5px;color:var(--mute);white-space:nowrap;font-variant-numeric:tabular-nums;min-width:150px;text-align:right}
+.viewbar{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:center;color:var(--mute);font-size:12px}
+.viewbar label{display:flex;align-items:center;gap:6px}
+.viewbar select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px}
+.tog{display:flex;align-items:center;gap:6px;cursor:pointer}
+.tog input{accent-color:var(--accent)}
+
+/* sliders */
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:18px;background:transparent;cursor:pointer;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:3px;border-radius:2px;background:linear-gradient(90deg,var(--accent) 0 var(--pct,50%),var(--line) var(--pct,50%) 100%)}
+input[type=range]::-moz-range-track{height:3px;border-radius:2px;background:var(--line)}
+input[type=range]::-moz-range-progress{height:3px;border-radius:2px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--fg);border:2px solid var(--bg);margin-top:-5px;box-shadow:0 0 0 1px var(--line)}
+input[type=range]::-moz-range-thumb{width:10px;height:10px;border-radius:50%;background:var(--fg);border:2px solid var(--bg)}
+#scrub{flex:1;min-width:60px}
+
+.rail{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:4px;padding-bottom:20px}
+.sect-label{font-family:var(--f-disp);font-stretch:75%;font-weight:640;text-transform:uppercase;letter-spacing:.12em;font-size:11px;color:var(--mute)}
+.presets{display:flex;flex-direction:column;gap:8px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.pchip{background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:5px 11px;cursor:pointer;font-size:12px}
+.pchip:hover{border-color:var(--accent);color:var(--accent)}
+.pchip.alt{background:none;color:var(--mute)}
+details.grp{background:var(--panel);border:1px solid var(--line);border-radius:8px}
+details.grp > summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+details.grp > summary::-webkit-details-marker{display:none}
+details.grp > summary::after{content:"";width:7px;height:7px;border-right:1.5px solid var(--mute);border-bottom:1.5px solid var(--mute);transform:rotate(45deg) translateY(-2px);transition:transform .15s}
+details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
+.ctrls{display:flex;flex-direction:column;gap:9px;padding:0 12px 12px}
+.row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center}
+.row > label{color:var(--fg);font-size:12.5px;cursor:default;user-select:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row output{font-family:var(--f-mono);font-size:11.5px;color:var(--accent);font-variant-numeric:tabular-nums}
+.row input[type=range]{grid-column:1 / -1}
+.row select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px;max-width:170px}
+.row.chk input{accent-color:var(--accent);width:16px;height:16px}
+.info{font-family:var(--f-mono);font-size:11px;line-height:1.6;color:var(--sky);background:var(--panel);border:1px dashed var(--line);border-radius:8px;padding:9px 12px;white-space:pre-wrap}
+.hint{color:var(--mute);font-size:11.5px;line-height:1.5;margin:0}
+.phint{grid-column:1 / -1;color:var(--mute);font-size:11px;line-height:1.45;margin:2px 0 0}
+
+.plate.dropping{outline:2px dashed var(--accent);outline-offset:-6px}
+.shotbar{display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;color:var(--fg);margin-left:auto}
+.shotbar select{background:var(--raise);border:1px solid var(--accent);border-radius:6px;padding:6px 8px;max-width:min(440px, 70vw);font-weight:500}
+.phbadge{display:none;font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-ink);background:var(--warn);border-radius:4px;padding:2px 6px}
+body.ph-shot .phbadge{display:inline-block}
+.mountrow{display:block}
+.grp.off{opacity:.45}
+.grp.first{border-color:var(--accent)}
+.grp.off .ctrls{pointer-events:none}
+.gizlayer{position:absolute;pointer-events:none;left:0;top:0}
+.scenetools{position:absolute;top:10px;left:50%;transform:translateX(-50%);display:none;gap:2px;padding:2px;background:rgba(10,12,15,.82);border:1px solid var(--line);border-radius:9px}
+body.in-scene .scenetools{display:flex}
+.scenetools .mode{padding:5px 11px;font-size:12px}
+.scenetools .mode[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.paintpad{display:block;width:100%;aspect-ratio:1/1;border:1px solid var(--line);border-radius:6px;cursor:crosshair;touch-action:none;background:#fff}
+.viewseg{position:absolute;right:10px;top:10px;padding:2px;background:rgba(10,12,15,.82)}
+.hud{right:150px}
+.viewseg .mode{padding:5px 12px;font-size:12px}
+.camhint{position:absolute;left:10px;bottom:8px;margin:0;font-size:11px;color:var(--mute);background:rgba(10,12,15,.7);padding:3px 8px;border-radius:4px;pointer-events:none;display:none}
+body.in-scene .camhint{display:block}
+.brushring{position:absolute;border:1.5px solid rgba(255,255,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.6);border-radius:50%;pointer-events:none}
+body.in-scene .gobo-only{display:none}
+body.in-scene #cv{cursor:grab;touch-action:none;box-shadow:none}
+body.in-scene #cv:active{cursor:grabbing}
+.topctl{padding:10px 12px;border-color:var(--accent)}
+.topctl .row > label{font-weight:600}
+details.grp.scene{border-color:#3a3226}
+input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);border-radius:5px;background:var(--raise);cursor:pointer}
+@media (max-width: 860px){
+  body.in-scene .plate{aspect-ratio:4/3}
+  html,body{height:auto}
+  .app{height:auto;grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto auto}
+  .stage{min-height:auto}
+  .plate{flex:none;aspect-ratio:1/1;max-width:100%}
+  .rail{overflow:visible;padding-right:0}
+  .tc{min-width:0}
+}
+@media (prefers-reduced-motion: reduce){ details.grp > summary::after{transition:none} }
+</style>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <div><h1>Cucoloris Lab</h1><p>Simulated water caustics, tree shadows and window light for light gobos · real-time speed</p></div>
+    </div>
+    <label class="shotbar" title="The shot to light in the Scene view. In the real tool this lists your sequences and shots and builds each one from its utility passes.">Shot <select id="shotSel"></select><span class="phbadge">placeholder</span></label>
+    <nav class="modes" id="modes" role="tablist" aria-label="Where the caustics land"></nav>
+  </header>
+
+  <section class="stage">
+    <div class="plate" id="plate">
+      <canvas id="cv" width="512" height="512" aria-label="Gobo preview"></canvas>
+      <div class="hud" id="hud"></div>
+      <div class="modes viewseg" role="tablist" aria-label="Preview"><button class="mode" role="tab" id="vw-gobo">Gobo</button><button class="mode" role="tab" id="vw-scene">Scene</button></div>
+      <div class="brushring" id="brush" hidden></div>
+      <canvas id="giz" class="gizlayer" aria-hidden="true"></canvas>
+      <div class="scenetools" role="toolbar" aria-label="Scene tools"><button class="mode" id="camReset" title="Back to the default camera (the shot camera when a shot is loaded)">Reset camera</button><button class="mode" id="toolMove" title="Select the light and move it (W)">Move W</button><button class="mode" id="toolRot" title="Select the light and rotate it (E)">Rotate E</button></div>
+      <p class="camhint">Drag to orbit · Shift-drag or right-drag to pan · Scroll to zoom · Double-click resets</p>
+      <div class="err" id="err" hidden></div>
+    </div>
+    <div class="transport">
+      <button class="ib" id="prev" aria-label="Previous frame"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 2h2v12H3zM14 2v12L6 8z"/></svg></button>
+      <button class="ib play" id="play" aria-label="Pause"><svg viewBox="0 0 16 16" fill="currentColor" id="playIcon"><path d="M4 2h3v12H4zM9 2h3v12H9z"/></svg></button>
+      <button class="ib" id="next" aria-label="Next frame"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M11 2h2v12h-2zM2 2v12l8-6z"/></svg></button>
+      <input type="range" id="scrub" min="0" max="1000" step="1" value="0" aria-label="Loop position">
+      <div class="tc" id="tc">0.00 s</div>
+    </div>
+    <div class="viewbar">
+      <label>Preview <select id="vRes"><option value="512">512²</option><option value="1024">1024²</option><option value="2048">2048²</option></select></label>
+      <label>Quality <select id="vQual"><option value="draft">Draft</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
+      <label class="gobo-only">View <select id="vTiles"><option value="1">Single tile</option><option value="2">2 × 2 tiled</option><option value="3">3 × 3 tiled</option></select></label>
+      <label class="tog gobo-only"><input type="checkbox" id="vHeat"> False color</label>
+      <label class="tog gobo-only"><input type="checkbox" id="vSeams"> Tile borders</label>
+    </div>
+  </section>
+
+  <aside class="rail" id="rail">
+    <div class="grp topctl ctrls" id="topctl" hidden></div>
+    <div class="presets">
+      <span class="sect-label">Presets</span>
+      <div class="chips" id="presets"></div>
+    </div>
+    <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
+    <div class="info" id="info"></div>
+    <details class="grp" open>
+      <summary><span class="sect-label">Timeline</span></summary>
+      <div class="ctrls" id="timeline"></div>
+    </details>
+    <button class="pchip alt" id="resetAll" style="align-self:flex-start">Reset everything to defaults</button>
+    <p class="hint">Hover a label for what it means physically; double-click it to reset. Space plays and pauses. Speeds default to real time.</p>
+  </aside>
+</div>
+
+<script>

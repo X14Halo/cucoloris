@@ -1,0 +1,64 @@
+[
+ {
+  "name": "under",
+  "settings": "settings/under.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "over",
+  "settings": "settings/over.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "hull",
+  "settings": "settings/hull.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "trees",
+  "settings": "settings/trees.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "windows",
+  "settings": "settings/windows.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "shapes",
+  "settings": "settings/shapes.json",
+  "frames": [
+   1001,
+   1037
+  ],
+  "res": 256
+ },
+ {
+  "name": "court010_sh0020_trees",
+  "settings": "settings/court010_sh0020_trees.json",
+  "frames": [
+   1001
+  ],
+  "res": 256
+ }
+]

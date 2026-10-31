@@ -1,0 +1,112 @@
+{
+ "schema": "cucoloris.lightrig",
+ "version": 1,
+ "tool": {
+  "name": "Cucoloris Lab",
+  "host": "web",
+  "stateVersion": 10
+ },
+ "shot": {
+  "id": "ph_court_mid",
+  "seq": "court010",
+  "shot": "sh0020",
+  "first": 1001,
+  "last": 1001,
+  "placeholder": true
+ },
+ "space": {
+  "upAxis": "Y",
+  "metersPerUnit": 1,
+  "note": "Positions are in shot world space."
+ },
+ "mode": "trees",
+ "pattern": "Tree shadows",
+ "light": {
+  "type": "distant",
+  "position": [
+   4.005551,
+   10.685754,
+   3.606614
+  ],
+  "aim": [
+   0,
+   1.35,
+   0
+  ],
+  "right": [
+   0.669131,
+   0,
+   -0.743145
+  ],
+  "up": [
+   -0.643582,
+   0.5,
+   -0.579484
+  ],
+  "forward": [
+   -0.371572,
+   -0.866025,
+   -0.334565
+  ],
+  "matrix": [
+   [
+    0.669131,
+    0,
+    -0.743145,
+    0
+   ],
+   [
+    -0.643582,
+    0.5,
+    -0.579484,
+    0
+   ],
+   [
+    0.371572,
+    0.866025,
+    0.334565,
+    0
+   ],
+   [
+    4.005551,
+    10.685754,
+    3.606614,
+    1
+   ]
+  ],
+  "distanceToAim": 10.78,
+  "angle": 0.53,
+  "exposure": 2.2,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "irradianceAtAim": 4.594793
+ },
+ "gobo": {
+  "files": [],
+  "frameRange": null,
+  "pattern": null,
+  "hashPattern": null,
+  "fps": 24,
+  "format": null,
+  "bitDepth": null,
+  "colorSpace": "linear",
+  "channels": "rgb",
+  "resolution": null,
+  "projection": {
+   "kind": "orthographic",
+   "width": 15.102221,
+   "center": [
+    0,
+    1.35,
+    0
+   ]
+  },
+  "wrap": "white",
+  "blur": 0,
+  "imageAxes": "Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling."
+ },
+ "settings": null
+}

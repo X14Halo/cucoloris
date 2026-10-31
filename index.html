@@ -126,7 +126,7 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .shotbar{display:flex;align-items:center;gap:8px;font-weight:600;font-size:12.5px;color:var(--fg);margin-left:auto}
 .shotbar select{background:var(--raise);border:1px solid var(--accent);border-radius:6px;padding:6px 8px;max-width:min(440px, 70vw);font-weight:500}
 .phbadge{display:none;font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-ink);background:var(--warn);border-radius:4px;padding:2px 6px}
-body.has-shot .phbadge{display:inline-block}
+body.ph-shot .phbadge{display:inline-block}
 .mountrow{display:block}
 .grp.off{opacity:.45}
 .grp.first{border-color:var(--accent)}
@@ -4030,6 +4030,48 @@ function display() {
 }
 
 /* =====================================================================
+   HOST
+   Everything the tool needs from the world outside the page goes
+   through this one object. The web version below uses placeholder shots
+   and browser downloads. A production host (a Houdini Python panel, say)
+   defines window.CUCOLORIS_HOST before this script runs; whatever it
+   provides replaces the web version, function by function, and
+   whatever it leaves out keeps working as on the web.
+   docs/HOUDINI.md describes every member and what a TD has to write.
+   ===================================================================== */
+const WEB_HOST = {
+  name:'web',
+  label:'Web',
+  /* The shots the Shot menu lists (an array, or a promise of one). Each:
+     {id, seq, shot, label, first, last,
+      mode?, preset?, lights?, anchors?   – optional starting set-up for the shot
+      placeholder?                        – true only for the mockup's made-up shots} */
+  shots:() => SHOTS,
+  /* The utility passes of one shot, as a source:
+     {units, upZ, read(frame, step) → {pos, nrm?, col?, a?, matte?}, camera?(frame) → camera}
+     units: metres per scene unit (0 = guess from the passes); upZ: true for a Z-up scene.
+     Each pass is {W, H, data:[Float32Array per channel]}, rows top to bottom, in scene units and axes.
+     read() may skip pixels: step 2 means half resolution.
+     camera(frame), when there is one, replaces the camera solved from the position pass:
+     {eye:[x,y,z], at:[x,y,z] or forward:[x,y,z], up:[x,y,z], vfov: vertical field of view in degrees}
+     (or {matrix: the camera's 4×4 world transform, row-major, USD/Houdini row-vector convention, vfov}) */
+  openShot:def => placeholderSource(def),
+  /* Write one exported file. null on the web: the export dialog packs files into downloads (or a folder
+     the viewer picks). A host returns the absolute path it wrote, so the light rig can point at it. */
+  writeFile:null,
+  /* The folder an export of this shot goes to, shown in the dialog and written into the light rig.
+     ctx: {shot (the shot entry or null), mode, name}. '' on the web: files sit next to each other. */
+  exportDir:ctx => '',
+  /* Build or update the light in the 3D app from an exported rig: rig is the object lightRig() returns,
+     files the paths writeFile returned ({gobo:[…], usd, settings}). null on the web: the rig travels in the export. */
+  sendLight:null,
+  /* The tool's timeline moved to this frame number (for a host that wants its own timeline to follow). */
+  frameChanged:null,
+};
+const HOST = Object.assign({}, WEB_HOST, (typeof window !== 'undefined' && window.CUCOLORIS_HOST) || {});
+const hostIsWeb = () => HOST.name === 'web';
+
+/* =====================================================================
    SCENE PREVIEW
    A small ray-traced set (grey floor, back wall, optional test sphere)
    lit by one light that carries the current gobo, the way a texture is
@@ -4366,28 +4408,16 @@ function drawScene(fin) {
   const {p:cpos, t0} = camPos(cam);
   const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
   const tile0 = sceneTile();
-  // real-world scale: a seamless tile repeats at its true width; a framed gobo fills the projection at its true width
-  let cone = c.cone, rep = c.rep, sunScale = c.sunScale;
   // a framed gobo (single element, light pool, a window) fills the projection angle; when the framing first
   // switches to one, the spot opens up to about twice the gobo's real width, so it reaches the ground and wall around the subject
   const framed = sceneFramed();
   if (c._framed !== framed) {
     c._framed = framed;
-    if (framed && c.ltype === 0 && c.real) { c.cone = clamp(+(2 * Math.atan(tile0 / c.dist) / DEG).toFixed(1), 50, 100); cone = c.cone; setTimeout(buildPanel, 0); }
+    if (framed && c.ltype === 0 && c.real) { c.cone = clamp(+(2 * Math.atan(tile0 / c.dist) / DEG).toFixed(1), 50, 100); setTimeout(buildPanel, 0); }
   }
-  if (c.real) {
-    sunScale = 1;
-    if (c.ltype === 0) {
-      if (framed) rep = 1;
-      else rep = Math.max(1, 2 * c.dist * Math.tan(cone * 0.5 * DEG) / tile0);
-    }
-  }
-  const tanC = Math.tan(cone * 0.5 * DEG);
+  const G = goboProjection(c), {cone, rep, tanC, single, sunSize, sunScale} = G, kind = MODES[S.mode].kind;
   const blur = c.blur / 100 * (c.ltype === 1 ? 1 : rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
-  const kind = MODES[S.mode].kind;
-  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 && !shotActive() ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
-  const sunSize = sceneTile() * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
   const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
   const lightLines = () => c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
     : [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${(2 * c.dist * tanC).toFixed(2)} m wide there`,
@@ -4417,6 +4447,21 @@ function drawScene(fin) {
     f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
   });
   return lightLines();
+}
+/* How the scene light projects the gobo: shared by the preview, the light rig export and any host.
+   Spotlight: a point in light space (x right, y up, z forward) lands on gobo uv = 0.5 + 0.5 * (x, y) / (z * tanC) * rep.
+   Sun: a point p lands on uv = 0.5 + (dot(p - aim, right), dot(p - aim, up)) / sunSize.
+   wrap: 0 repeat, 1 white outside the image, 2 black outside, 3 repeat across but black above and below. */
+function goboProjection(c = SC()) {
+  const framed = sceneFramed(), tile0 = sceneTile(), kind = MODES[S.mode].kind;
+  let cone = c.cone, rep = c.rep, sunScale = c.sunScale;
+  if (c.real) {
+    sunScale = 1;
+    if (c.ltype === 0) rep = framed ? 1 : Math.max(1, 2 * c.dist * Math.tan(cone * 0.5 * DEG) / tile0);
+  }
+  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 && !shotActive() ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const sunSize = tile0 * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
+  return {cone, tanC:Math.tan(cone * 0.5 * DEG), rep, sunScale, sunSize, single, framed, tile:tile0};
 }
 // gobos that are a single framed image rather than a repeating tile
 function sceneFramed() {
@@ -4710,6 +4755,11 @@ function updateTransport() {
   const f = Math.min(total - 1, Math.floor(S.t * S.fps + 1e-6));
   const sd = shotActive() && SHOT.frames.length > 1 && shotDef(S.shotSel);
   tc.textContent = sd ? `${sd.shot} · frame ${sd.first + Math.min(f, sd.last - sd.first)} (${sd.first}–${sd.last})` : `${S.t.toFixed(2)} s · frame ${f + 1}/${total}`;
+  // a host that wants its own timeline to follow hears the frame number the export would write
+  if (HOST.frameChanged) {
+    const num = sd ? sd.first + Math.min(f, sd.last - sd.first) : ((S.exp && +S.exp.first) || 1001) + f;
+    if (num !== updateTransport.last) { updateTransport.last = num; try { HOST.frameChanged(num); } catch (e) { console.error(e); } }
+  }
   scrub.value = Math.round(S.t / len * 1000); setPct(scrub);
 }
 
@@ -5441,17 +5491,19 @@ const shotActive = () => !!S.shotSel && !!SHOT.src;
    their utility passes are rendered on the fly, then go through exactly the same steps a real shot's would
    (camera solved from the position pass, pixels turned into a rough model). */
 const SHOTS = [
-  {id:'ph_court_mid', seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard, mid shot (tree dapple)', first:1001, last:1001,
+  {id:'ph_court_mid', placeholder:true, seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard, mid shot (tree dapple)', first:1001, last:1001,
    cam:{eye:[0.8, 1.48, 2.15], at:[0.0, 1.3, 0.0], vfov:30},
    // one big tree overhead, framed in open sunlight, so its shadow covers the person
    preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
    lights:{trees:{ltype:1, follow:true, aim:[0, 1.35, 0], amb:0.2}}},
-  {id:'ph_room', seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
+  {id:'ph_room', placeholder:true, seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
    cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},
    // the window is behind the camera, off screen: only the gobo says it is there
    anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}}, lights:{windows:{ltype:1, follow:true, amb:0.14, ev:1}}},
 ];
-const shotDef = id => SHOTS.find(x => x.id === id);
+// the shots the host offers (the placeholders on the web); filled in when the host answers
+let SHOTLIST = [];
+const shotDef = id => SHOTLIST.find(x => x.id === id);
 // where a pattern's own light geometry sits in a shot: the window opening, or the hull at the waterline
 const shotAnchor = m => (shotActive() && (shotDef(S.shotSel).anchors || {})[m]) || null;
 // the per-shot light for a pattern, and the shared orbit camera; both are made on first use from the shot itself
@@ -5497,7 +5549,7 @@ function selectShot(id, fromMenu) {
     for (const [m, len] of Object.entries(S.tlBackup)) if (S.tl[m]) S.tl[m].len = len;
     S.tlBackup = {};
   } else {
-    S.shotSel = id; SHOT.src = placeholderSource(def);
+    S.shotSel = id; SHOT.src = HOST.openShot(def);
     SHOT.frames = []; for (let n = def.first; n <= def.last; n++) SHOT.frames.push(n);
     SHOT.status = `Building ${def.seq} / ${def.shot} from its utility passes…`;
     SHOT.panelBuilt = false; S.shot.view = 0;
@@ -5511,6 +5563,7 @@ function selectShot(id, fromMenu) {
   }
   const sel = $('shotSel'); if (sel) sel.value = S.shotSel;
   document.body.classList.toggle('has-shot', !!S.shotSel);
+  document.body.classList.toggle('ph-shot', !!(def && def.placeholder));
   syncShotTimeline(); buildTimeline(); buildPanel(); dirty = true; viewDirty = true; save();
 }
 // while a shot is selected the timeline runs over its frame range
@@ -5526,10 +5579,12 @@ function syncShotTimeline() {
   TL().len = L; S.t = S.t % L;
   if (typeof buildTimeline === 'function' && $('timeline')) buildTimeline();
 }
-/* How a real shot would be read: its utility EXRs (position, normals, surface colour), found by the pipeline.
-   Kept for the production version; this mockup only uses the placeholder source below. */
-function exrSource(filesByFrame, layers) {
-  return {units:0, upZ:false, async read(n, step) {
+/* How a real shot is read: its utility EXRs (position, normals, surface colour), found by the pipeline.
+   filesByFrame: Map(frame number → [objects with arrayBuffer(), e.g. File or a fetch Response]);
+   layers: the EXR layer names, {pos, nrm?, col?}; opts: {units, upZ, camera(frame)} as in HOST.openShot.
+   The web version only uses the placeholder source below; a production host returns one of these. */
+function exrSource(filesByFrame, layers, opts = {}) {
+  return {units:opts.units || 0, upZ:!!opts.upZ, camera:opts.camera || null, async read(n, step) {
     const got = {};
     for (const file of filesByFrame.get(n) || []) {
       const e = EXR.open(await file.arrayBuffer()), L = EXR.layers(e);
@@ -5565,8 +5620,9 @@ async function decodeFrameNow(n, key) {
   // which pixels hold geometry
   const valid = new Uint8Array(N);
   for (let i = 0; i < N; i++) valid[i] = (!A || A[i] > 0.002) && isFinite(px[i] + py[i] + pz[i]) && (px[i] !== 0 || py[i] !== 0 || pz[i] !== 0) ? 1 : 0;
-  // camera from the raw positions (scale-free), then units
-  const cam = solveCamera(px, py, pz, valid, W, H);
+  // the shot camera: from the pipeline when the host has it, otherwise solved from the raw positions (scale-free)
+  const hc = src.camera ? await src.camera(n) : null;
+  const cam = hc ? cameraFromHost(hc, W, H) : solveCamera(px, py, pz, valid, W, H);
   // pixels whose position does not project back onto themselves blend two surfaces (or a surface and the sky): drop them
   { const Pm = cam.P;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -5654,14 +5710,33 @@ async function shotShowFrame(n) {
     shotUpload(fr);
     SHOT.vfov = clamp(fr.cam.vfov, 10, 100);
     const c = fr.cam, def = shotDef(sel);
-    SHOT.status = `PLACEHOLDER SHOT ${def.seq} / ${def.shot} · frame ${n} (${def.first}–${def.last}) · ${fr.W}×${fr.H}\n` +
-                  `Camera solved from the position pass: ${c.vfov.toFixed(1)}° vertical field of view, ${c.err.toFixed(2)} px error`;
+    SHOT.status = `${def.placeholder ? 'PLACEHOLDER SHOT' : 'Shot'} ${def.seq} / ${def.shot} · frame ${n} (${def.first}–${def.last}) · ${fr.W}×${fr.H}\n` +
+                  (c.given ? `Shot camera from the ${def.placeholder ? 'placeholder scene' : 'pipeline'}: ${c.vfov.toFixed(1)}° vertical field of view`
+                           : `Camera solved from the position pass: ${c.vfov.toFixed(1)}° vertical field of view, ${c.err.toFixed(2)} px error`);
   } catch (e) { console.error(e); SHOT.status = String(e.message || e); }
   SHOT.loading = null; viewDirty = true; dirty = true;
   // build the next frame of the sequence while this one is on screen
   const at = SHOT.frames.indexOf(n);
   if (SHOT.frames.length > 1 && at >= 0 && SHOT.cache.size < 8) decodeFrame(SHOT.frames[(at + 1) % SHOT.frames.length]).catch(() => {});
   if (S.view === 'scene' && !SHOT.panelBuilt) { SHOT.panelBuilt = true; buildPanel(); }
+}
+/* A camera handed over by the host (in the passes' own units and axes), turned into the same form the solve gives:
+   P maps a point to pixel coordinates (x right, y down, pixel centres at +0.5), C is the eye. */
+function cameraFromHost(c, W, H) {
+  let eye, f, up;
+  if (c.matrix) {
+    const m = c.matrix;                      // rows: x axis, y axis, z axis, translation (camera looks down -z)
+    eye = [m[3][0], m[3][1], m[3][2]]; f = v3.norm([-m[2][0], -m[2][1], -m[2][2]]); up = [m[1][0], m[1][1], m[1][2]];
+  } else {
+    eye = c.eye; f = v3.norm(c.forward || v3.sub(c.at, c.eye)); up = c.up || [0, 1, 0];
+  }
+  const r = v3.norm(v3.cross(f, up)), u = v3.cross(r, f);
+  const fp = (H / 2) / Math.tan((c.vfov || 40) * DEG / 2);
+  const t = [-v3.dot(r, eye), -v3.dot(u, eye), -v3.dot(f, eye)];
+  const R = [[...r, t[0]], [...u, t[1]], [...f, t[2]]];
+  const P = [0, 1, 2].map(i => [0, 1, 2, 3].map(j => i === 0 ? fp * R[0][j] + W / 2 * R[2][j] : i === 1 ? -fp * R[1][j] + H / 2 * R[2][j] : R[2][j]));
+  const inv = inv3(P.map(row => row.slice(0, 3)));
+  return {P, C:[...eye], inv, err:0, n:0, vfov:c.vfov || 40, fwd:f, up:u, given:true};
 }
 /* The shot camera from the position pass: a direct linear transform, solved with
    normalised coordinates (Hartley) and the eigenvector of AᵀA with the smallest eigenvalue. */
@@ -6061,7 +6136,8 @@ function shotOrbitCam() {
 function shotDefs() {
   const def = shotDef(S.shotSel), fr = SHOT.frame;
   return [
-    {type:'note', l:`PLACEHOLDER: ${def.seq} / ${def.shot} is a little set made up for this mockup, not one of your shots. Its utility passes (world position, normals, surface colour and a water matte) were rendered from the shot camera, and the scene and camera you see were rebuilt from those passes alone. The real tool would do the same with your shot's utility passes from the pipeline.`},
+    def.placeholder ? {type:'note', l:`PLACEHOLDER: ${def.seq} / ${def.shot} is a little set made up for this mockup, not one of your shots. Its utility passes (world position, normals, surface colour and a water matte) were rendered from the shot camera, and the scene you see was rebuilt from those passes and the camera. The real tool does the same with your shot's utility passes and camera from the pipeline.`}
+                    : {type:'note', l:`${def.seq} / ${def.shot}, rebuilt from its utility passes (${HOST.label}).`},
     {k:'view', l:'View', opts:['Through the shot camera', 'Orbit the scene']},
     ...((S.shot.view | 0) === 1 ? [{type:'buttons', items:[['Back to the shot camera', () => { S.shot.view = 0; buildPanel(); viewDirty = true; save(); }], ['Frame the light\'s aim point', () => frameAim()]]}] : []),
     {k:'disp', l:'Show', opts:['Lit preview', 'Surface colour pass', 'Normal pass', 'Position pass', 'Depth (from position)'], h:'The utility passes the scene was built from.'},
@@ -6094,12 +6170,24 @@ function shotParamChanged(k) {
     sel.innerHTML = '';
     const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.append(o); };
     add('', 'None · simple stand-in sets');
-    const og = document.createElement('optgroup'); og.label = 'Placeholder shots (mockup)';
-    for (const d of SHOTS) { const o = document.createElement('option'); o.value = d.id; o.textContent = 'PLACEHOLDER · ' + d.label; og.append(o); }
-    sel.append(og);
     sel.onchange = () => selectShot(sel.value, true);
   }
-  if (S.shotSel && shotDef(S.shotSel)) setTimeout(() => selectShot(S.shotSel), 0); else S.shotSel = '';
+  const want = S.shotSel; S.shotSel = '';
+  Promise.resolve().then(() => HOST.shots()).then(list => {
+    SHOTLIST = Array.isArray(list) ? list : [];
+    if (sel) {
+      // grouped by sequence; the mockup's made-up shots say so in the menu
+      const groups = new Map();
+      for (const d of SHOTLIST) { const g = d.placeholder ? 'Placeholder shots (mockup)' : d.seq || 'Shots'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(d); }
+      for (const [g, ds] of groups) {
+        const og = document.createElement('optgroup'); og.label = g;
+        for (const d of ds) { const o = document.createElement('option'); o.value = d.id; o.textContent = (d.placeholder ? 'PLACEHOLDER · ' : '') + (d.label || `${d.seq} / ${d.shot}`); og.append(o); }
+        sel.append(og);
+      }
+    }
+    if (want && shotDef(want)) selectShot(want);
+    else if (sel) sel.value = '';
+  }).catch(e => { console.error(e); showErr('The shot list could not be read: ' + (e && e.message || e)); });
 })();
 (() => {
   // click (not drag) to aim the light
@@ -6286,7 +6374,7 @@ void main(){
 }`;
 PR.place = program(VS_FULL, FS_PLACE, 'placeholder shot');
 function placeholderSource(def) {
-  return {units:1, upZ:false, async read(n, step) {
+  return {units:1, upZ:false, camera:n => ({eye:def.cam.eye, at:def.cam.at, up:[0, 1, 0], vfov:def.cam.vfov}), async read(n, step) {
     const W = Math.round(1920 / step), H = Math.round(1080 / step), N = W * H;
     const c = def.cam;
     const f = v3.norm(v3.sub(c.at, c.eye)), r = v3.norm(v3.cross(f, [0, 1, 0])), u = v3.cross(r, f);
@@ -6537,7 +6625,7 @@ const EXPORT = (() => {
     jpg: {label:'JPEG  .jpg', ext:'jpg', depths:[['8', '8-bit']]},
   };
   const isFloat = d => d === 'half' || d === 'float' || d === '32';
-  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip'};
+  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on'};
   S.exp = {...DEF, ...(S.exp || {})};
   if (!FMT[S.exp.fmt]) S.exp.fmt = 'exr';
   const st = {busy:false, cancel:false};
@@ -6901,21 +6989,22 @@ const EXPORT = (() => {
   }
 
   /* ---------- frames and names ---------- */
-  function frames() {
+  function frames(e = S.exp) {
     const sd = shotActive() && SHOT.frames.length > 1 && shotDef(S.shotSel);
     const total = Math.max(1, Math.round(TL().len * S.fps));
     const cur = Math.min(total - 1, Math.floor(S.t * S.fps + 1e-6));
     if (sd) return {shot:true, lo:sd.first, hi:sd.last, cur:sd.first + cur, time:f => (f - sd.first) / S.fps, num:f => f};
-    return {shot:false, lo:1, hi:total, cur:cur + 1, time:f => (f - 1) / S.fps, num:f => (S.exp.first | 0) + f - 1};
+    return {shot:false, lo:1, hi:total, cur:cur + 1, time:f => (f - 1) / S.fps, num:f => (e.first | 0) + f - 1};
   }
-  const baseName = () => (S.exp.name || '').trim().replace(/[^\w.-]+/g, '_') || defaultName();
+  const baseName = (e = S.exp) => (e.name || '').trim().replace(/[^\w.-]+/g, '_') || defaultName();
   function defaultName() {
     const sd = shotActive() && shotDef(S.shotSel);
     return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + S.mode;
   }
-  const fname = n => `${baseName()}.${String(n).padStart(4, '0')}.${FMT[S.exp.fmt].ext}`;
-  function list() {
-    const F = frames(), e = S.exp;
+  const fname = (n, e = S.exp) => `${baseName(e)}.${String(n).padStart(4, '0')}.${FMT[e.fmt].ext}`;
+  const rigNames = (e = S.exp) => ({usd:`${baseName(e)}.light.usda`, settings:`${baseName(e)}.cucoloris.json`});
+  function list(e = S.exp) {
+    const F = frames(e);
     if (e.range === 'current') return [F.cur];
     let a = e.range === 'all' ? F.lo : Math.round(+e.from), b = e.range === 'all' ? F.hi : Math.round(+e.to);
     if (!isFinite(a)) a = F.lo; if (!isFinite(b)) b = a;
@@ -6924,13 +7013,18 @@ const EXPORT = (() => {
     const out = []; for (let f = a; f <= b; f++) out.push(f);
     return out;
   }
+  const wantsRig = e => e.rig === 'on' || e.rig === true || wantsSend(e);
+  const wantsSend = e => !!HOST.sendLight && (e.send === 'on' || e.send === true);
+  const hostWrites = () => typeof HOST.writeFile === 'function';
+  const joinPath = (dir, name) => dir ? dir.replace(/[\\/]+$/, '') + '/' + name : name;
+  const exportDir = (e = S.exp) => { try { return HOST.exportDir({shot:shotActive() ? shotDef(S.shotSel) : null, mode:S.mode, name:baseName(e)}) || ''; } catch (err) { return ''; } };
 
   /* ---------- where the files go ---------- */
   const inClaude = !!(window.claude && typeof window.claude.use === 'function');
   const dlP = inClaude ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
   const canFolder = !inClaude && typeof window.showDirectoryPicker === 'function';
   // inside Claude a page may hand over only some file types itself; the rest travel in a zip
-  const DIRECT = inClaude ? ['png', 'jpg', 'zip'] : null;
+  const DIRECT = inClaude ? ['png', 'jpg', 'zip', 'json'] : null;
   async function deliver(name, blob) {
     const dl = await dlP;
     if (dl) {
@@ -6947,31 +7041,48 @@ const EXPORT = (() => {
     return true;
   }
 
-  /* ---------- the run ---------- */
+  /* ---------- the run ----------
+     over: settings that replace the dialog's for this run only (the scripting API passes them) */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  async function run(onProgress) {
-    if (st.busy) return;
-    const e = {...S.exp}, F = frames(), fl = list(), R = e.res, nch = e.chans === 'y' ? 1 : 3;
+  async function run(onProgress, over = {}) {
+    if (st.busy) throw new Error('An export is already running.');
+    const e = {...S.exp, ...over}, F = frames(e), fl = list(e), R = +e.res, nch = e.chans === 'y' ? 1 : 3;
+    if (!FMT[e.fmt]) throw new Error(`Unknown format "${e.fmt}".`);
     if (!FMT[e.fmt].depths.some(d => d[0] === e.depth)) e.depth = FMT[e.fmt].depths[0][0];
+    const ext = FMT[e.fmt].ext, base = baseName(e), rig = wantsRig(e), send = wantsSend(e), hw = hostWrites();
     const multi = fl.length > 1;
     let dir = null;
-    if (multi && e.dest === 'folder' && canFolder) {
+    if (!hw && multi && e.dest === 'folder' && canFolder) {
       try { dir = await window.showDirectoryPicker({mode:'readwrite', id:'cucoloris-export'}); }
-      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true}; dir = null; }
+      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true, written:0, total:fl.length}; dir = null; }
     }
+    // on the web, anything beyond a single directly downloadable file travels in a zip
+    const zipAll = !hw && !dir && (multi || rig || (DIRECT && !DIRECT.includes(ext)));
+    const outDir = hw ? exportDir(e) : '';
     const keep = {res:S.res, quality:S.quality, t:S.t, playing:S.playing};
     st.busy = true; st.cancel = false;
     setPlaying(false);
     const ZIPCAP = 1 << 30;
     let zip = null, zparts = 0, written = 0;
+    const paths = [];
     const t0 = performance.now();
     const flush = async (final) => {
       if (!zip || !zip.n) return;
       zparts++;
       const label = final && zparts === 1 ? '' : `_part${zparts}`;
-      await deliver(`${baseName()}.${zip.lo}-${zip.hi}.${FMT[e.fmt].ext}${label}.zip`, zip.blob());
+      await deliver(`${base}.${zip.lo === zip.hi ? zip.lo : zip.lo + '-' + zip.hi}.${ext}${label}.zip`, zip.blob());
       zip = null;
     };
+    // one file to wherever this export writes; returns the path the light rig should use for it
+    const put = async (name, blob, num) => {
+      if (hw) return (await HOST.writeFile(joinPath(outDir, name), blob)) || joinPath(outDir, name);
+      if (dir) { const fh = await dir.getFileHandle(name, {create:true}), ws = await fh.createWritable(); await ws.write(blob); await ws.close(); return './' + name; }
+      if (!zipAll) { await deliver(name, blob); return './' + name; }
+      if (!zip) { zip = new Zip(); zip.lo = zip.hi = num; }
+      await zip.add(name, blob); if (num !== undefined) zip.hi = num;
+      return './' + name;
+    };
+    let result = null;
     try {
       S.res = R; S.quality = e.qual;
       for (let i = 0; i < fl.length; i++) {
@@ -6983,22 +7094,29 @@ const EXPORT = (() => {
         S.t = F.time(f);
         const img = grab(R, nch);
         const blob = await encode(img, e);
-        const name = fname(F.num(f));
-        if (dir) {
-          const fh = await dir.getFileHandle(name, {create:true}), ws = await fh.createWritable();
-          await ws.write(blob); await ws.close();
-        } else if (!multi && (!DIRECT || DIRECT.includes(FMT[e.fmt].ext))) {
-          await deliver(name, blob);
-        } else {
-          if (!zip) { zip = new Zip(); zip.lo = F.num(f); }
-          await zip.add(name, blob); zip.hi = F.num(f);
-          if (zip.size > ZIPCAP) await flush(false);
-        }
+        const num = F.num(f);
+        paths.push({frame:num, path:await put(fname(num, e), blob, num)});
         written++;
+        if (zip && zip.size > ZIPCAP) await flush(false);
+      }
+      // the light rig and the settings that made these frames
+      let rigOut = null;
+      if (rig && !st.cancel && written) {
+        S.res = keep.res; S.t = keep.t;
+        const rn = rigNames(e);
+        const json = new Blob([JSON.stringify(settingsFile(), null, 1)], {type:'application/json'});
+        const setPath = await put(rn.settings, json);
+        const info = {files:paths, pattern:`${base}.$F4.${ext}`, hashPattern:`${base}.####.${ext}`, format:e.fmt, depth:e.depth,
+                      colorSpace:isFloat(e.depth) || e.enc !== 'srgb' ? 'linear' : 'sRGB', channels:e.chans, res:R, fps:S.fps, settingsPath:setPath};
+        const rigObj = lightRig(info);
+        const usdPath = await put(rn.usd, new Blob([rigUSDA(rigObj)], {type:'text/plain'}));
+        rigOut = {rig:rigObj, files:{gobo:paths.map(p => p.path), usd:usdPath, settings:setPath}};
       }
       await flush(!st.cancel || zparts === 0);          // a stopped export still hands over the frames it finished
+      if (rigOut && send) await HOST.sendLight(rigOut.rig, rigOut.files);
       onProgress && onProgress(written, fl.length, null, performance.now() - t0);
-      return {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name};
+      result = {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send)};
+      return result;
     } finally {
       S.res = keep.res; S.quality = keep.quality; S.t = keep.t;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
@@ -7028,6 +7146,7 @@ const EXPORT = (() => {
 .expinl{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 .expnote{margin:0;color:var(--mute);font-size:11.5px;line-height:1.45}
 .expnote b{color:var(--fg);font-weight:600}
+.expnote a{color:var(--sky)}
 .expgo{display:flex;gap:10px;align-items:center}
 .expgo .run{background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:8px 18px;font-weight:600;cursor:pointer}
 .expgo .run:disabled{opacity:.5;cursor:default}
@@ -7036,6 +7155,10 @@ const EXPORT = (() => {
 .expbar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
 .expstat{font-family:var(--f-mono);font-size:11.5px;color:var(--mute);min-height:1.4em}
 .expstat.err{color:var(--warn)}
+.expset{border-top:1px solid var(--line);padding-top:12px}
+.expset button{background:var(--raise);border:1px solid var(--line);border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer}
+.expset button:hover{border-color:var(--accent);color:var(--accent)}
+.expdlg [hidden]{display:none !important}
 @media (max-width:520px){.exprow{grid-template-columns:1fr}}`;
   document.head.append(css);
   const wrap = document.createElement('div');
@@ -7053,9 +7176,14 @@ const EXPORT = (() => {
   <div class="exprow"><span>Quality</span><div class="expseg" data-seg="qual"><button data-v="draft">Draft</button><button data-v="high">High</button><button data-v="ultra">Ultra</button></div></div>
   <div class="exprow"><span>File name</span><input type="text" data-k="name" spellcheck="false" autocomplete="off"></div>
   <div class="exprow" data-show="dest"><span>Save as</span><div class="expseg" data-seg="dest"><button data-v="zip">One zip</button><button data-v="folder">Into a folder</button></div></div>
+  <div class="exprow" data-show="hostdir"><span>Writes to</span><span class="expnote" data-out="hostdir"></span></div>
+  <div class="exprow"><span>Light rig</span><div class="expseg" data-seg="rig"><button data-v="off">Gobo only</button><button data-v="on">Gobo + light rig</button></div></div>
+  <div class="exprow" data-show="send"><span>Then</span><div class="expseg" data-seg="send"><button data-v="off">Just write the files</button><button data-v="on" data-out="sendlbl">Create the light</button></div></div>
   <p class="expnote" data-out="sum"></p>
   <div class="expgo"><button class="run" data-run>Export</button><button class="stop" data-stop hidden>Cancel</button><div class="expbar"><i></i></div></div>
   <div class="expstat" data-out="stat" aria-live="polite"></div>
+  <div class="exprow expset"><span>Settings file</span><div class="expinl"><button data-saveset>Save settings…</button><button data-openset>Open settings…</button><input type="file" accept=".json,application/json" data-setfile hidden></div></div>
+  <p class="expnote">A settings file holds everything that makes this gobo (pattern, levels, timeline, light, paint layers), so it can be opened again here, in another copy of the tool, or by a pipeline script. <a href="https://github.com/X14Halo/cucoloris/blob/main/docs/HOUDINI.md" target="_blank" rel="noopener">How the light rig plugs into Houdini (for TDs)</a></p>
 </div>`;
   document.body.append(wrap);
   const q = s => wrap.querySelector(s);
@@ -7080,16 +7208,24 @@ const EXPORT = (() => {
     q('[data-show="range"]').hidden = e.range !== 'range';
     q('[data-show="first"]').hidden = F.shot;
     q('[data-show="enc"]').hidden = isFloat(e.depth);
-    const fl = list();
-    q('[data-show="dest"]').hidden = !(canFolder && fl.length > 1);
+    const fl = list(), hw = hostWrites(), rig = wantsRig(e), send = wantsSend(e);
+    q('[data-show="dest"]').hidden = hw || !(canFolder && fl.length > 1);
+    q('[data-show="hostdir"]').hidden = !hw;
+    if (hw) q('[data-out="hostdir"]').textContent = exportDir() || '(the host decides)';
+    q('[data-show="send"]').hidden = !HOST.sendLight;
+    q('[data-out="sendlbl"]').textContent = `Create or update the light in ${HOST.label}`;
+    q('[data-run]').textContent = send ? `Export & send to ${HOST.label}` : 'Export';
     q('[data-out="count"]').textContent = `${fl.length} frame${fl.length === 1 ? '' : 's'}` + (F.shot ? ` · shot ${F.lo}–${F.hi}` : ` · timeline 1–${F.hi}`);
     const nch = e.chans === 'y' ? 1 : 3, bytes = {'8':1, '16':2, half:2, float:4, '32':4}[e.depth];
     const mb = e.res * e.res * nch * bytes / 1048576;
     const first = fname(F.num(fl[0])), lastN = fname(F.num(fl[fl.length - 1]));
     let where;
-    if (fl.length > 1 && e.dest === 'folder' && canFolder) where = 'written straight into a folder you pick';
-    else if (fl.length > 1 || (DIRECT && !DIRECT.includes(f.ext))) where = inClaude && fl.length === 1 ? 'in a zip (this page can only hand over PNG, JPEG and zip files directly)' : 'in one zip';
+    if (hw) where = `written by ${HOST.label}`;
+    else if (fl.length > 1 && e.dest === 'folder' && canFolder) where = 'written straight into a folder you pick';
+    else if (fl.length > 1 || rig || (DIRECT && !DIRECT.includes(f.ext))) where = inClaude && fl.length === 1 && !rig ? 'in a zip (this page can only hand over PNG, JPEG and zip files directly)' : 'in one zip';
     else where = 'as a single download';
+    const rn = rigNames();
+    const rigNote = rig ? ` Next to the frames: <b>${rn.usd}</b> (the light, in ${shotActive() ? "the shot's own units and up axis" : 'the stand-in set, metres, Y up'}, with the gobo attached) and <b>${rn.settings}</b> (every setting).` + (send ? ` Then ${HOST.label} builds or updates the light from them.` : '') : '';
     const notes = {
       exr: 'Scanline OpenEXR, ZIP compressed, linear values.',
       ptx: `One quad face (face 0) with mipmaps down to 4×4, v = 0 at the bottom of the image${MODES[S.mode].tileable && !(S.p[S.mode].framing > 0) ? ', periodic borders so the tile wraps' : ''}. Put it on a single-face card, or read face 0 in your light filter.`,
@@ -7097,7 +7233,7 @@ const EXPORT = (() => {
       png: '', jpg: 'JPEG is lossy: handy for previews and reviews, not for lighting.',
     };
     const encNote = isFloat(e.depth) ? 'Float values are linear transmission, exactly as rendered.' : e.enc === 'srgb' ? 'sRGB-encoded: a renderer that reads this as sRGB gets back the exact linear transmission the preview shows.' : 'Linear values written straight into the integer file: tell your renderer the texture is raw / linear.';
-    q('[data-out="sum"]').innerHTML = `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}`;
+    q('[data-out="sum"]').innerHTML = `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}${rigNote}`;
     q('[data-run]').disabled = st.busy;
   }
   function open() {
@@ -7132,7 +7268,7 @@ const EXPORT = (() => {
         bar.style.width = `${(i / n * 100).toFixed(1)}%`;
         if (f !== null) stat.textContent = `Rendering ${fname(frames().num(f))} · ${i + 1} of ${n}` + (i > 0 ? ` · ${(ms / i / 1000).toFixed(1)} s a frame` : '');
       });
-      if (r && !r.cancelled) stat.textContent = `Done: ${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : '') + '.';
+      if (r && !r.cancelled) stat.textContent = `Done: ${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : r.dir ? ` into ${r.dir}` : '') + (r.rig ? ', with the light rig' : '') + (r.sent ? `; the light is set up in ${HOST.label}` : '') + '.';
       else if (r) stat.textContent = `Stopped after ${r.written} of ${r.total} frames` + (r.written ? '; the finished frames were saved.' : '.');
     } catch (err) {
       console.error(err);
@@ -7141,14 +7277,284 @@ const EXPORT = (() => {
       q('[data-run]').disabled = false; q('[data-stop]').hidden = true; sync();
     }
   };
+  // settings files: save this gobo's settings, or open a saved one
+  q('[data-saveset]').onclick = async () => {
+    const stat = q('[data-out="stat"]'); stat.className = 'expstat';
+    try {
+      const name = rigNames().settings, blob = new Blob([JSON.stringify(settingsFile(), null, 1)], {type:'application/json'});
+      if (hostWrites()) { const p = await HOST.writeFile(joinPath(exportDir(), name), blob); stat.textContent = `Saved ${p || name}.`; }
+      else { await deliver(name, blob); stat.textContent = `Saved ${name}.`; }
+    } catch (err) { stat.className = 'expstat err'; stat.textContent = String(err && err.message || err); }
+  };
+  q('[data-openset]').onclick = () => q('[data-setfile]').click();
+  q('[data-setfile]').onchange = async ev => {
+    const file = ev.target.files && ev.target.files[0]; ev.target.value = '';
+    if (!file) return;
+    const stat = q('[data-out="stat"]'); stat.className = 'expstat';
+    try { await applySettings(await file.text()); stat.textContent = `Opened ${file.name}.`; sync(); }
+    catch (err) { stat.className = 'expstat err'; stat.textContent = String(err && err.message || err); }
+  };
   const btn = document.createElement('button');
   btn.className = 'expbtn'; btn.id = 'exportBtn'; btn.textContent = 'Export…';
   btn.title = 'Write the final gobo as an image or an image sequence';
   btn.onclick = open;
   const vb = document.querySelector('.viewbar'); if (vb) vb.append(btn);
 
-  return {get busy() { return st.busy; }, run, open, writePNG, writeTIF, writeEXR, writePTX, writeJPG, Zip, grab, list, frames, FMT};
+  return {get busy() { return st.busy; }, run, open, writePNG, writeTIF, writeEXR, writePTX, writeJPG, Zip, grab, encode, list, frames, fname, rigNames, FMT, DEF};
 })();
+
+/* =====================================================================
+   LIGHT RIG + SETTINGS FILES
+   What an export hands to a 3D app besides the gobo images:
+   · lightRig()        the scene light, in the shot's own units and up axis,
+                       with exactly how the gobo is projected (renderer-neutral)
+   · rigUSDA(rig)      the same as a USD layer: one UsdLux light with the
+                       gobo described in cucoloris:* attributes
+   · settingsFile()    every setting needed to make the same gobo again
+                       (pattern, levels, timeline, light, paint layers);
+                       applySettings() reads one back
+   docs/HOUDINI.md explains each field and how a TD maps it onto a light.
+   ===================================================================== */
+const RIG_VERSION = 1, SETTINGS_VERSION = 1, TOOL_NAME = 'Cucoloris Lab';
+
+/* The tool works in metres with Y up. A shot keeps its own units and axes: the shot's passes were
+   scaled by um (metres per scene unit) and, for a Z-up scene, turned (x, y, z) → (x, z, -y). */
+function shotSpace() {
+  const fr = shotActive() && SHOT.frame, um = fr ? fr.um || 1 : 1, upZ = !!(fr && SHOT.src && SHOT.src.upZ);
+  const dir = v => upZ ? [v[0], -v[2], v[1]] : [v[0], v[1], v[2]];
+  return {um, upZ, upAxis:upZ ? 'Z' : 'Y', dir, pos:p => dir(p).map(x => x / um), len:l => l / um,
+          label:fr ? 'shot world space' : 'the stand-in set (metres, Y up)'};
+}
+const r6 = v => Math.round(v * 1e6) / 1e6;
+const r6v = a => a.map(r6);
+
+/* info: {files:[{frame, path}], pattern, hashPattern, format, depth, colorSpace, channels, res, fps, settingsPath} */
+function lightRig(info = {}) {
+  const c = SC(), L = sceneLight(), G = goboProjection(c), sp = shotSpace(), sun = c.ltype === 1;
+  const def = shotActive() ? shotDef(S.shotSel) : null;
+  // light axes: +X right and +Y up across the gobo image, light shines down -Z (the USD / Houdini convention)
+  const X = sp.dir(L.r), Y = sp.dir(L.u), Z = sp.dir(v3.mul(L.f, -1)), T = sp.pos(L.pos);
+  const matrix = [[...X, 0], [...Y, 0], [...Z, 0], [...T, 1]].map(r6v);
+  const dist = c.dist, ev = c.ev, col = hex3(c.color);
+  const wrap = ['repeat', 'white', 'black', 'repeat-u'][G.single];
+  const files = info.files || [];
+  const frames = files.map(f => f.frame);
+  return {
+    schema:'cucoloris.lightrig', version:RIG_VERSION,
+    tool:{name:TOOL_NAME, host:HOST.name, stateVersion:10},
+    shot:def ? {id:def.id, seq:def.seq, shot:def.shot, first:def.first, last:def.last, placeholder:!!def.placeholder} : null,
+    space:{upAxis:sp.upAxis, metersPerUnit:sp.um, note:`Positions are in ${sp.label}.`},
+    mode:S.mode, pattern:MODES[S.mode].short,
+    light:{
+      type:sun ? 'distant' : 'spot',
+      position:r6v(T), aim:r6v(sp.pos(L.aim)),
+      right:r6v(X), up:r6v(Y), forward:r6v(sp.dir(L.f)),
+      matrix,                                                           // row-major, row vectors: x axis, y axis, z axis, translation
+      distanceToAim:r6(sp.len(dist)),
+      ...(sun ? {angle:0.53} : {
+        coneAngle:r6(G.cone),                                           // full angle the square image spans, edge to edge
+        coneShape:c.shape ? 'square' : 'round',
+        coneSoftness:r6(c.soft),                                        // fraction of the beam radius the edge fades over
+        sourceRadius:r6(sp.len(0.04)),
+      }),
+      exposure:r6(ev), color:r6v(col),
+      irradianceAtAim:r6(Math.pow(2, ev) * (sun ? 1 : 25 / Math.max(dist * dist, 1e-6))),   // in the tool's preview units, on a surface facing the light
+    },
+    gobo:{
+      files, frameRange:frames.length ? [Math.min(...frames), Math.max(...frames)] : null,
+      pattern:info.pattern || null, hashPattern:info.hashPattern || null, fps:info.fps || S.fps,
+      format:info.format || null, bitDepth:info.depth || null, colorSpace:info.colorSpace || 'linear', channels:info.channels || 'rgb', resolution:info.res || null,
+      projection:sun ? {kind:'orthographic', width:r6(sp.len(G.sunSize)), center:r6v(sp.pos(L.aim))}
+                     : {kind:'perspective', fov:r6(G.cone), tiling:r6(G.rep)},
+      wrap,
+      blur:r6(c.blur / 100),                                            // defocus as a fraction of the image width
+      imageAxes:'Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling.',
+    },
+    settings:info.settingsPath || null,
+  };
+}
+
+/* ---------- USD ---------- */
+const usdStr = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+const usdAsset = s => '@' + String(s).replace(/@/g, '') + '@';
+const usdNum = v => { const s = (+v).toPrecision(9); return String(parseFloat(s)); };
+const usdTup = a => '(' + a.map(usdNum).join(', ') + ')';
+function rigUSDA(rig) {
+  const L = rig.light, G = rig.gobo, sun = L.type === 'distant';
+  const fr = G.frameRange, files = G.files || [];
+  const lines = [];
+  const add = s => lines.push(s);
+  add('#usda 1.0');
+  add('(');
+  add(`    defaultPrim = "cucoloris"`);
+  add(`    doc = ${usdStr(`${TOOL_NAME} light rig: ${rig.pattern} gobo${rig.shot ? ` for ${rig.shot.seq} / ${rig.shot.shot}` : ''}. The gobo is described in the cucoloris:* attributes; docs/HOUDINI.md says how to hook them up to your renderer's gobo / cookie filter.`)}`);
+  add(`    metersPerUnit = ${usdNum(rig.space.metersPerUnit)}`);
+  add(`    upAxis = "${rig.space.upAxis}"`);
+  if (fr) { add(`    startTimeCode = ${fr[0]}`); add(`    endTimeCode = ${fr[1]}`); }
+  add(`    framesPerSecond = ${usdNum(G.fps)}`);
+  add(`    timeCodesPerSecond = ${usdNum(G.fps)}`);
+  add(')');
+  add('');
+  add('def Xform "cucoloris" (');
+  add('    customData = {');
+  add(`        string tool = ${usdStr(TOOL_NAME)}`);
+  add(`        int rigVersion = ${rig.version}`);
+  add(`        string host = ${usdStr(rig.tool.host)}`);
+  if (rig.shot) add(`        string shot = ${usdStr(rig.shot.seq + '/' + rig.shot.shot)}`);
+  add('    }');
+  add(')');
+  add('{');
+  if (sun) add('    def DistantLight "gobo_light"');
+  else { add('    def SphereLight "gobo_light" ('); add('        prepend apiSchemas = ["ShapingAPI"]'); add('    )'); }
+  add('    {');
+  add('        float inputs:intensity = 1');
+  add(`        float inputs:exposure = ${usdNum(L.exposure)}`);
+  add(`        color3f inputs:color = ${usdTup(L.color)}`);
+  if (sun) add(`        float inputs:angle = ${usdNum(L.angle)}`);
+  else {
+    add(`        float inputs:radius = ${usdNum(L.sourceRadius)}`);
+    // a square beam has no USD equivalent: open the cone to the image corners and let the gobo's edges trim it
+    const half = L.coneShape === 'square' ? Math.atan(Math.tan(L.coneAngle / 2 * DEG) * Math.SQRT2) / DEG : L.coneAngle / 2;
+    add(`        float inputs:shaping:cone:angle = ${usdNum(half)}`);
+    add(`        float inputs:shaping:cone:softness = ${usdNum(L.coneSoftness)}`);
+  }
+  add(`        matrix4d xformOp:transform = ( ${L.matrix.map(usdTup).join(', ')} )`);
+  add('        uniform token[] xformOpOrder = ["xformOp:transform"]');
+  add('');
+  // the gobo, renderer-neutral
+  if (files.length) {
+    add(`        custom asset cucoloris:gobo:file = ${usdAsset(files[0].path)}`);
+    if (files.length > 1) {
+      add('        custom asset cucoloris:gobo:file.timeSamples = {');
+      for (const f of files) add(`            ${f.frame}: ${usdAsset(f.path)},`);
+      add('        }');
+    }
+  }
+  if (G.pattern) add(`        custom string cucoloris:gobo:filePattern = ${usdStr(G.pattern)}`);
+  if (G.hashPattern) add(`        custom string cucoloris:gobo:fileHashPattern = ${usdStr(G.hashPattern)}`);
+  if (fr) add(`        custom int2 cucoloris:gobo:frameRange = (${fr[0]}, ${fr[1]})`);
+  add(`        custom token cucoloris:gobo:colorSpace = ${usdStr(G.colorSpace)}`);
+  add(`        custom token cucoloris:gobo:projection = ${usdStr(G.projection.kind)}`);
+  if (sun) {
+    add(`        custom float cucoloris:gobo:width = ${usdNum(G.projection.width)}`);
+    add(`        custom point3d cucoloris:gobo:center = ${usdTup(G.projection.center)}`);
+  } else {
+    add(`        custom float cucoloris:gobo:fov = ${usdNum(G.projection.fov)}`);
+    add(`        custom float cucoloris:gobo:tiling = ${usdNum(G.projection.tiling)}`);
+    add(`        custom token cucoloris:beamShape = ${usdStr(L.coneShape)}`);
+  }
+  add(`        custom token cucoloris:gobo:wrap = ${usdStr(G.wrap)}`);
+  add(`        custom float cucoloris:gobo:blur = ${usdNum(G.blur)}`);
+  add(`        custom point3d cucoloris:aim = ${usdTup(L.aim)}`);
+  add(`        custom float cucoloris:irradianceAtAim = ${usdNum(L.irradianceAtAim)}`);
+  add(`        custom string cucoloris:mode = ${usdStr(rig.mode)}`);
+  if (rig.settings) add(`        custom asset cucoloris:settings = ${usdAsset(rig.settings)}`);
+  add('    }');
+  add('}');
+  return lines.join('\n') + '\n';
+}
+
+/* ---------- settings: everything needed to make the same gobo again ---------- */
+const plain = o => JSON.parse(JSON.stringify(o, (k, v) => k.startsWith('_') ? undefined : v));
+function settingsFile() {
+  const m = S.mode, def = shotActive() ? shotDef(S.shotSel) : null;
+  const layer = (T, used) => (T && used) ? T.cv.toDataURL('image/png') : null;
+  const usesOwn = MODES[m].kind === 'shapes' && S.p[m].paintMode;
+  const ov = OVL[m] || null;
+  return {
+    schema:'cucoloris.settings', version:SETTINGS_VERSION,
+    savedWith:{tool:TOOL_NAME, host:HOST.name, stateVersion:10, date:new Date().toISOString()},
+    mode:m, fps:S.fps,
+    pattern:plain(S.p[m]), levels:plain(S.post[m]), timeline:plain(S.tl[m]),
+    light:plain(SC()), lightSpace:'tool (metres, Y up)',
+    shot:def ? {id:def.id, seq:def.seq, shot:def.shot} : null,
+    paintOver:{on:!!(S.ovl.on || {})[m], image:layer(ov, ov && ov.used)},
+    paintYourOwn:usesOwn ? {image:layer(paintCanvas(), true)} : null,
+    export:plain(S.exp || {}),
+  };
+}
+async function applySettings(o) {
+  if (typeof o === 'string') o = JSON.parse(o);
+  if (!o || o.schema !== 'cucoloris.settings') throw new Error('This is not a Cucoloris Lab settings file.');
+  if (o.version > SETTINGS_VERSION) throw new Error(`This settings file is version ${o.version}; this copy of the tool reads up to ${SETTINGS_VERSION}.`);
+  const m = o.mode;
+  if (!MODES[m]) throw new Error(`Unknown pattern "${m}".`);
+  if (o.shot && o.shot.id !== S.shotSel && shotDef(o.shot.id)) {
+    selectShot(o.shot.id);
+    // the shot's light exists once its passes are read
+    for (let i = 0; i < 300 && !shotReady(); i++) await new Promise(r => setTimeout(r, 100));
+  }
+  S.mode = m;
+  S.p[m] = {...DEFAULTS[m], ...(o.pattern || {})};
+  S.post[m] = {...MODES[m].post, ...(o.levels || {})};
+  S.tl[m] = {...MODES[m].tl, ...(o.timeline || {})};
+  if (o.fps) S.fps = o.fps;
+  if (o.light) Object.assign(SC(), o.light);
+  if (o.export) S.exp = {...S.exp, ...o.export};
+  const draw = (T, url) => new Promise(res => { const im = new Image(); im.onload = () => { T.ctx.drawImage(im, 0, 0, T.N, T.N); T.dirty = true; T.used = true; paintSave(T); res(); }; im.onerror = res; im.src = url; });
+  if (o.paintOver) {
+    S.ovl.on = {...(S.ovl.on || {}), [m]:!!o.paintOver.on};
+    if (o.paintOver.image) await draw(ovlTarget(m), o.paintOver.image);
+  }
+  if (o.paintYourOwn && o.paintYourOwn.image) await draw(paintCanvas(), o.paintYourOwn.image);
+  buildModes(); buildPanel(); buildTimeline();
+  dirty = true; viewDirty = true; save();
+  return true;
+}
+
+/* =====================================================================
+   SCRIPTING API: window.cucoloris
+   The same calls the panel makes, for a host (Houdini through a
+   QWebChannel bridge), a pipeline script driving a headless browser on
+   the farm, or a test. Stable names; docs/HOUDINI.md lists them.
+   ===================================================================== */
+window.cucoloris = Object.freeze({
+  version:'1.0',
+  rigVersion:RIG_VERSION, settingsVersion:SETTINGS_VERSION,
+  host:() => HOST.name,
+  modes:() => Object.keys(MODES),
+  shots:() => SHOTLIST.map(d => ({id:d.id, seq:d.seq, shot:d.shot, first:d.first, last:d.last, label:d.label, placeholder:!!d.placeholder})),
+  // the pattern ('under', 'over', 'hull', 'trees', 'windows', 'shapes') and the shot ('' for the stand-in sets)
+  setMode(m) { if (!MODES[m]) throw new Error(`Unknown pattern "${m}".`); S.mode = m; buildModes(); buildPanel(); buildTimeline(); dirty = true; viewDirty = true; save(); },
+  getMode:() => S.mode,
+  selectShot(id) { if (id && !shotDef(id)) throw new Error(`No shot "${id}".`); selectShot(id || '', true); },
+  shotReady:() => !shotActive() || shotReady(),
+  // frame numbers as the export writes them (the shot's own numbers in a shot, otherwise from the first file number)
+  getFrame() { const F = EXPORT.frames(); return F.num(F.cur); },
+  setFrame(n) {
+    const F = EXPORT.frames();
+    const f = F.shot ? n : n - ((S.exp.first | 0) - 1);
+    S.t = Math.max(0, F.time(f)); dirty = true; viewDirty = true;
+  },
+  // every setting, as a settings file (a plain object), and back
+  getSettings:() => settingsFile(),
+  applySettings:o => applySettings(o),
+  // the light as it stands, in shot space, and as a USD layer (gobo file paths are filled in by an export)
+  lightRig:info => lightRig(info),
+  lightRigUSDA:info => rigUSDA(lightRig(info)),
+  // render one frame of the final gobo: {w, h, nch, data: Float32Array, linear, rows top to bottom}
+  renderFrame(n, res = 1024, opts = {}) {
+    if (EXPORT.busy) throw new Error('An export is running.');
+    const keep = {res:S.res, t:S.t, quality:S.quality};
+    try {
+      if (n !== undefined && n !== null) this.setFrame(n);
+      S.res = res; if (opts.quality) S.quality = opts.quality;
+      return EXPORT.grab(res, opts.channels === 'y' ? 1 : 3);
+    } finally {
+      S.res = keep.res; S.t = keep.t; S.quality = keep.quality;
+      const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
+      dirty = true;
+    }
+  },
+  // run an export: any export dialog setting can be given ({fmt, depth, res, range, from, to, first, chans, enc, qual, name, rig, send})
+  exportFrames:(opts = {}, onProgress) => EXPORT.run(onProgress, opts),
+  cancelExport() { if (EXPORT.busy) document.querySelector('[data-stop]').click(); },
+  openExportDialog:() => EXPORT.open(),
+  // building blocks for a host's openShot(): a shot read from utility EXRs (see exrSource in parts/shot.js)
+  exrSource:(filesByFrame, layers, opts) => exrSource(filesByFrame, layers, opts),
+  // the gobo encoders, for a host that writes files its own way: each takes {w, h, nch, data} from renderFrame
+  encode:(img, opts) => EXPORT.encode(img, {...EXPORT.DEF, ...opts}),
+});
 
 /* =====================================================================
    LOOP
@@ -7179,7 +7585,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR};
+window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR, SC, sceneLight, goboProjection, shotSpace, HOST};
 requestAnimationFrame(tick);
 })();
 

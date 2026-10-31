@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cucoloris Lab as a Houdini Python Panel. STARTING POINT, not yet run in Houdini: see docs/HOUDINI.md. -->
+<pythonPanelDocument>
+  <interface name="cucoloris_lab" label="Cucoloris Lab" icon="MISC_python" showNetworkNavigationBar="false" help_url="">
+    <script><![CDATA[
+import cucoloris_panel
+
+def onCreateInterface():
+    return cucoloris_panel.create_widget()
+]]></script>
+    <includeInToolbarMenu menu_position="300" create_separator="false"/>
+    <help><![CDATA[Make an animated gobo for the shot and send it to the shot as a light.]]></help>
+  </interface>
+</pythonPanelDocument>

@@ -1,0 +1,104 @@
+{
+ "schema": "cucoloris.lightrig",
+ "version": 1,
+ "tool": {
+  "name": "Cucoloris Lab",
+  "host": "web",
+  "stateVersion": 10
+ },
+ "shot": null,
+ "space": {
+  "upAxis": "Y",
+  "metersPerUnit": 1,
+  "note": "Positions are in the stand-in set (metres, Y up)."
+ },
+ "mode": "under",
+ "pattern": "Underwater",
+ "light": {
+  "type": "spot",
+  "position": [
+   0,
+   4,
+   0
+  ],
+  "aim": [
+   0,
+   0,
+   0
+  ],
+  "right": [
+   1,
+   -0.0,
+   0
+  ],
+  "up": [
+   0,
+   0,
+   -1
+  ],
+  "forward": [
+   -0.0,
+   -1,
+   -0.0
+  ],
+  "matrix": [
+   [
+    1,
+    -0.0,
+    0,
+    0
+   ],
+   [
+    0,
+    0,
+    -1,
+    0
+   ],
+   [
+    0,
+    1,
+    0,
+    0
+   ],
+   [
+    0,
+    4,
+    0,
+    1
+   ]
+  ],
+  "distanceToAim": 4,
+  "coneAngle": 90,
+  "coneShape": "round",
+  "coneSoftness": 0.15,
+  "sourceRadius": 0.04,
+  "exposure": 0,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "irradianceAtAim": 1.5625
+ },
+ "gobo": {
+  "files": [],
+  "frameRange": null,
+  "pattern": null,
+  "hashPattern": null,
+  "fps": 24,
+  "format": null,
+  "bitDepth": null,
+  "colorSpace": "linear",
+  "channels": "rgb",
+  "resolution": null,
+  "projection": {
+   "kind": "perspective",
+   "fov": 90,
+   "tiling": 1.333333
+  },
+  "wrap": "repeat",
+  "blur": 0,
+  "imageAxes": "Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling."
+ },
+ "settings": null
+}

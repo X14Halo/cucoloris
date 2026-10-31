@@ -1,0 +1,104 @@
+{
+ "schema": "cucoloris.lightrig",
+ "version": 1,
+ "tool": {
+  "name": "Cucoloris Lab",
+  "host": "web",
+  "stateVersion": 10
+ },
+ "shot": null,
+ "space": {
+  "upAxis": "Y",
+  "metersPerUnit": 1,
+  "note": "Positions are in the stand-in set (metres, Y up)."
+ },
+ "mode": "shapes",
+ "pattern": "Shapes",
+ "light": {
+  "type": "spot",
+  "position": [
+   1.063469,
+   5.364912,
+   4.773022
+  ],
+  "aim": [
+   0,
+   0.45,
+   1.5
+  ],
+  "right": [
+   0.951057,
+   0,
+   -0.309017
+  ],
+  "up": [
+   -0.253132,
+   0.573576,
+   -0.77906
+  ],
+  "forward": [
+   -0.177245,
+   -0.819152,
+   -0.545504
+  ],
+  "matrix": [
+   [
+    0.951057,
+    0,
+    -0.309017,
+    0
+   ],
+   [
+    -0.253132,
+    0.573576,
+    -0.77906,
+    0
+   ],
+   [
+    0.177245,
+    0.819152,
+    0.545504,
+    0
+   ],
+   [
+    1.063469,
+    5.364912,
+    4.773022,
+    1
+   ]
+  ],
+  "distanceToAim": 6,
+  "coneAngle": 60,
+  "coneShape": "round",
+  "coneSoftness": 0.15,
+  "sourceRadius": 0.04,
+  "exposure": 0,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "irradianceAtAim": 0.694444
+ },
+ "gobo": {
+  "files": [],
+  "frameRange": null,
+  "pattern": null,
+  "hashPattern": null,
+  "fps": 24,
+  "format": null,
+  "bitDepth": null,
+  "colorSpace": "linear",
+  "channels": "rgb",
+  "resolution": null,
+  "projection": {
+   "kind": "perspective",
+   "fov": 60,
+   "tiling": 1
+  },
+  "wrap": "black",
+  "blur": 0,
+  "imageAxes": "Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling."
+ },
+ "settings": null
+}

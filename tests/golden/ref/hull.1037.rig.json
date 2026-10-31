@@ -1,0 +1,105 @@
+{
+ "schema": "cucoloris.lightrig",
+ "version": 1,
+ "tool": {
+  "name": "Cucoloris Lab",
+  "host": "web",
+  "stateVersion": 10
+ },
+ "shot": null,
+ "space": {
+  "upAxis": "Y",
+  "metersPerUnit": 1,
+  "note": "Positions are in the stand-in set (metres, Y up)."
+ },
+ "mode": "hull",
+ "pattern": "Hull & walls (reflected)",
+ "light": {
+  "type": "distant",
+  "position": [
+   0,
+   -2.330222,
+   3.213938
+  ],
+  "aim": [
+   0,
+   1.5,
+   0
+  ],
+  "right": [
+   1,
+   0,
+   -0.0
+  ],
+  "up": [
+   0,
+   0.642788,
+   0.766044
+  ],
+  "forward": [
+   -0.0,
+   0.766044,
+   -0.642788
+  ],
+  "matrix": [
+   [
+    1,
+    0,
+    -0.0,
+    0
+   ],
+   [
+    0,
+    0.642788,
+    0.766044,
+    0
+   ],
+   [
+    0,
+    -0.766044,
+    0.642788,
+    0
+   ],
+   [
+    0,
+    -2.330222,
+    3.213938,
+    1
+   ]
+  ],
+  "distanceToAim": 5,
+  "angle": 0.53,
+  "exposure": 0.5,
+  "color": [
+   1,
+   1,
+   1
+  ],
+  "irradianceAtAim": 1.414214
+ },
+ "gobo": {
+  "files": [],
+  "frameRange": null,
+  "pattern": null,
+  "hashPattern": null,
+  "fps": 24,
+  "format": null,
+  "bitDepth": null,
+  "colorSpace": "linear",
+  "channels": "rgb",
+  "resolution": null,
+  "projection": {
+   "kind": "orthographic",
+   "width": 1.928363,
+   "center": [
+    0,
+    1.5,
+    0
+   ]
+  },
+  "wrap": "black",
+  "blur": 0,
+  "imageAxes": "Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling."
+ },
+ "settings": null
+}
