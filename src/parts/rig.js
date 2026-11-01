@@ -10,7 +10,7 @@
                        applySettings() reads one back
    docs/HOUDINI.md explains each field and how a TD maps it onto a light.
    ===================================================================== */
-const RIG_VERSION = 1, SETTINGS_VERSION = 1, TOOL_NAME = 'Cucoloris Lab';
+const RIG_VERSION = 1, SETTINGS_VERSION = 2, TOOL_NAME = 'Cucoloris Lab';
 
 /* The tool works in metres with Y up. A shot keeps its own units and axes: the shot's passes were
    scaled by um (metres per scene unit) and, for a Z-up scene, turned (x, y, z) → (x, z, -y). */
@@ -41,6 +41,7 @@ function lightRig(info = {}) {
     space:{upAxis:sp.upAxis, metersPerUnit:sp.um, note:`Positions are in ${sp.label}.`},
     mode:S.mode, pattern:MODES[S.mode].short,
     light:{
+      name:lightName(), prim:usdPrimName(lightName()),
       type:sun ? 'distant' : 'spot',
       position:r6v(T), aim:r6v(sp.pos(L.aim)),
       right:r6v(X), up:r6v(Y), forward:r6v(sp.dir(L.f)),
@@ -70,6 +71,8 @@ function lightRig(info = {}) {
 }
 
 /* ---------- USD ---------- */
+// a light's name as a USD prim name: letters, digits and underscores, not starting with a digit
+const usdPrimName = n => { let p = String(n || 'gobo_light').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, ''); if (!p || /^[0-9]/.test(p)) p = 'light_' + p; return p; };
 const usdStr = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 const usdAsset = s => '@' + String(s).replace(/@/g, '') + '@';
 const usdNum = v => { const s = (+v).toPrecision(9); return String(parseFloat(s)); };
@@ -99,8 +102,9 @@ function rigUSDA(rig) {
   add('    }');
   add(')');
   add('{');
-  if (sun) add('    def DistantLight "gobo_light"');
-  else { add('    def SphereLight "gobo_light" ('); add('        prepend apiSchemas = ["ShapingAPI"]'); add('    )'); }
+  const prim = L.prim || 'gobo_light';
+  if (sun) add(`    def DistantLight "${prim}"`);
+  else { add(`    def SphereLight "${prim}" (`); add('        prepend apiSchemas = ["ShapingAPI"]'); add('    )'); }
   add('    {');
   add('        float inputs:intensity = 1');
   add(`        float inputs:exposure = ${usdNum(L.exposure)}`);
@@ -143,6 +147,7 @@ function rigUSDA(rig) {
   add(`        custom point3d cucoloris:aim = ${usdTup(L.aim)}`);
   add(`        custom float cucoloris:irradianceAtAim = ${usdNum(L.irradianceAtAim)}`);
   add(`        custom string cucoloris:mode = ${usdStr(rig.mode)}`);
+  if (L.name) add(`        custom string cucoloris:lightName = ${usdStr(L.name)}`);
   if (rig.settings) add(`        custom asset cucoloris:settings = ${usdAsset(rig.settings)}`);
   add('    }');
   add('}');
@@ -159,7 +164,7 @@ function settingsFile() {
   return {
     schema:'cucoloris.settings', version:SETTINGS_VERSION,
     savedWith:{tool:TOOL_NAME, host:HOST.name, stateVersion:10, date:new Date().toISOString()},
-    mode:m, fps:S.fps,
+    mode:m, fps:S.fps, lightName:lightName(),
     pattern:plain(S.p[m]), levels:plain(S.post[m]), timeline:plain(S.tl[m]),
     light:plain(SC()), lightSpace:'tool (metres, Y up)',
     shot:def ? {id:def.id, seq:def.seq, shot:def.shot} : null,
@@ -181,6 +186,13 @@ async function applySettings(o) {
   }
   S.mode = m;
   S.p[m] = {...DEFAULTS[m], ...(o.pattern || {})};
+  // version 1 files come from before the light pool switch: they keep their look (a pool framing becomes the switch)
+  if (!(o.version >= 2)) {
+    const P = S.p[m], fr = (o.pattern || {}).framing | 0;
+    P.pool = (m === 'trees' && fr === 2) || (m === 'shapes' && fr === 1);
+    if (m === 'trees' && fr === 2) P.framing = (SPECIES[P.species | 0] || {}).kind === 'palm' ? 1 : 0;
+    if (m === 'shapes' && fr === 1) P.framing = 0;
+  }
   S.post[m] = {...MODES[m].post, ...(o.levels || {})};
   S.tl[m] = {...MODES[m].tl, ...(o.timeline || {})};
   if (o.fps) S.fps = o.fps;

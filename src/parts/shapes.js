@@ -18,9 +18,21 @@ vec3 ovlMod(vec3 g, float k){
     o = mix(o, vec3(0.0), smoothstep(0.65, 1.0, a));
   }
   return o;
+}
+// a painted layer sampled for an image finer than itself: a cubic B-spline through the painting's pixels, so it
+// scales up smooth (no bilinear creases or stair steps); at or below its own size the ordinary mipmapped lookup
+vec4 texSmooth(sampler2D t, vec2 uv, float up){
+  if (up <= 1.0) return texture(t, uv);
+  vec2 sz = vec2(textureSize(t, 0)), st = uv * sz - 0.5, i = floor(st), f = st - i;
+  vec2 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0, w3 = f * f * f / 6.0;
+  vec2 w1 = (4.0 - 6.0 * f * f + 3.0 * f * f * f) / 6.0, w2 = 1.0 - w0 - w1 - w3;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - 1.0 + w1 / g0 + 0.5) / sz, h1 = (i + 1.0 + w3 / g1 + 0.5) / sz;
+  return g0.y * (g0.x * textureLod(t, h0, 0.0) + g1.x * textureLod(t, vec2(h1.x, h0.y), 0.0))
+       + g1.y * (g0.x * textureLod(t, vec2(h0.x, h1.y), 0.0) + g1.x * textureLod(t, h1, 0.0));
 }`;
 const FS_SHAPE = COMMON + OVL_GLSL + `
-uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint;
+uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint; uniform float uPaintUp, uOvlUp;
 uniform float uSpread, uAngle, uWidth, uWVar, uSoft, uFall, uBrk, uScale, uAmount, uMotion, uT, uLoopT;
 uniform vec2 uApex; uniform int uPz; uniform float uAim;
 uniform sampler2D uOvl; uniform int uOvlOn; vec2 gOv = vec2(0.0);
@@ -278,11 +290,43 @@ vec2 motionUV(vec2 uv){
   vec2 p = uv - uDriftOff;
   if (uFlow > 0.0){
     float z0 = gZ; int p0 = gPz;
-    useZ(uFlowZ, uPzF);
-    p += uFlow * 0.05 * vec2(fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 311u), fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 312u));
+    // a painting has no noise of its own to churn, so its currents run faster and carry it further
+    if (uShape == 14) useZ(uFlowZ * 20.0, uPzF * 20); else useZ(uFlowZ, uPzF);
+    p += uFlow * (uShape == 14 ? 0.35 : 0.05) * vec2(fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 311u), fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 312u));
     useZ(z0, p0);
   }
   return p;
+}
+/* Painted shapes move by bending the painting itself: smooth displacement fields a few features across the frame.
+   Evolve changes the bend slowly along the noise's time axis; Morph blends through a chain of different bends with
+   B-spline weights, so the painted shapes stretch and swell into new forms and never pause. Two octaves of the
+   periodic noise are plenty for a bend, and keep this shader quick to compile. */
+vec2 bendField(vec2 uv, vec2 o, uint s){
+  vec2 q = (uv + o) * 2.0;
+  vec2 d = vec2(pnA(q, ivec2(2, 0), ivec2(0, 2), s), pnA(q, ivec2(2, 0), ivec2(0, 2), s + 1u));
+  return d + 0.5 * vec2(pnA(q * 2.0, ivec2(4, 0), ivec2(0, 4), s + 2u), pnA(q * 2.0, ivec2(4, 0), ivec2(0, 4), s + 3u));
+}
+vec2 paintBend(vec2 uv){
+  vec2 d = vec2(0.0);
+  float z0 = gZ; int p0 = gPz;
+  if (uMotion > 0.0){
+    useZ(uMorphZ * 8.0, uPzM * 8);
+    d += (0.07 + 0.11 * uMotion) * bendField(uv, vec2(0.0), 331u);
+  }
+  if (uBlend > 0.0){
+    useZ(0.0, 1000);
+    float tt = uT / uBlendT, k = floor(tt), f = tt - k;
+    float w0 = 0.5 * (1.0 - f) * (1.0 - f), w2 = 0.5 * f * f, w1 = 1.0 - w0 - w2;
+    vec2 m = vec2(0.0);
+    for (int i = 0; i < 3; i++){
+      float ki = k + float(i) - 1.0; if (uBlendN > 0) ki = mod(ki, float(uBlendN));
+      vec2 o = vec2(fract(sin(ki * 12.9898 + 4.1) * 43758.5453), fract(sin(ki * 78.233 + 1.7) * 43758.5453));
+      m += (i == 0 ? w0 : i == 1 ? w1 : w2) * bendField(uv, o, 341u);
+    }
+    d += uBlend * 0.3 * m / sqrt(w0 * w0 + w1 * w1 + w2 * w2);
+  }
+  useZ(z0, p0);
+  return d;
 }
 float breathAt(vec2 uv){
   if (uBreath <= 0.0) return 0.0;
@@ -395,9 +439,9 @@ void shapeMain(){
     float arc = smoothstep(0.62 - sf, 0.62 + sf, r) * (1.0 - smoothstep(0.62 + bw * 0.6 - sf, 0.62 + bw * 0.6 + sf, r));
     v = inside * smoothstep(bw * 0.5 - sf, bw * 0.5 + sf, bar) * (1.0 - hub) * (1.0 - arc) * smoothstep(bw * 0.4, bw * 0.4 + 2.0 * sf, p.y * 0.42);
   } else if (uShape == 14){
-    v = texture(uPaint, uv).r;
-    // painted shapes breathe by spreading and pulling in at their soft edges
-    if (uBreath > 0.0) v = clamp(mix(v, textureLod(uPaint, uv, 3.5).r, 0.5 * uBreath) + br * 1.6, 0.0, 1.0);
+    vec2 q = uv + paintBend(uv0);
+    gOv = q;
+    v = texSmooth(uPaint, q, uPaintUp).r;
   } else {
     v = organic(uv, F);
   }
@@ -407,7 +451,7 @@ void shapeMain(){
 // the painting rides on the pattern: it is looked up where the drifting, flowing pattern has carried that spot
 void main(){
   shapeMain();
-  if (uOvlOn == 1) fragColor.rgb = ovlMod(fragColor.rgb, texture(uOvl, gOv).r * 2.0 - 1.0);
+  if (uOvlOn == 1) fragColor.rgb = ovlMod(fragColor.rgb, texSmooth(uOvl, gOv, uOvlUp).r * 2.0 - 1.0);
 }`;
 /* Light pool: only the middle of the frame lets light through. Shadows thicken toward the
    edge, which is itself organic rather than a clean circle, and the frame ends in black. */
@@ -485,7 +529,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f1(p, 'uFlutter', org && sh >= 9 && sh <= 13 ? (P.flutter ?? 0) * 0.35 : 0); f1(p, 'uFlutHz', (P.swayHz ?? 0.4) * 3.2); f1(p, 'uLSig', P.lsig ?? ({9:0.1, 10:0.12, 11:0.14, 13:0.24}[sh] || 0.12));
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
     f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
-    tex(p, 'uPaint', paintTex(), 1);
+    tex(p, 'uPaint', paintTex(), 1); f1(p, 'uPaintUp', res / PAINT.N); f1(p, 'uOvlUp', res / 512);
     const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) tex(p, 'uOvl', ovlTex(ovlTarget('shapes')), 2);
   });
   return out;
@@ -520,10 +564,8 @@ function motionInfo(P) {
   if (P.blend > 0) bits.push(`morphing to a new version every ${((P.blendT ?? 8) / (P.mSpeed ?? 1)).toFixed(1)} s`);
   return bits.length ? '\nMotion: ' + bits.join(', ') + (P.gust > 0 && (P.drift > 0 || P.sway > 0) ? ', in gusts' : '') : '\nStill';
 }
-function usesPool() {
-  const k = MODES[S.mode].kind, P = S.p[S.mode];
-  return (k === 'trees' && (P.framing | 0) === 2) || (k === 'shapes' && (P.framing | 0) === 1);
-}
+// the light pool: every pattern can be framed in a soft pool of light that fades to black at the edges
+function usesPool() { return !!S.p[S.mode].pool; }
 function poolPass(src) {
   const P = S.p[S.mode], out = tgt('poolOut', src.w, src.h, 'f16');
   pass(PR.pool, out, p => { tex(p, 'uSrc', src.tex, 0); f1(p, 'uSize', P.poolSize ?? 0.9); f1(p, 'uSoft', P.poolSoft ?? 0.5); u1(p, 'uSeed', (P.seed | 0) + 3); });

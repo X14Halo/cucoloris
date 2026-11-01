@@ -144,7 +144,8 @@ class Bridge(QtCore.QObject):
 def send_light(rig, files):
     """Bring the light rig into the shot and attach the gobo. Idempotent: one node per shot and pattern."""
     shot = rig.get('shot') or {}
-    name = re.sub(r'\W+', '_', f"cucoloris_{shot.get('shot', 'set')}_{rig['mode']}")
+    # one node per shot and light (a scene can have several gobo lights, each exported with its own rig)
+    name = re.sub(r'\W+', '_', f"cucoloris_{shot.get('shot', 'set')}_{rig['light'].get('prim', 'light')}")
     net = hou.node('/stage')
     node = net.node(name)
     if node is None:
@@ -163,7 +164,7 @@ def send_light(rig, files):
 def attach_gobo(sublayer_node, rig, files):
     """RENDERER-SPECIFIC: turn the rig's cucoloris:gobo:* description into your renderer's projected-texture filter.
 
-    The light prim is /cucoloris/gobo_light in the layer. Drive the filter from (docs/HOUDINI.md, "How the gobo is projected"):
+    The light prim is /cucoloris/<rig['light']['prim']> in the layer (named after the light: Key, Light_2, ...). Drive the filter from (docs/HOUDINI.md, "How the gobo is projected"):
       rig['gobo']['pattern']      texture path with $F4 (sequences), rig['gobo']['colorSpace']
       rig['gobo']['projection']   {'kind': 'perspective', 'fov', 'tiling'} or {'kind': 'orthographic', 'width', 'center'}
       rig['gobo']['wrap']         repeat / black / white / repeat-u

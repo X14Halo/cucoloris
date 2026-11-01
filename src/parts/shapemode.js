@@ -23,20 +23,19 @@ const MOTION_LOOKS = [
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
   onParam(k, P) {
-    if (k === 'paintMode') { if (P.paintMode) { if ((P.shape | 0) !== 14) P.prevShape = P.shape; P.shape = 14; } else P.shape = P.prevShape ?? 9; return true; }
-    if (k === 'pbPool') { P.framing = P.pbPool ? 1 : 0; return true; }
+    // painting your own starts in a soft pool of light with dark edges
+    if (k === 'paintMode') { if (P.paintMode) { if ((P.shape | 0) !== 14) { P.prevShape = P.shape; P.prevPool = !!P.pool; } P.shape = 14; P.pool = true; } else { P.shape = P.prevShape ?? 9; if (P.prevPool !== undefined) P.pool = P.prevPool; } return true; }
+    if (k === 'pool') return true;
     if (k === 'blend') { const on = (P.blend ?? 0) > 0, ch = on !== this._blendOn; this._blendOn = on; return ch; } return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'pbTool' || k === 'drift'; },
-  get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
+  get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && !P.pool; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
     this._blendOn = (P.blend ?? 0) > 0;
-    P.paintMode = sh === 14; P.pbPool = (P.framing | 0) === 1;
+    P.paintMode = sh === 14; P.framing = 0;
     const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
     const g = [
-      {k:'framing', l:'Framing', opts:['As designed' + (SHAPE_SEAMLESS[sh] ? ' (seamless tile)' : ''), 'Light pool, dark edges'], h:'A light pool lets light through only in the middle of the frame, fading softly to black toward the edges.'},
       {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER},
     ];
-    if ((P.framing | 0) === 1) g.push({k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01});
     g.push({k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole gobo, as a percentage of its width. Soft noise usually wants several percent.'});
     const look = [];
     if (soft) {
@@ -69,8 +68,6 @@ MODES.shapes = {
     const pp = [{k:'paintMode', l:'Paint your own gobo', type:'chk', h:'Turn on to paint the gobo yourself, on the canvas here, on the Gobo preview or right where the light lands in the Scene view. The generated shapes are set aside while it is on.'}];
     if (paint) pp.push(
       {k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole painted gobo, as a percentage of its width.'},
-      {k:'pbPool', l:'Light pool, dark edges', type:'chk', h:'Frames the painting in a soft pool of light that fades to black at the edges.'},
-      ...((P.framing | 0) === 1 ? [{k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01}] : []),
       ...paintDefs());
     const out = [{name:'Paint your own', params:pp, first:true}, {name:'Shape', params:g, off:paint}];
     if (look.length) out.push({name:'Look', params:look, off:paint});
@@ -83,7 +80,7 @@ MODES.shapes = {
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
         {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        ...(sh !== 17 && sh !== 7 && !paint ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
         ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
         {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
@@ -95,7 +92,7 @@ MODES.shapes = {
     return out;
   },
   presets:[
-    {name:'Morphing light pool', v:{seed:4, shape:9, framing:1, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
+    {name:'Morphing light pool', v:{seed:4, shape:9, pool:true, framing:0, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
       brk:0.4, rough:0.45, darkest:0.2, dir:0, scale:3, amount:0.55, motion:0.5, shimSpd:1, warp:0.9, clump:0.4, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true, pbScene:true, pbAngle:20, pbLen:6, pbStreak:0.5,
       mSpeed:1, sway:0, swayHz:0.45, flutter:0, drift:0, windDir:0, gust:0, flow:0.15, morph:0.04, breath:0, blend:0.5, blendT:8}},
     {name:'Soft drifting clouds', v:{shape:15, framing:0, blur:6, scale:2, amount:0.5, soft:0.75, brk:0.5, rough:0.5, darkest:0.3, warp:0.6, clump:0.5, drift:0.15, gust:0.3, morph:0.06, flow:0.15, breath:0, blend:0.3, blendT:12}},
@@ -106,9 +103,9 @@ MODES.shapes = {
     {name:'Marbled flowing light', v:{blend:0.4, blendT:10, shape:18, framing:0, blur:5, scale:2, amount:0.5, soft:0.8, brk:0.6, rough:0.5, darkest:0.25, warp:1.0, dir:1, flow:0.45, morph:0.06, breath:0}},
     {name:'Gentle uneven wash', v:{shape:19, framing:0, blur:8, scale:2, amount:0.6, soft:0.6, brk:0.3, rough:0.45, darkest:0.4, warp:0.5, morph:0.05, flow:0.15, breath:0, blend:0.45, blendT:9}},
     {name:'Soft streaks', v:{shape:15, framing:0, blur:5, scale:3, amount:0.5, soft:0.7, brk:0.5, rough:0.5, darkest:0.25, warp:0.4, clump:0.3, stretch:4, dir:1, drift:0.1, morph:0.05, breath:0}},
-    {name:'Soft pool, slow swirl', v:{shape:15, framing:1, poolSize:1.0, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
+    {name:'Soft pool, slow swirl', v:{shape:15, pool:true, framing:0, poolSize:1.0, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
     {name:'Soft spots, drifting', v:{shape:7, framing:0, blur:7, scale:4, amount:0.6, wVar:0.6, soft:0.85, darkest:0.15, drift:0.1, morph:0.3, breath:0}},
-    {name:'Paint your own', v:{shape:14, blur:2, framing:0, breath:0, flow:0, morph:0, drift:0}},
+    {name:'Paint your own', v:{shape:14, blur:2, framing:0, pool:true, breath:0, flow:0, morph:0, drift:0}},
     {name:'Light shafts, slow shimmer', v:{shape:0, blur:0.5, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.6, shimSpd:0.8}},
     {name:'Shafts from the side', v:{shape:0, blur:0.5, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6, motion:0.5, shimSpd:0.7}},
     {name:'Curtain shafts', v:{shape:1, blur:0.5, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6, motion:0.4}},

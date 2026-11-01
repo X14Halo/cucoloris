@@ -13,6 +13,13 @@ window.cucoloris = Object.freeze({
   // the pattern ('under', 'over', 'hull', 'trees', 'windows', 'shapes') and the shot ('' for the stand-in sets)
   setMode(m) { if (!MODES[m]) throw new Error(`Unknown pattern "${m}".`); S.mode = m; buildModes(); buildPanel(); buildTimeline(); dirty = true; viewDirty = true; save(); },
   getMode:() => S.mode,
+  // the scene's lights: each has its own gobo; the selected one is what every other call works on
+  lights:() => RIG.lights.map((Lr, i) => ({index:i, id:Lr.id, name:Lr.name, on:Lr.on !== false, mode:i === RIG.sel ? S.mode : Lr.mode, selected:i === RIG.sel})),
+  selectLight:i => selectLight(i),
+  addLight() { addLight(); return RIG.sel; },
+  removeLight:i => removeLight(i === undefined ? RIG.sel : i),
+  renameLight(name, i = RIG.sel) { RIG.lights[i].name = String(name).slice(0, 32); lightsBar(); save(); },
+  showLight(on, i = RIG.sel) { RIG.lights[i].on = !!on; lightsBar(); viewDirty = true; save(); },
   selectShot(id) { if (id && !shotDef(id)) throw new Error(`No shot "${id}".`); selectShot(id || '', true); },
   shotReady:() => !shotActive() || shotReady(),
   // frame numbers as the export writes them (the shot's own numbers in a shot, otherwise from the first file number)
@@ -42,7 +49,8 @@ window.cucoloris = Object.freeze({
       dirty = true;
     }
   },
-  // run an export: any export dialog setting can be given ({fmt, depth, res, range, from, to, first, chans, enc, qual, name, rig, send})
+  // run an export: any export dialog setting can be given ({fmt, depth, res, range, from, to, first, chans, enc, qual, name, rig, send,
+  // who: 'this' light or 'all' shown lights})
   exportFrames:(opts = {}, onProgress) => EXPORT.run(onProgress, opts),
   cancelExport() { if (EXPORT.busy) document.querySelector('[data-stop]').click(); },
   openExportDialog:() => EXPORT.open(),

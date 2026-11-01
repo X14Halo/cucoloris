@@ -13,7 +13,7 @@
 const SHOT = {src:null, frames:[], cache:new Map(), frame:null, loading:null, status:'', tex:null};
 if (!S.shot) S.shot = {};
 S.shot = {view:0, detail:1, disp:0, ...S.shot};
-S.shotSel = S.shotSel || ''; S.shotLights = S.shotLights || {}; S.shotCams = S.shotCams || {}; S.tlBackup = S.tlBackup || {};
+S.shotSel = S.shotSel || ''; S.shotLights = S.savedVer >= 11 && S.shotLights || {}; S.shotCams = S.shotCams || {}; S.tlBackup = S.tlBackup || {};
 const DETAIL = [1, 2, 4];
 const shotReady = () => !!(SHOT.frame && SHOT.tex);
 const shotActive = () => !!S.shotSel && !!SHOT.src;
@@ -28,11 +28,13 @@ const SHOTS = [
    cam:{eye:[0.8, 1.48, 2.15], at:[0.0, 1.3, 0.0], vfov:30},
    // one big tree overhead, framed in open sunlight, so its shadow covers the person
    preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
-   lights:{trees:{ltype:1, follow:true, aim:[0, 1.35, 0], amb:0.2}}},
+   lights:{trees:{ltype:0, aim:[0, 1.35, 0], el:62, az:22, dist:7, amb:0.2}}},
   {id:'ph_room', placeholder:true, seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
    cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},
    // the window is behind the camera, off screen: only the gobo says it is there
-   anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}}, lights:{windows:{ltype:1, follow:true, amb:0.14, ev:1}}},
+   anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}},
+   // a spotlight outside the window, aimed in through it at the floor
+   lights:{windows:{ltype:0, aim:[-0.35, 0.0, 0.55], az:11, el:28, dist:5.2, amb:0.14, ev:1.4}}},
 ];
 // the shots the host offers (the placeholders on the web); filled in when the host answers
 let SHOTLIST = [];
@@ -49,7 +51,7 @@ function shotLight(m) {
   // each placeholder shot comes with a light already set up for the pattern it was made for
   const o = (shotDef(k).lights || {})[m];
   if (o) { const {aim, ...rest} = o; Object.assign(d, rest); if (aim) [d.aimX, d.aimY, d.aimZ] = aim; }
-  const an = shotAnchor(m); if (an) [d.aimX, d.aimY, d.aimZ] = an.at;
+  const an = shotAnchor(m); if (an && d.ltype === 1) [d.aimX, d.aimY, d.aimZ] = an.at;
   return (all[m] = d);
 }
 function shotCam() {
@@ -458,6 +460,7 @@ void main(){
 }`;
 const FS_SHOTMESH = HEAD + SHOT_LIGHT + `
 uniform sampler2D uN, uC; uniform int uMode; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam;
+uniform int uAcc; uniform float uAmbK;
 in vec3 vP; in vec2 vUV; in float vD;
 layout(location=0) out vec4 o0;
 void main(){
@@ -469,20 +472,21 @@ void main(){
   if (uDisp > 0){ o0 = vec4(passView(vP, texture(uN, vUV).xyz, texture(uC, vUV).rgb), 1.0); return; }
   vec3 alb = pow(texture(uC, vUV).rgb, vec3(2.2)) * uAlb * 2.0, l;
   vec3 e = lightAt(vP, n, l);
-  vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
-  o0 = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+  vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmbK * uAmb * (0.6 + 0.4 * n.y));
+  o0 = uAcc == 1 ? vec4(col, 1.0) : vec4(srgb(aces(col * exp2(uExpo))), 1.0);
 }`;
 // through the shot camera: every screen pixel is a pixel of the shot, lit exactly
 const FS_SHOTIMG = COMMON + SHOT_LIGHT + `
 uniform sampler2D uP, uN, uC; uniform vec4 uFit; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam, uLImg; uniform int uGizmo;
+uniform int uAcc; uniform float uAmbK;
 void main(){
   vec2 f = (gl_FragCoord.xy - uFit.xy) / uFit.zw;
-  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0){ fragColor = vec4(0.03, 0.035, 0.04, 1.0); return; }
+  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0){ fragColor = uAcc == 1 ? vec4(0.0) : vec4(0.03, 0.035, 0.04, 1.0); return; }
   ivec2 s = textureSize(uP, 0);
   ivec2 px = clamp(ivec2(f.x * float(s.x), (1.0 - f.y) * float(s.y)), ivec2(0), s - 1);
   vec4 p = texelFetch(uP, px, 0);
   vec3 col;
-  if (p.w < 0.5) col = vec3(0.012, 0.014, 0.018);
+  if (p.w < 0.5) col = uAmbK * vec3(0.012, 0.014, 0.018);
   else {
     vec3 n = texelFetch(uN, px, 0).xyz;
     n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - p.xyz);
@@ -490,14 +494,14 @@ void main(){
     if (uDisp > 0){ fragColor = vec4(passView(p.xyz, texelFetch(uN, px, 0).xyz, texelFetch(uC, px, 0).rgb), 1.0); return; }
     vec3 alb = pow(texelFetch(uC, px, 0).rgb, vec3(2.2)) * uAlb * 2.0, l;
     vec3 e = lightAt(p.xyz, n, l);
-    col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
+    col = alb * (e * max(dot(n, l), 0.0) + uAmbK * uAmb * (0.6 + 0.4 * n.y));
   }
   // the light itself, where the camera can see it
   if (uGizmo == 1 && uLImg.z > 0.0){
     float d = length(gl_FragCoord.xy - uLImg.xy);
     if (d < 7.0 && (p.w < 0.5 || uLImg.z < distance(p.xyz, uCam))) col = mix(col, uLCol * 4.0, 1.0 - smoothstep(4.0, 7.0, d));
   }
-  fragColor = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+  fragColor = uAcc == 1 ? vec4(col, 1.0) : vec4(srgb(aces(col * exp2(uExpo))), 1.0);
 }`;
 const VS_GIZMO = HEAD + `uniform mat4 uVP; uniform vec3 uA, uB; uniform float uSize;
 void main(){ gl_Position = uVP * vec4(gl_VertexID == 0 ? uA : uB, 1.0); gl_PointSize = uSize; }`;
@@ -527,15 +531,34 @@ const m4 = {
   },
   mul(a, b) { const o = new Array(16).fill(0); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) o[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k]; return o; },
 };
-function shotLightUniforms(p, c, L, fin, ext) {
+function shotLightUniforms(p, d, ext) {
   const fr = SHOT.frame;
   i1(p, 'uDisp', S.shot.disp | 0); f3(p, 'uSC', ...fr.Cm); f3(p, 'uCtr', ...fr.ctr); f1(p, 'uRad', fr.R); f1(p, 'uDMed', fr.dMed);
-  tex(p, 'uGobo', fin.tex, 0); tex(p, 'uShadow', SHOT.sm.tex, 1);
-  i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', ext.single);
-  f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim); f3(p, 'uLCol', ...hex3(c.color));
-  f1(p, 'uTanC', ext.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', ext.rep); f1(p, 'uBlur', ext.blur); f1(p, 'uBlurLod', ext.lod);
-  f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', ext.sunSize); f1(p, 'uGoboRes', fin.w);
+  lightUniforms(p, d); tex(p, 'uShadow', SHOT.sm.tex, 1);
   f1(p, 'uShT', ext.shT); f1(p, 'uShHalf', ext.shHalf); f1(p, 'uShFar', ext.shFar); f1(p, 'uShRes', SHOT.sm.w);
+}
+// the shadow map covers what the light can reach: the spot's cone, or the shot around the sun's aim point
+function shadowExt(d) {
+  const fr = SHOT.frame, c = d.c, L = d.L, ext = {};
+  const toCtr = Math.hypot(...v3.sub(fr.ctr, L.aim));
+  ext.shT = d.tanC * (c.shape === 1 ? 1.45 : 1.05);
+  ext.shHalf = Math.min(fr.R + toCtr, Math.max(d.sunSize * 3, 25));
+  ext.shFar = 6 * (fr.R + toCtr);
+  if (c.ltype === 0) ext.shFar = Math.max(v3.dot(v3.sub(fr.ctr, L.pos), L.f) + fr.R * 3, 1);
+  return ext;
+}
+function renderShadow(d, ext) {
+  const fr = SHOT.frame, c = d.c, L = d.L, sm = shadowTarget(2048), pm = PR.shotMesh;
+  gl.useProgram(pm.p); gl.bindVertexArray(vao);
+  // keep the shadow map off every sampler while it is being drawn
+  tex(pm, 'uGobo', d.fin.tex, 0); tex(pm, 'uShadow', d.fin.tex, 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sm.fb); gl.viewport(0, 0, sm.w, sm.h);
+  gl.clearColor(1e9, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  i1(pm, 'uType', c.ltype); f3(pm, 'uLPos', ...L.pos); f3(pm, 'uLF', ...L.f); f3(pm, 'uLR', ...L.r); f3(pm, 'uLU', ...L.u); f3(pm, 'uAim', ...L.aim);
+  f1(pm, 'uShT', ext.shT); f1(pm, 'uShHalf', ext.shHalf); f1(pm, 'uShFar', ext.shFar); f3(pm, 'uCam', ...fr.Cm);
+  meshDraw(pm, 1, fr);
+  gl.disable(gl.DEPTH_TEST);
 }
 const meshStep = () => (S.shot.detail | 0) === 0 ? 2 : 1;
 function meshDraw(pm, mode, fr) {
@@ -545,26 +568,11 @@ function meshDraw(pm, mode, fr) {
   f1(pm, 'uPixAng', fr.cam.vfov * DEG / fr.H * stp); f3(pm, 'uSC', ...fr.Cm);
   gl.drawArrays(gl.TRIANGLES, 0, grid[0] * grid[1] * 6);
 }
-function drawShot(fin, c, L, ext) {
-  const fr = SHOT.frame;
-  // the shadow map covers what the light can reach: the spot's cone, or the shot around the sun's aim point
-  const toCtr = Math.hypot(...v3.sub(fr.ctr, L.aim));
-  ext.shT = ext.tanC * (c.shape === 1 ? 1.45 : 1.05);
-  ext.shHalf = Math.min(fr.R + toCtr, Math.max(ext.sunSize * 3, 25));
-  ext.shFar = 6 * (fr.R + toCtr);
-  if (c.ltype === 0) ext.shFar = Math.max(v3.dot(v3.sub(fr.ctr, L.pos), L.f) + fr.R * 3, 1);
-  const sm = shadowTarget(2048);
+/* all: the scene's lights (the selected one first), each as lightDesc() describes it. One light draws straight to
+   the screen; several are added up linearly in a float target, each with its own shadow map, then tone mapped once. */
+function drawShot(all) {
+  const fr = SHOT.frame, D = all[0], c = D.c, L = D.L, multi = all.length > 1;
   const pm = PR.shotMesh;
-  gl.useProgram(pm.p); gl.bindVertexArray(vao);
-  // keep the shadow map off every sampler while it is being drawn
-  tex(pm, 'uGobo', fin.tex, 0); tex(pm, 'uShadow', fin.tex, 1);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sm.fb); gl.viewport(0, 0, sm.w, sm.h);
-  gl.clearColor(1e9, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-  i1(pm, 'uType', c.ltype); f3(pm, 'uLPos', ...L.pos); f3(pm, 'uLF', ...L.f); f3(pm, 'uLR', ...L.r); f3(pm, 'uLU', ...L.u); f3(pm, 'uAim', ...L.aim);
-  f1(pm, 'uShT', ext.shT); f1(pm, 'uShHalf', ext.shHalf); f1(pm, 'uShFar', ext.shFar); f3(pm, 'uCam', ...fr.Cm);
-  meshDraw(pm, 1, fr);
-  gl.disable(gl.DEPTH_TEST);
   if ((S.shot.view | 0) === 0) {
     // through the shot camera, letterboxed into the preview
     const sc = Math.min(cv.width / fr.W, cv.height / fr.H), fw = fr.W * sc, fh = fr.H * sc;
@@ -579,20 +587,31 @@ function drawShot(fin, c, L, ext) {
         ray:(fx, fy) => { const px = (fx - fit[0]) / fw * fr.W, py = (1 - (fy - fit[1]) / fh) * fr.H, I = fr.cam.inv;
           let d = I.map(rw => rw[0] * px + rw[1] * py + rw[2]); if (v3.dot(d, fr.cam.fwd) < 0) d = d.map(v => -v);
           return {ro:fr.Cm, rd:v3.norm(up ? [d[0], d[2], -d[1]] : d)}; }}; }
-    let li = [0, 0, -1];
-    if (c.ltype === 0) {
-      const P = fr.cam.P, um = fr.um, up = S.shot.upZ;
-      const raw = up ? [L.pos[0] / um, -L.pos[2] / um, L.pos[1] / um] : L.pos.map(v => v / um);
+    // where each spotlight shows in the frame (each light's own little glow)
+    const liOf = d => {
+      if (d.c.ltype !== 0) return [0, 0, -1];
+      const P = fr.cam.P, um = fr.um, up = S.shot.upZ, Lp = d.L.pos;
+      const raw = up ? [Lp[0] / um, -Lp[2] / um, Lp[1] / um] : Lp.map(v => v / um);
       const q = P.map(r => r[0] * raw[0] + r[1] * raw[1] + r[2] * raw[2] + r[3]);
       const fwd = up ? [fr.cam.fwd[0], fr.cam.fwd[2], -fr.cam.fwd[1]] : fr.cam.fwd;
-      if (v3.dot(v3.sub(L.pos, fr.Cm), fwd) > 0) li = [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, Math.hypot(...v3.sub(L.pos, fr.Cm))];
-    }
-    pass(PR.shotImg, null, p => {
-      shotLightUniforms(p, c, L, fin, ext);
+      return v3.dot(v3.sub(Lp, fr.Cm), fwd) > 0 ? [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, Math.hypot(...v3.sub(Lp, fr.Cm))] : [0, 0, -1];
+    };
+    const draw = (d, ext, target, ambK, acc) => pass(PR.shotImg, target, p => {
+      shotLightUniforms(p, d, ext);
       tex(p, 'uP', SHOT.tex.P, 2); tex(p, 'uN', SHOT.tex.N, 3); tex(p, 'uC', SHOT.tex.C, 4);
       gl.uniform4f(p.u('uFit'), ...fit); f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uExpo', c.expo); f3(p, 'uCam', ...fr.Cm);
-      f3(p, 'uLImg', ...li); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+      f3(p, 'uLImg', ...liOf(d)); i1(p, 'uGizmo', c.gizmo ? 1 : 0); i1(p, 'uAcc', acc); f1(p, 'uAmbK', ambK);
     });
+    if (!multi) { const ext = shadowExt(D); renderShadow(D, ext); draw(D, ext, null, 1, 0); return; }
+    const acc = accTarget(false);
+    bindTarget(acc); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    all.forEach((d, i) => {
+      const ext = shadowExt(d); renderShadow(d, ext);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      draw(d, ext, acc, i === 0 ? 1 : 0, 1);
+      gl.disable(gl.BLEND);
+    });
+    toneOut(acc, c.expo);
     return;
   }
   // orbiting the rough 3D model
@@ -605,24 +624,48 @@ function drawShot(fin, c, L, ext) {
       return [(c4[0] / c4[3] * 0.5 + 0.5) * cv.width, (c4[1] / c4[3] * 0.5 + 0.5) * cv.height, c4[3]]; },
       ray:(fx, fy) => { const tv = Math.tan((SHOT.vfov || 40) * DEG / 2), sx = (fx / cv.width * 2 - 1) * cv.width / cv.height, sy = fy / cv.height * 2 - 1;
         return {ro:cpos, rd:v3.norm(v3.add(f, v3.add(v3.mul(b.r, tv * sx), v3.mul(b.u, tv * sy))))}; }}; }
-  bindTarget(null);
-  gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-  gl.useProgram(pm.p);
-  shotLightUniforms(pm, c, L, fin, ext);
-  gl.uniformMatrix4fv(pm.u('uVP'), false, vp); f3(pm, 'uCam', ...cpos);
-  f1(pm, 'uAlb', c.alb); f1(pm, 'uAmb', c.amb); f1(pm, 'uExpo', c.expo);
-  meshDraw(pm, 0, fr);
+  const meshPass = (d, ext, ambK, acc) => {
+    gl.useProgram(pm.p); gl.bindVertexArray(vao);
+    shotLightUniforms(pm, d, ext);
+    gl.uniformMatrix4fv(pm.u('uVP'), false, vp); f3(pm, 'uCam', ...cpos);
+    f1(pm, 'uAlb', c.alb); f1(pm, 'uAmb', c.amb); f1(pm, 'uExpo', c.expo); i1(pm, 'uAcc', acc); f1(pm, 'uAmbK', ambK);
+    meshDraw(pm, 0, fr);
+  };
+  if (!multi) {
+    const ext = shadowExt(D); renderShadow(D, ext);
+    bindTarget(null);
+    gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    meshPass(D, ext, 1, 0);
+  } else {
+    const acc = accTarget(true);
+    all.forEach((d, i) => {
+      const ext = shadowExt(d); renderShadow(d, ext);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fb); gl.viewport(0, 0, acc.w, acc.h);
+      gl.enable(gl.DEPTH_TEST);
+      if (i === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
+      // later lights add onto exactly the surfaces the first one found
+      else { gl.depthFunc(gl.LEQUAL); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+      meshPass(d, ext, i === 0 ? 1 : 0, 1);
+      gl.disable(gl.BLEND); gl.depthMask(true); gl.depthFunc(gl.LESS); gl.disable(gl.DEPTH_TEST);
+    });
+    toneOut(acc, c.expo);
+    // the gizmo points below are drawn without the model's depth
+    bindTarget(null); gl.clear(gl.DEPTH_BUFFER_BIT);
+  }
   if (c.gizmo) {
+    gl.enable(gl.DEPTH_TEST);
     const g = PR.gizmo; gl.useProgram(g.p);
     gl.uniformMatrix4fv(g.u('uVP'), false, vp);
-    // the shot camera, the light and its aim point
+    // the shot camera, each light and its aim point
     f3(g, 'uA', ...fr.Cm); f1(g, 'uSize', 9); f3(g, 'uCol', 0.35, 0.7, 1); gl.drawArrays(gl.POINTS, 0, 1);
-    f3(g, 'uA', ...L.aim); f1(g, 'uSize', 8); f3(g, 'uCol', 1, 0.6, 0.2); gl.drawArrays(gl.POINTS, 0, 1);
-    if (c.ltype === 0) {
-      f3(g, 'uA', ...L.pos); f1(g, 'uSize', 13); f3(g, 'uCol', ...hex3(c.color)); gl.drawArrays(gl.POINTS, 0, 1);
-      f3(g, 'uA', ...L.pos); f3(g, 'uB', ...L.aim); f3(g, 'uCol', 0.8, 0.8, 0.8); gl.drawArrays(gl.LINES, 0, 2);
-    }
+    all.forEach((d, i) => {
+      f3(g, 'uA', ...d.L.aim); f1(g, 'uSize', i ? 6 : 8); f3(g, 'uCol', 1, 0.6, 0.2); gl.drawArrays(gl.POINTS, 0, 1);
+      if (d.c.ltype === 0) {
+        f3(g, 'uA', ...d.L.pos); f1(g, 'uSize', i ? 10 : 13); f3(g, 'uCol', ...hex3(d.c.color)); gl.drawArrays(gl.POINTS, 0, 1);
+        f3(g, 'uA', ...d.L.pos); f3(g, 'uB', ...d.L.aim); f3(g, 'uCol', 0.8, 0.8, 0.8); gl.drawArrays(gl.LINES, 0, 2);
+      }
+    });
   }
   gl.disable(gl.DEPTH_TEST);
 }

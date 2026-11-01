@@ -27,7 +27,8 @@ The files under `houdini/` are a **starting point that has not been run inside H
 3. [The host contract](#the-host-contract-windowcucoloris_host)
 4. [Utility passes and the camera](#utility-passes-and-the-camera)
 5. [What an export writes](#what-an-export-writes)
-6. [The light rig and its USD layer](#the-light-rig-and-its-usd-layer)
+6. [Several lights](#several-lights)
+7. [The light rig and its USD layer](#the-light-rig-and-its-usd-layer)
 7. [How the gobo is projected (the exact maths)](#how-the-gobo-is-projected)
 8. [Hooking the gobo to your renderer](#hooking-the-gobo-to-your-renderer)
 9. [The settings file](#the-settings-file)
@@ -154,6 +155,18 @@ The Export dialog (or `cucoloris.exportFrames(opts)`) writes:
 
 ---
 
+## Several lights
+
+A scene can hold several gobo lights (`src/parts/lights.js`). Each light is a whole gobo of its own: pattern, every setting, output levels, timeline, paint layers, and its placement in the stand-in set and in each shot. The panel always edits the **selected** light. Selecting another swaps that light's state and caches in by reference, so the rest of the code keeps working on "the" light. The Scene view draws the other lights by swapping each in briefly and re-rendering its gobo only when the time, resolution or quality changed; their light is added up linearly before one tone map.
+
+For export, each light is its own unit:
+
+- **files:** `<name>` carries the light's name when there is more than one light (`gobo_sh0020_Key_trees.1001.exr`),
+- **USD:** the light prim is named after the light (`/cucoloris/Key`, `/cucoloris/Light_2`), so every light's layer can be sublayered into one stage without clashing,
+- **`sendLight()`** is called once per light; `send_light()` keeps one node per shot and light.
+
+"All lights" in the Export dialog (`exportFrames({who: 'all'})`) runs the export for every shown light, one after another.
+
 ## The light rig and its USD layer
 
 `lightRig()` (in `src/parts/rig.js`) describes the scene light **in shot space**. `rigUSDA()` writes the same as a USD layer. Both carry `version: 1` (`rigVersion` in USD `customData`).
@@ -162,8 +175,8 @@ The Export dialog (or `cucoloris.exportFrames(opts)`) writes:
 #usda 1.0
 ( defaultPrim = "cucoloris"  metersPerUnit = …  upAxis = "Y"|"Z"  startTimeCode/endTimeCode = the frame range  framesPerSecond = … )
 def Xform "cucoloris" {
-    def SphereLight "gobo_light" ( prepend apiSchemas = ["ShapingAPI"] )   # a spotlight
-    # or: def DistantLight "gobo_light"                                       # the sun
+    def SphereLight "<light name>" ( prepend apiSchemas = ["ShapingAPI"] )   # a spotlight (the default)
+    # or: def DistantLight "<light name>"                                       # the sun
     {
         float inputs:intensity = 1
         float inputs:exposure = <EV>
@@ -259,13 +272,13 @@ Notes. None of these were tested inside the renderers, so verify against your re
 - **Arnold:** the gobo filter works on spot lights. For a distant (sun) light, use a perspective spot placed far away or a projection shader.
 - **Any renderer** where the filter's projection doesn't fit: put the gobo on a card in front of a light instead. This is the classic cucoloris; the card sits at distance `z` and is `2 · z · tan(fov/2)` wide. This is renderer-agnostic and matches the perspective formula exactly.
 
-`attach_gobo()` should be **idempotent**: called again for the same shot and mode, it updates the existing filter instead of adding another.
+`attach_gobo()` should be **idempotent**: called again for the same shot and light, it updates the existing filter instead of adding another.
 
 ---
 
 ## The settings file
 
-`<name>.cucoloris.json` (`schema: "cucoloris.settings"`, `version: 1`) holds everything needed to make the same gobo again:
+`<name>.cucoloris.json` (`schema: "cucoloris.settings"`, `version: 2`) holds everything needed to make one light's gobo again:
 
 - the pattern parameters,
 - Levels,
@@ -275,7 +288,7 @@ Notes. None of these were tested inside the renderers, so verify against your re
 - the paint layers (as PNG data URLs),
 - the export settings.
 
-It opens in any copy of the tool ("Open settings…" or `cucoloris.applySettings(json)`). It is the right thing to keep in the shot for re-renders on the farm with a headless browser. **Version rule:** a newer tool reads older files; a file newer than the tool is refused with a message.
+It opens in any copy of the tool ("Open settings…" or `cucoloris.applySettings(json)`). It is the right thing to keep in the shot for re-renders on the farm with a headless browser. **Version rule:** a newer tool reads older files; a file newer than the tool is refused with a message. Version 2 added the light pool switch (`pattern.pool`, on by default); version 1 files open with it off, so they look as they did.
 
 ---
 
@@ -291,7 +304,8 @@ The same calls the panel makes, for the host, farm scripts and tests (`src/parts
 | `getSettings()`, `applySettings(obj)` | the settings file |
 | `lightRig(info?)`, `lightRigUSDA(info?)` | the light as it stands |
 | `renderFrame(n, res, {quality, channels})` | `{w, h, nch, data}`: linear Float32, rows top to bottom |
-| `exportFrames(opts, onProgress)` | any export dialog setting: `{fmt, depth, res, range: 'current'/'range'/'all', from, to, first, chans, enc, qual, name, rig: 'on', send: 'on'}` |
+| `lights()`, `selectLight(i)`, `addLight()`, `removeLight(i)`, `renameLight(name, i)`, `showLight(on, i)` | the scene's lights; every other call works on the selected one |
+| `exportFrames(opts, onProgress)` | any export dialog setting: `{fmt, depth, res, range: 'current'/'range'/'all', from, to, first, chans, enc, qual, name, rig: 'on', send: 'on', who: 'this'/'all'}` |
 | `encode(img, {fmt, depth, enc})` | the encoders, to `Blob` |
 | `exrSource(filesByFrame, layers, opts)` | for `openShot` |
 
@@ -325,6 +339,7 @@ src/parts/
   host.js             THE SEAM: the web host and the CUCOLORIS_HOST merge
   shot.js             shots: reading passes (exrSource, placeholders), camera from host or solved, rebuilding the scene
   scene.js            scene preview, the light (sceneLight) and goboProjection()
+  lights.js           several lights: each light's state and caches, swapping, the light list
   rig.js              light rig, USD layer, settings file
   export.js           export dialog, EXR / Ptex / TIFF / PNG / JPEG writers, zip
   api.js              window.cucoloris

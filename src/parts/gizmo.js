@@ -19,6 +19,18 @@ function lightNow() {
   const pos = c.ltype === 1 ? v3.add(L.aim, v3.mul(dir, gd)) : L.pos;
   return {c, L, dir, pos, gd};
 }
+// where another light of the scene shows (its icon), from its description in the last drawn scene
+function otherIcon(d) {
+  const dir = v3.mul(d.L.f, -1);
+  let gd = d.c.dist;
+  if (d.c.ltype === 1 && VIEWCAM) for (let i = 0; i < 12 && gd > 0.3; i++) { const q = toCss(v3.add(d.L.aim, v3.mul(dir, gd))); if (q && onScreen(q, 70)) break; gd *= 0.75; }
+  return toCss(d.c.ltype === 1 ? v3.add(d.L.aim, v3.mul(dir, gd)) : d.L.pos);
+}
+function otherPick(m) {
+  const os = (LASTSCENE && LASTSCENE.others) || [];
+  for (const d of os) { const q = otherIcon(d); if (q && Math.hypot(m[0] - q[0], m[1] - q[1]) < 12) return d; }
+  return null;
+}
 const onScreen = (q, m) => q[0] > m && q[1] > m && q[0] < cv.clientWidth - m && q[1] < cv.clientHeight - m;
 // bring a light that is out of view into view (leaving the shot camera if need be)
 function frameLight() {
@@ -114,6 +126,15 @@ function gizDraw() {
   gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, W, Hh);
   if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
   gctx.setTransform(d, 0, 0, d, 0, 0);
+  // the scene's other lights: small icons with their names; click one to select it
+  for (const o of (LASTSCENE && LASTSCENE.others) || []) {
+    const q = otherIcon(o); if (!q) continue;
+    const a = toCss(o.L.aim);
+    if (a) { gctx.setLineDash([2, 5]); gctx.strokeStyle = 'rgba(255,255,255,.3)'; gctx.lineWidth = 1; gctx.beginPath(); gctx.moveTo(q[0], q[1]); gctx.lineTo(a[0], a[1]); gctx.stroke(); gctx.setLineDash([]); }
+    gctx.lineWidth = 1.5; gctx.strokeStyle = 'rgba(255,255,255,.7)'; gctx.fillStyle = 'rgba(14,17,21,.7)';
+    gctx.beginPath(); gctx.arc(q[0], q[1], 6, 0, 7); gctx.fill(); gctx.stroke();
+    gctx.font = '600 11px system-ui, sans-serif'; gctx.fillStyle = 'rgba(255,255,255,.75)'; gctx.fillText(o.name || '', q[0] + 10, q[1] + 4);
+  }
   const H = gizHandles(); if (!H) return;
   const {Ln, ctr} = H, sun = Ln.c.ltype === 1;
   // the light's icon, and a line to where it is aimed
@@ -123,6 +144,7 @@ function gizDraw() {
     gctx.fillStyle = '#f0a040'; gctx.beginPath(); gctx.arc(aim[0], aim[1], 3.5, 0, 7); gctx.fill(); }
   gctx.strokeStyle = GIZ.sel ? GCOL.sel : 'rgba(255,255,255,.9)'; gctx.fillStyle = 'rgba(14,17,21,.75)';
   gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 8, 0, 7); gctx.fill(); gctx.stroke();
+  if (lightMulti()) { gctx.font = '600 11px system-ui, sans-serif'; gctx.fillStyle = GIZ.sel ? GCOL.sel : 'rgba(255,255,255,.9)'; gctx.fillText(lightName(), ctr[0] + 12, ctr[1] + 16); gctx.fillStyle = 'rgba(14,17,21,.75)'; }
   if (sun) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; gctx.beginPath(); gctx.moveTo(ctr[0] + Math.cos(a) * 10, ctr[1] + Math.sin(a) * 10); gctx.lineTo(ctr[0] + Math.cos(a) * 14, ctr[1] + Math.sin(a) * 14); gctx.stroke(); }
   else { gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 3, 0, 7); gctx.fillStyle = gctx.strokeStyle; gctx.fill(); }
   if (!GIZ.sel) return;
@@ -153,7 +175,11 @@ function gizDraw() {
   let pend = null;
   plate.addEventListener('pointerdown', e => {
     if (S.view !== 'scene' || e.target !== cv || e.altKey || e.button !== 0) return;
-    const m = mpos(e), hit = gizPick(m);
+    const m = mpos(e);
+    // another light: select it (its gobo and settings come up in the panel)
+    const other = otherPick(m);
+    if (other) { e.stopPropagation(); e.preventDefault(); GIZ.eatUp = true; GIZ.sel = true; selectLight(other.idx); toolButtons(); return; }
+    const hit = gizPick(m);
     if (!hit) { if (GIZ.sel) pend = {x:e.clientX, y:e.clientY}; return; }
     e.stopPropagation(); e.preventDefault(); GIZ.eatUp = true;
     if (hit.light && !GIZ.sel) { GIZ.sel = true; buildPanel(); gizDraw(); return; }

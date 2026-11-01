@@ -77,7 +77,7 @@ async def run(page_html, cases):
         return out
 def check(label, res):
     open(os.path.join(TMP, 'rig.usda'),'w').write(res['usda'])
-    st = Usd.Stage.Open(os.path.join(TMP, 'rig.usda')); p = st.GetPrimAtPath('/cucoloris/gobo_light')
+    st = Usd.Stage.Open(os.path.join(TMP, 'rig.usda')); p = st.GetPrimAtPath('/cucoloris').GetChildren()[0]   # the light prim is named after the light
     M = np.array(UsdGeom.Xformable(p).ComputeLocalToWorldTransform(0))
     X, Y, Z, T = M[0,:3], M[1,:3], M[2,:3], M[3,:3]
     err = 0

@@ -149,6 +149,13 @@ float paintK(vec3 p0){
   if (uWrap == 1) g = fract(g);
   return textureLod(uOvl, g, 0.0).r * 2.0 - 1.0;
 }
+float paintB(vec3 p0){
+  if (uOvlOn == 0) return 0.0;
+  vec2 g = vec2((p0.x - (p0.z - uZr) * uCot) / uLx, p0.y / uLy);
+  if (uWrap == 1) g = fract(g);
+  vec4 o = textureLod(uOvl, g, 0.0);
+  return (o.b - o.g) * 2.0;
+}
 float hashI(int i, uint s){ uint h = uint(i) * 2654435761u + s; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 65535u) / 65535.0; }
 void main(){
   int corner = gl_VertexID;
@@ -156,6 +163,8 @@ void main(){
   // where it is opened right up, the finer twigs go too; the limbs stay
   float pk = paintK(0.5 * (aA.xyz + aB.xyz));
   if (pk > 0.55 && max(aA.w, aB.w) < 0.035 && hashI(gl_InstanceID / 4, 29u) < (pk - 0.55) * 2.4) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
+  // painted "remove branches" (green pulled below blue in the paint-over layer): every segment there goes, limbs included
+  if (paintB(aA.xyz) > 0.3 || paintB(aB.xyz) > 0.3 || paintB(0.5 * (aA.xyz + aB.xyz)) > 0.3) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec3 A = aA.xyz + dsp(aN.x, aA.xy), B = aB.xyz + dsp(aN.y, aB.xy);
   vec2 ga = vec2((A.x - (A.z - uZr) * uCot) / uLx, A.y / uLy), gb = vec2((B.x - (B.z - uZr) * uCot) / uLx, B.y / uLy);
   vec2 t = gb - ga; float tl = length(t);

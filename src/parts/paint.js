@@ -12,7 +12,7 @@ function paintCanvas() {
   PAINT.cv = c; PAINT.ctx = c.getContext('2d', {willReadFrequently:false});
   PAINT.ctx.fillStyle = '#fff'; PAINT.ctx.fillRect(0, 0, PAINT.N, PAINT.N);
   try {
-    const url = localStorage.getItem(PAINT_KEY);
+    const url = localStorage.getItem(PAINT.key || PAINT_KEY);
     if (url) { const im = new Image(); im.onload = () => { PAINT.ctx.drawImage(im, 0, 0, PAINT.N, PAINT.N); PAINT.dirty = true; dirty = true; }; im.src = url; }
   } catch (e) {}
   return PAINT;
@@ -38,13 +38,14 @@ function paintTex() {
 /* ---------- paint targets: the Paint-your-own gobo, or a mode's paint-over layer ---------- */
 PAINT.key = PAINT_KEY; PAINT.set = () => S.p.shapes; PAINT.kind = 'gobo';
 const OVL = {};
+let OVL_PREFIX = 'cucLab.ovl.';   // each light keeps its own paint-over layers (lights.js)
 if (!S.ovl) S.ovl = {};
 S.ovl = {on:{}, pbTool:0, pbInk:0, pbSize:10, pbSoft:0.8, pbFlow:0.35, pbWrap:true, pbBlur:0.5, ...S.ovl};
 const ovlOn = () => !!(S.ovl.on || {})[S.mode];
 function ovlTarget(m = S.mode) {
   if (OVL[m]) return OVL[m];
   const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
-  const T = OVL[m] = {cv:c, ctx:c.getContext('2d'), N, tex:null, dirty:true, undo:[], last:null, saveT:0, key:'cucLab.ovl.' + m, set:() => S.ovl, kind:'ovl', used:false};
+  const T = OVL[m] = {cv:c, ctx:c.getContext('2d'), N, tex:null, dirty:true, undo:[], last:null, saveT:0, key:OVL_PREFIX + m, set:() => S.ovl, kind:'ovl', used:false};
   T.ctx.fillStyle = 'rgb(128,128,128)'; T.ctx.fillRect(0, 0, N, N);
   try { const url = localStorage.getItem(T.key); if (url) { T.used = true; const im = new Image(); im.onload = () => { T.ctx.drawImage(im, 0, 0, N, N); T.dirty = true; dirty = true; }; im.src = url; } } catch (e) {}
   return T;
@@ -113,7 +114,10 @@ function noiseTile() {
 // one dab of the brush, repeated across the edges when wrapping so the gobo stays seamless
 function dab(x, y) {
   const b = PB(), N = PT().N, ctx = PT().ctx, r = Math.max(1, b.size / 100 * N * 0.5);
-  const col = PT().kind === 'ovl' ? ['255,255,255', '0,0,0', '128,128,128'][b.ink] : b.ink ? '255,255,255' : '0,0,0';
+  // paint-over inks: lighter grey opens, darker thickens, mid grey erases; "remove branches" pulls green down alone
+  // (multiplied in, so red, which carries leaf density, is untouched; blue minus green says how far branches are removed)
+  const branch = PT().kind === 'ovl' && b.ink === 3 && MODES[S.mode].kind === 'trees';
+  const col = PT().kind === 'ovl' ? ['255,255,255', '0,0,0', '128,128,128', '255,0,255'][b.ink] : b.ink ? '255,255,255' : '0,0,0';
   const ext = b.tool === 4 ? Math.max(r, r * b.len) : b.tool === 5 ? r * 2 : r * 1.6;
   const offs = [[0, 0]];
   if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -ext && x + ox < N + ext && y + oy > -ext && y + oy < N + ext) offs.push([ox, oy]);
@@ -155,6 +159,7 @@ function dab(x, y) {
   for (const [ox, oy] of offs) {
     const cx = x + ox, cy = y + oy;
     ctx.save();
+    if (branch) ctx.globalCompositeOperation = 'multiply';
     if (spr) {
       ctx.translate(cx, cy); ctx.rotate(sang); ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
     } else if (b.tool === 6) {
@@ -274,7 +279,10 @@ function padRedraw() {
         const N = T.N, id = T.ctx.getImageData(0, 0, N, N), o = x.createImageData(N, N);
         for (let i = 0; i < N * N; i++) { const k = (id.data[i * 4] - 128) / 127, j = i * 4;
           if (k > 0) { o.data[j] = 255; o.data[j + 1] = 190; o.data[j + 2] = 60; o.data[j + 3] = Math.min(255, k * 160); }
-          else { o.data[j] = 70; o.data[j + 1] = 140; o.data[j + 2] = 255; o.data[j + 3] = Math.min(255, -k * 160); } }
+          else { o.data[j] = 70; o.data[j + 1] = 140; o.data[j + 2] = 255; o.data[j + 3] = Math.min(255, -k * 160); }
+          // branches removed: magenta diagonal hatching
+          const br = (id.data[i * 4 + 2] - id.data[i * 4 + 1]) / 127;
+          if (br > 0.15 && ((i % N) + Math.floor(i / N)) % 10 < 4) { o.data[j] = 235; o.data[j + 1] = 70; o.data[j + 2] = 200; o.data[j + 3] = Math.min(255, 90 + br * 160); } }
         const tmp = document.createElement('canvas'); tmp.width = tmp.height = N; tmp.getContext('2d').putImageData(o, 0, 0);
         x.drawImage(tmp, 0, 0, c.width, c.height);
       } else x.drawImage(T.cv, 0, 0, c.width, c.height);
@@ -441,10 +449,10 @@ function paintDefs() {
    stays put while the pattern moves underneath.
    ===================================================================== */
 const FS_OVL = COMMON + OVL_GLSL + `
-uniform sampler2D uSrc, uOvl;
+uniform sampler2D uSrc, uOvl; uniform float uUp;
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
-  fragColor = vec4(ovlMod(texture(uSrc, uv).rgb, texture(uOvl, uv).r * 2.0 - 1.0), 1.0);
+  fragColor = vec4(ovlMod(texture(uSrc, uv).rgb, texSmooth(uOvl, uv, uUp).r * 2.0 - 1.0), 1.0);
 }`;
 PR.ovl = program(VS_FULL, FS_OVL, 'paint over');
 function ovlTex(T) {
@@ -467,7 +475,7 @@ function ovlApply(src) {
   if (!ovlOn() || ['trees', 'shapes'].includes(MODES[S.mode].kind)) return src;
   const T = ovlTarget(); if (!T.used) return src;
   const out = tgt('ovlOut', src.w, src.h, 'f16');
-  pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); });
+  pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); f1(p, 'uUp', src.w / T.N); });
   return out;
 }
 function ovlAction(a) {
@@ -480,10 +488,12 @@ function ovlAction(a) {
 function ovlGroup() {
   const on = ovlOn(), P = S.ovl, tool = P.pbTool | 0;
   const trees = MODES[S.mode].kind === 'trees';
+  if (!trees && (P.pbInk | 0) === 3) P.pbInk = 0;
   const defs = [{k:'__on', l:trees ? 'Paint leaf density' : 'Paint over the gobo', type:'chk', h:trees ? 'Paint where the canopy should be thinner or fuller. Leaves are removed or grown where you paint (and the finer twigs go where it is cleared right out), so it still looks and moves like a tree.' : 'Paint on top of the pattern in chosen areas to open it up or thicken it. On moving shapes the painting travels with the pattern.'}];
   if (on) defs.push(
     {type:'mount', mount:el => paintPad(el, ovlTarget())},
-    {k:'pbInk', l:'Effect', opts:MODES[S.mode].kind === 'trees' ? ['Thin out the leaves (more light)', 'Fill in the leaves (more shadow)', 'Erase back to the original'] : ['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original']},
+    {k:'pbInk', l:'Effect', opts:trees ? ['Thin out the leaves (more light)', 'Fill in the leaves (more shadow)', 'Erase back to the original', 'Remove branches'] : ['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original'],
+     h:trees ? 'Remove branches takes out every branch and twig where you paint, limbs included, for the long branch shadows left after clearing leaves. Erase brings them back.' : undefined},
     {k:'pbTool', l:'Brush', opts:['Soft round', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Blur (soften the painting)'], vals:[0, 6, 7, 8, 3]},
     {k:'pbSize', l:'Brush size', min:0.5, max:60, step:0.1, u:'%'},
     {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
@@ -491,7 +501,7 @@ function ovlGroup() {
     ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
     {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
     {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
-    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
+    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
   );
   return defs;
 }

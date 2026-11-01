@@ -58,6 +58,8 @@ function control(def, store, idPrefix, dflt, onChange) {
 const changed = () => { dirty = true; save(); };
 
 function buildModes() {
+  // the light list shows each light's pattern
+  try { lightsBar(); } catch (e) {}
   const nav = $('modes'); nav.innerHTML = '';
   for (const [k, m] of Object.entries(MODES)) {
     const b = document.createElement('button');
@@ -79,7 +81,7 @@ function buildPanel() {
       const prev = S.p[S.mode];
       S.p[S.mode] = {...DEFAULTS[S.mode], ...ps.v, seed:prev.seed};
       // a framing the user chose stays put when they try other presets
-      if (S.userFraming && S.userFraming[S.mode]) for (const k of ['framing', 'poolSize', 'poolSoft']) if (prev[k] !== undefined) S.p[S.mode][k] = prev[k];
+      if (S.userFraming && S.userFraming[S.mode]) for (const k of ['framing', 'pool', 'poolSize', 'poolSoft']) if (prev[k] !== undefined) S.p[S.mode][k] = prev[k];
       buildPanel(); changed();
     };
     pr.append(b);
@@ -139,6 +141,18 @@ function buildPanel() {
     };
     top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
   }
+  // the light pool: a soft circle of light with dark edges, for every pattern
+  {
+    const pd = [{k:'pool', l:'Light pool, dark edges', type:'chk', h:'Frames the gobo in a soft pool of light that fades to black toward the edges, with an organic rim, as a spotlight pool does.'}];
+    if (store.pool) pd.push(
+      {k:'poolSize', l:'Pool radius', min:0.3, max:1.4, step:0.01, fmt:v => v.toFixed(2) + '×', h:'1 reaches the edges of the frame; smaller pulls the pool in.'},
+      {k:'poolSoft', l:'Edge fade', min:0.05, max:1, step:0.01, h:'How far in from the rim the light fades to black. Low is a crisp edge, high a long soft falloff.'});
+    const d = document.createElement('details'); d.className = 'grp'; d.open = true;
+    const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label">Light pool</span>';
+    const c = document.createElement('div'); c.className = 'ctrls';
+    pd.forEach(def => c.append(control(def, store, S.mode, DEFAULTS[S.mode], k => { if (k === 'pool') { if (m.onParam) m.onParam(k, store); buildPanel(); } changed(); })));
+    d.append(sm, c); groups.append(d);
+  }
   groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode], true, !!g.off, !!g.first));
   mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
 }
@@ -161,7 +175,10 @@ function buildTimeline() {
 // view controls
 const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHeat'), vSeams = $('vSeams');
 vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
-vRes.onchange = () => { S.res = +vRes.value; changed(); };
+// the gobo's own resolution: everything is recalculated at it (painted layers are smoothly upscaled), and exports follow it
+{ const mx = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+  for (const o of [...vRes.options]) if (+o.value > mx) o.remove(); }
+vRes.onchange = () => { S.res = +vRes.value; if (S.exp) S.exp.res = S.res; changed(); };
 vQual.onchange = () => { S.quality = vQual.value; changed(); };
 vTiles.onchange = () => { S.tiles = +vTiles.value; viewDirty = true; save(); };
 vHeat.onchange = () => { S.heat = vHeat.checked; viewDirty = true; };

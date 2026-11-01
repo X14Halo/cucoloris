@@ -134,9 +134,7 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
-        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white', 'Light pool, dark edges'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Light pool lets light through only in the middle: the canopy thickens toward the edges and the frame ends in black.'},
-        {k:'poolSize', l:'Light pool size', min:0.3, max:1.4, step:0.01, h:'Only used with the light pool framing.'},
-        {k:'poolSoft', l:'Light pool edge softness', min:0.05, max:1, step:0.01, h:'Only used with the light pool framing.'},
+        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Either can sit in a light pool with dark edges (Light pool, below).'},
         {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
         {k:'trunks', l:'Trunk shadows', type:'chk', h:'Off keeps only the canopy, as when you look up into the trees from beneath them.'},
@@ -168,7 +166,7 @@ const MODES = {
       {name:'One storey up', v:{species:1, tileSize:3, cover:1.0, canopyTop:4, canopyDepth:1.5, sunElev:50}},
       {name:'Single branch, white frame', v:{species:1, tileSize:5, cover:1.0, canopyTop:5, canopyDepth:2.5, framing:1, elemSize:0.55, sunElev:60}},
       {name:'Oak sprig, white frame', v:{species:0, tileSize:4, cover:1.0, canopyTop:3.5, canopyDepth:1.8, framing:1, elemSize:0.5, sunElev:55}},
-      {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:2, poolSize:1.0, poolSoft:0.6}},
+      {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:0, pool:true, poolSize:1.0, poolSoft:0.6}},
       {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
@@ -194,7 +192,7 @@ for (const m of ['under', 'over', 'hull']) {
   MODES.trees.onParam = k => k === 'framing';
   Object.defineProperty(MODES.trees, 'groups', {get() {
     const fr = (S.p.trees.framing | 0);
-    const top = [all.framing, ...(fr === 1 ? [all.elemSize] : fr === 2 ? [all.poolSize, all.poolSoft] : []),
+    const top = [all.framing, ...(fr === 1 ? [all.elemSize] : []),
                  all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.woody, all.trunks];
     return [{name:'Trees', params:top}, ...TG.slice(1)];
   }});
@@ -216,6 +214,10 @@ const POST = [
 for (const m of Object.keys(MODES)) MODES[m].tl = {...MODES[m].tl, loop:false, len:Math.max(MODES[m].tl.len, 60)};
 const DEFAULTS = {};
 for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v};
+// every pattern starts framed in a soft pool of light with dark edges (Light pool, in the panel)
+const POOL_DEFAULT = {pool:true, poolSize:1.0, poolSoft:0.55};
+for (const m of Object.keys(DEFAULTS)) DEFAULTS[m] = {...POOL_DEFAULT, ...DEFAULTS[m]};
+for (const m of Object.keys(MODES)) for (const ps of MODES[m].presets) if (ps.v.framing === 2 && m === 'trees') ps.v.framing = 0;
 
 /* =====================================================================
    STATE (+ per-viewer persistence)
@@ -244,9 +246,16 @@ try {
       if (!(saved.ver >= 9) && S.p[m].poolSize !== undefined && S.p[m].poolSize < 1) S.p[m].poolSize = 1;
       // v10: no more ebb & flow (brightness pumping); shapes morph instead
       if (!(saved.ver >= 10) && m === 'shapes') { S.p[m].breath = 0; if (!(S.p[m].blend > 0)) S.p[m].blend = DEFAULTS[m].blend; }
+      // v11: every pattern sits in a light pool with dark edges by default; the old pool framings become that switch
+      if (!(saved.ver >= 11)) {
+        const P = S.p[m], palm = m === 'trees' && typeof SPECIES !== 'undefined' && (SPECIES[P.species | 0] || {}).kind === 'palm';
+        if (m === 'trees' && (P.framing | 0) === 2) P.framing = palm ? 1 : 0;
+        if (m === 'shapes' && (P.framing | 0) === 1) P.framing = 0;
+        Object.assign(P, {...POOL_DEFAULT, ...P, pool:true});
+      }
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
@@ -255,7 +264,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, ver:10})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), ver:11})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -646,7 +655,7 @@ let goboInfo = '';
 function display() {
   const fin = targets.final;
   if (!fin) return;
-  if (S.view === 'scene') { info = goboInfo + '\n' + drawScene(fin).join('\n'); gizDraw(); return; }
+  if (S.view === 'scene') { const others = otherLights(); info = goboInfo + '\n' + drawScene(targets.final, others).join('\n'); gizDraw(); return; }
   if (gcv && gcv.width) gizDraw();
   info = goboInfo;
   pass(PR.disp, null, p => {
@@ -661,6 +670,7 @@ function display() {
 /*@@PART exr@@*/
 /*@@PART shot@@*/
 /*@@PART gizmo@@*/
+/*@@PART lights@@*/
 /*@@PART export@@*/
 /*@@PART rig@@*/
 /*@@PART api@@*/
@@ -693,6 +703,6 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR, SC, sceneLight, goboProjection, shotSpace, HOST};
+window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR, SC, sceneLight, goboProjection, shotSpace, HOST, PAINT, paintCanvas, OVL, ovlTarget};
 requestAnimationFrame(tick);
 })();

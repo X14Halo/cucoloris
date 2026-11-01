@@ -194,7 +194,7 @@ input.swatch{width:46px;height:24px;padding:0 2px;border:1px solid var(--line);b
       <div class="tc" id="tc">0.00 s</div>
     </div>
     <div class="viewbar">
-      <label>Preview <select id="vRes"><option value="512">512²</option><option value="1024">1024²</option><option value="2048">2048²</option></select></label>
+      <label title="The gobo is computed at this size: patterns are recalculated from their geometry at the new resolution, and painted layers are smoothly upscaled. Exports default to it.">Gobo resolution <select id="vRes"><option value="512">512 px</option><option value="1024">1K · 1024</option><option value="2048">2K · 2048</option><option value="4096">4K · 4096</option></select></label>
       <label>Quality <select id="vQual"><option value="draft">Draft</option><option value="high">High</option><option value="ultra">Ultra</option></select></label>
       <label class="gobo-only">View <select id="vTiles"><option value="1">Single tile</option><option value="2">2 × 2 tiled</option><option value="3">3 × 3 tiled</option></select></label>
       <label class="tog gobo-only"><input type="checkbox" id="vHeat"> False color</label>
@@ -368,9 +368,7 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
-        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white', 'Light pool, dark edges'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Light pool lets light through only in the middle: the canopy thickens toward the edges and the frame ends in black.'},
-        {k:'poolSize', l:'Light pool size', min:0.3, max:1.4, step:0.01, h:'Only used with the light pool framing.'},
-        {k:'poolSoft', l:'Light pool edge softness', min:0.05, max:1, step:0.01, h:'Only used with the light pool framing.'},
+        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Either can sit in a light pool with dark edges (Light pool, below).'},
         {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
         {k:'trunks', l:'Trunk shadows', type:'chk', h:'Off keeps only the canopy, as when you look up into the trees from beneath them.'},
@@ -402,7 +400,7 @@ const MODES = {
       {name:'One storey up', v:{species:1, tileSize:3, cover:1.0, canopyTop:4, canopyDepth:1.5, sunElev:50}},
       {name:'Single branch, white frame', v:{species:1, tileSize:5, cover:1.0, canopyTop:5, canopyDepth:2.5, framing:1, elemSize:0.55, sunElev:60}},
       {name:'Oak sprig, white frame', v:{species:0, tileSize:4, cover:1.0, canopyTop:3.5, canopyDepth:1.8, framing:1, elemSize:0.5, sunElev:55}},
-      {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:2, poolSize:1.0, poolSoft:0.6}},
+      {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:0, pool:true, poolSize:1.0, poolSoft:0.6}},
       {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
@@ -428,7 +426,7 @@ for (const m of ['under', 'over', 'hull']) {
   MODES.trees.onParam = k => k === 'framing';
   Object.defineProperty(MODES.trees, 'groups', {get() {
     const fr = (S.p.trees.framing | 0);
-    const top = [all.framing, ...(fr === 1 ? [all.elemSize] : fr === 2 ? [all.poolSize, all.poolSoft] : []),
+    const top = [all.framing, ...(fr === 1 ? [all.elemSize] : []),
                  all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.woody, all.trunks];
     return [{name:'Trees', params:top}, ...TG.slice(1)];
   }});
@@ -580,20 +578,19 @@ const MOTION_LOOKS = [
 MODES.shapes = {
   short:'Shapes', kind:'shapes', tileable:true, tl:{loop:true, len:10, shutter:0},
   onParam(k, P) {
-    if (k === 'paintMode') { if (P.paintMode) { if ((P.shape | 0) !== 14) P.prevShape = P.shape; P.shape = 14; } else P.shape = P.prevShape ?? 9; return true; }
-    if (k === 'pbPool') { P.framing = P.pbPool ? 1 : 0; return true; }
+    // painting your own starts in a soft pool of light with dark edges
+    if (k === 'paintMode') { if (P.paintMode) { if ((P.shape | 0) !== 14) { P.prevShape = P.shape; P.prevPool = !!P.pool; } P.shape = 14; P.pool = true; } else { P.shape = P.prevShape ?? 9; if (P.prevPool !== undefined) P.pool = P.prevPool; } return true; }
+    if (k === 'pool') return true;
     if (k === 'blend') { const on = (P.blend ?? 0) > 0, ch = on !== this._blendOn; this._blendOn = on; return ch; } return k === 'shape' || k === 'framing' || k === 'stretch' || k === 'pbTool' || k === 'drift'; },
-  get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && (P.framing | 0) === 0; },
+  get tileableNow() { const P = S.p.shapes; return SHAPE_SEAMLESS[P.shape | 0] && !P.pool; },
   get groups() {
     const P = S.p.shapes, sh = P.shape | 0;
     this._blendOn = (P.blend ?? 0) > 0;
-    P.paintMode = sh === 14; P.pbPool = (P.framing | 0) === 1;
+    P.paintMode = sh === 14; P.framing = 0;
     const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
     const g = [
-      {k:'framing', l:'Framing', opts:['As designed' + (SHAPE_SEAMLESS[sh] ? ' (seamless tile)' : ''), 'Light pool, dark edges'], h:'A light pool lets light through only in the middle of the frame, fading softly to black toward the edges.'},
       {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER},
     ];
-    if ((P.framing | 0) === 1) g.push({k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01});
     g.push({k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole gobo, as a percentage of its width. Soft noise usually wants several percent.'});
     const look = [];
     if (soft) {
@@ -626,8 +623,6 @@ MODES.shapes = {
     const pp = [{k:'paintMode', l:'Paint your own gobo', type:'chk', h:'Turn on to paint the gobo yourself, on the canvas here, on the Gobo preview or right where the light lands in the Scene view. The generated shapes are set aside while it is on.'}];
     if (paint) pp.push(
       {k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole painted gobo, as a percentage of its width.'},
-      {k:'pbPool', l:'Light pool, dark edges', type:'chk', h:'Frames the painting in a soft pool of light that fades to black at the edges.'},
-      ...((P.framing | 0) === 1 ? [{k:'poolSize', l:'Pool size', min:0.3, max:1.4, step:0.01}, {k:'poolSoft', l:'Pool edge softness', min:0.05, max:1, step:0.01}] : []),
       ...paintDefs());
     const out = [{name:'Paint your own', params:pp, first:true}, {name:'Shape', params:g, off:paint}];
     if (look.length) out.push({name:'Look', params:look, off:paint});
@@ -640,7 +635,7 @@ MODES.shapes = {
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
         {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        ...(sh !== 17 && sh !== 7 && !paint ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
         ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
         {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
@@ -652,7 +647,7 @@ MODES.shapes = {
     return out;
   },
   presets:[
-    {name:'Morphing light pool', v:{seed:4, shape:9, framing:1, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
+    {name:'Morphing light pool', v:{seed:4, shape:9, pool:true, framing:0, poolSize:1.0, poolSoft:0.6, blur:6, tileSize:3, count:9, spread:70, apexX:0, apexY:0.15, angle:0, width:0.55, wVar:0.5, soft:0.7, fall:0.55,
       brk:0.4, rough:0.45, darkest:0.2, dir:0, scale:3, amount:0.55, motion:0.5, shimSpd:1, warp:0.9, clump:0.4, stretch:1, pbTool:0, pbInk:0, pbSize:6, pbSoft:0.6, pbFlow:0.6, pbWrap:true, pbScene:true, pbAngle:20, pbLen:6, pbStreak:0.5,
       mSpeed:1, sway:0, swayHz:0.45, flutter:0, drift:0, windDir:0, gust:0, flow:0.15, morph:0.04, breath:0, blend:0.5, blendT:8}},
     {name:'Soft drifting clouds', v:{shape:15, framing:0, blur:6, scale:2, amount:0.5, soft:0.75, brk:0.5, rough:0.5, darkest:0.3, warp:0.6, clump:0.5, drift:0.15, gust:0.3, morph:0.06, flow:0.15, breath:0, blend:0.3, blendT:12}},
@@ -663,9 +658,9 @@ MODES.shapes = {
     {name:'Marbled flowing light', v:{blend:0.4, blendT:10, shape:18, framing:0, blur:5, scale:2, amount:0.5, soft:0.8, brk:0.6, rough:0.5, darkest:0.25, warp:1.0, dir:1, flow:0.45, morph:0.06, breath:0}},
     {name:'Gentle uneven wash', v:{shape:19, framing:0, blur:8, scale:2, amount:0.6, soft:0.6, brk:0.3, rough:0.45, darkest:0.4, warp:0.5, morph:0.05, flow:0.15, breath:0, blend:0.45, blendT:9}},
     {name:'Soft streaks', v:{shape:15, framing:0, blur:5, scale:3, amount:0.5, soft:0.7, brk:0.5, rough:0.5, darkest:0.25, warp:0.4, clump:0.3, stretch:4, dir:1, drift:0.1, morph:0.05, breath:0}},
-    {name:'Soft pool, slow swirl', v:{shape:15, framing:1, poolSize:1.0, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
+    {name:'Soft pool, slow swirl', v:{shape:15, pool:true, framing:0, poolSize:1.0, poolSoft:0.7, blur:7, scale:3, amount:0.55, soft:0.8, brk:0.4, rough:0.45, darkest:0.1, warp:0.8, clump:0.4, flow:0.5, morph:0.06, breath:0}},
     {name:'Soft spots, drifting', v:{shape:7, framing:0, blur:7, scale:4, amount:0.6, wVar:0.6, soft:0.85, darkest:0.15, drift:0.1, morph:0.3, breath:0}},
-    {name:'Paint your own', v:{shape:14, blur:2, framing:0, breath:0, flow:0, morph:0, drift:0}},
+    {name:'Paint your own', v:{shape:14, blur:2, framing:0, pool:true, breath:0, flow:0, morph:0, drift:0}},
     {name:'Light shafts, slow shimmer', v:{shape:0, blur:0.5, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.6, shimSpd:0.8}},
     {name:'Shafts from the side', v:{shape:0, blur:0.5, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6, motion:0.5, shimSpd:0.7}},
     {name:'Curtain shafts', v:{shape:1, blur:0.5, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6, motion:0.4}},
@@ -689,6 +684,10 @@ const POST = [
 for (const m of Object.keys(MODES)) MODES[m].tl = {...MODES[m].tl, loop:false, len:Math.max(MODES[m].tl.len, 60)};
 const DEFAULTS = {};
 for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v};
+// every pattern starts framed in a soft pool of light with dark edges (Light pool, in the panel)
+const POOL_DEFAULT = {pool:true, poolSize:1.0, poolSoft:0.55};
+for (const m of Object.keys(DEFAULTS)) DEFAULTS[m] = {...POOL_DEFAULT, ...DEFAULTS[m]};
+for (const m of Object.keys(MODES)) for (const ps of MODES[m].presets) if (ps.v.framing === 2 && m === 'trees') ps.v.framing = 0;
 
 /* =====================================================================
    STATE (+ per-viewer persistence)
@@ -717,9 +716,16 @@ try {
       if (!(saved.ver >= 9) && S.p[m].poolSize !== undefined && S.p[m].poolSize < 1) S.p[m].poolSize = 1;
       // v10: no more ebb & flow (brightness pumping); shapes morph instead
       if (!(saved.ver >= 10) && m === 'shapes') { S.p[m].breath = 0; if (!(S.p[m].blend > 0)) S.p[m].blend = DEFAULTS[m].blend; }
+      // v11: every pattern sits in a light pool with dark edges by default; the old pool framings become that switch
+      if (!(saved.ver >= 11)) {
+        const P = S.p[m], palm = m === 'trees' && typeof SPECIES !== 'undefined' && (SPECIES[P.species | 0] || {}).kind === 'palm';
+        if (m === 'trees' && (P.framing | 0) === 2) P.framing = palm ? 1 : 0;
+        if (m === 'shapes' && (P.framing | 0) === 1) P.framing = 0;
+        Object.assign(P, {...POOL_DEFAULT, ...P, pool:true});
+      }
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
@@ -728,7 +734,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, ver:10})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), ver:11})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -1101,6 +1107,13 @@ float paintK(vec3 p0){
   if (uWrap == 1) g = fract(g);
   return textureLod(uOvl, g, 0.0).r * 2.0 - 1.0;
 }
+float paintB(vec3 p0){
+  if (uOvlOn == 0) return 0.0;
+  vec2 g = vec2((p0.x - (p0.z - uZr) * uCot) / uLx, p0.y / uLy);
+  if (uWrap == 1) g = fract(g);
+  vec4 o = textureLod(uOvl, g, 0.0);
+  return (o.b - o.g) * 2.0;
+}
 float hashI(int i, uint s){ uint h = uint(i) * 2654435761u + s; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; h *= 3266489917u; h ^= h >> 16; return float(h & 65535u) / 65535.0; }
 void main(){
   int corner = gl_VertexID;
@@ -1108,6 +1121,8 @@ void main(){
   // where it is opened right up, the finer twigs go too; the limbs stay
   float pk = paintK(0.5 * (aA.xyz + aB.xyz));
   if (pk > 0.55 && max(aA.w, aB.w) < 0.035 && hashI(gl_InstanceID / 4, 29u) < (pk - 0.55) * 2.4) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
+  // painted "remove branches" (green pulled below blue in the paint-over layer): every segment there goes, limbs included
+  if (paintB(aA.xyz) > 0.3 || paintB(aB.xyz) > 0.3 || paintB(0.5 * (aA.xyz + aB.xyz)) > 0.3) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec3 A = aA.xyz + dsp(aN.x, aA.xy), B = aB.xyz + dsp(aN.y, aB.xy);
   vec2 ga = vec2((A.x - (A.z - uZr) * uCot) / uLx, A.y / uLy), gb = vec2((B.x - (B.z - uZr) * uCot) / uLx, B.y / uLy);
   vec2 t = gb - ga; float tl = length(t);
@@ -3458,9 +3473,21 @@ vec3 ovlMod(vec3 g, float k){
     o = mix(o, vec3(0.0), smoothstep(0.65, 1.0, a));
   }
   return o;
+}
+// a painted layer sampled for an image finer than itself: a cubic B-spline through the painting's pixels, so it
+// scales up smooth (no bilinear creases or stair steps); at or below its own size the ordinary mipmapped lookup
+vec4 texSmooth(sampler2D t, vec2 uv, float up){
+  if (up <= 1.0) return texture(t, uv);
+  vec2 sz = vec2(textureSize(t, 0)), st = uv * sz - 0.5, i = floor(st), f = st - i;
+  vec2 w0 = (1.0 - f) * (1.0 - f) * (1.0 - f) / 6.0, w3 = f * f * f / 6.0;
+  vec2 w1 = (4.0 - 6.0 * f * f + 3.0 * f * f * f) / 6.0, w2 = 1.0 - w0 - w1 - w3;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - 1.0 + w1 / g0 + 0.5) / sz, h1 = (i + 1.0 + w3 / g1 + 0.5) / sz;
+  return g0.y * (g0.x * textureLod(t, h0, 0.0) + g1.x * textureLod(t, vec2(h1.x, h0.y), 0.0))
+       + g1.y * (g0.x * textureLod(t, vec2(h0.x, h1.y), 0.0) + g1.x * textureLod(t, h1, 0.0));
 }`;
 const FS_SHAPE = COMMON + OVL_GLSL + `
-uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint;
+uniform int uShape, uCount, uDir, uStretch; uniform uint uSeed; uniform float uWarp, uClump; uniform sampler2D uPaint; uniform float uPaintUp, uOvlUp;
 uniform float uSpread, uAngle, uWidth, uWVar, uSoft, uFall, uBrk, uScale, uAmount, uMotion, uT, uLoopT;
 uniform vec2 uApex; uniform int uPz; uniform float uAim;
 uniform sampler2D uOvl; uniform int uOvlOn; vec2 gOv = vec2(0.0);
@@ -3718,11 +3745,43 @@ vec2 motionUV(vec2 uv){
   vec2 p = uv - uDriftOff;
   if (uFlow > 0.0){
     float z0 = gZ; int p0 = gPz;
-    useZ(uFlowZ, uPzF);
-    p += uFlow * 0.05 * vec2(fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 311u), fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 312u));
+    // a painting has no noise of its own to churn, so its currents run faster and carry it further
+    if (uShape == 14) useZ(uFlowZ * 20.0, uPzF * 20); else useZ(uFlowZ, uPzF);
+    p += uFlow * (uShape == 14 ? 0.35 : 0.05) * vec2(fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 311u), fbmA(uv, ivec2(2, 0), ivec2(0, 2), 3, 312u));
     useZ(z0, p0);
   }
   return p;
+}
+/* Painted shapes move by bending the painting itself: smooth displacement fields a few features across the frame.
+   Evolve changes the bend slowly along the noise's time axis; Morph blends through a chain of different bends with
+   B-spline weights, so the painted shapes stretch and swell into new forms and never pause. Two octaves of the
+   periodic noise are plenty for a bend, and keep this shader quick to compile. */
+vec2 bendField(vec2 uv, vec2 o, uint s){
+  vec2 q = (uv + o) * 2.0;
+  vec2 d = vec2(pnA(q, ivec2(2, 0), ivec2(0, 2), s), pnA(q, ivec2(2, 0), ivec2(0, 2), s + 1u));
+  return d + 0.5 * vec2(pnA(q * 2.0, ivec2(4, 0), ivec2(0, 4), s + 2u), pnA(q * 2.0, ivec2(4, 0), ivec2(0, 4), s + 3u));
+}
+vec2 paintBend(vec2 uv){
+  vec2 d = vec2(0.0);
+  float z0 = gZ; int p0 = gPz;
+  if (uMotion > 0.0){
+    useZ(uMorphZ * 8.0, uPzM * 8);
+    d += (0.07 + 0.11 * uMotion) * bendField(uv, vec2(0.0), 331u);
+  }
+  if (uBlend > 0.0){
+    useZ(0.0, 1000);
+    float tt = uT / uBlendT, k = floor(tt), f = tt - k;
+    float w0 = 0.5 * (1.0 - f) * (1.0 - f), w2 = 0.5 * f * f, w1 = 1.0 - w0 - w2;
+    vec2 m = vec2(0.0);
+    for (int i = 0; i < 3; i++){
+      float ki = k + float(i) - 1.0; if (uBlendN > 0) ki = mod(ki, float(uBlendN));
+      vec2 o = vec2(fract(sin(ki * 12.9898 + 4.1) * 43758.5453), fract(sin(ki * 78.233 + 1.7) * 43758.5453));
+      m += (i == 0 ? w0 : i == 1 ? w1 : w2) * bendField(uv, o, 341u);
+    }
+    d += uBlend * 0.3 * m / sqrt(w0 * w0 + w1 * w1 + w2 * w2);
+  }
+  useZ(z0, p0);
+  return d;
 }
 float breathAt(vec2 uv){
   if (uBreath <= 0.0) return 0.0;
@@ -3835,9 +3894,9 @@ void shapeMain(){
     float arc = smoothstep(0.62 - sf, 0.62 + sf, r) * (1.0 - smoothstep(0.62 + bw * 0.6 - sf, 0.62 + bw * 0.6 + sf, r));
     v = inside * smoothstep(bw * 0.5 - sf, bw * 0.5 + sf, bar) * (1.0 - hub) * (1.0 - arc) * smoothstep(bw * 0.4, bw * 0.4 + 2.0 * sf, p.y * 0.42);
   } else if (uShape == 14){
-    v = texture(uPaint, uv).r;
-    // painted shapes breathe by spreading and pulling in at their soft edges
-    if (uBreath > 0.0) v = clamp(mix(v, textureLod(uPaint, uv, 3.5).r, 0.5 * uBreath) + br * 1.6, 0.0, 1.0);
+    vec2 q = uv + paintBend(uv0);
+    gOv = q;
+    v = texSmooth(uPaint, q, uPaintUp).r;
   } else {
     v = organic(uv, F);
   }
@@ -3847,7 +3906,7 @@ void shapeMain(){
 // the painting rides on the pattern: it is looked up where the drifting, flowing pattern has carried that spot
 void main(){
   shapeMain();
-  if (uOvlOn == 1) fragColor.rgb = ovlMod(fragColor.rgb, texture(uOvl, gOv).r * 2.0 - 1.0);
+  if (uOvlOn == 1) fragColor.rgb = ovlMod(fragColor.rgb, texSmooth(uOvl, gOv, uOvlUp).r * 2.0 - 1.0);
 }`;
 /* Light pool: only the middle of the frame lets light through. Shadows thicken toward the
    edge, which is itself organic rather than a clean circle, and the frame ends in black. */
@@ -3925,7 +3984,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f1(p, 'uFlutter', org && sh >= 9 && sh <= 13 ? (P.flutter ?? 0) * 0.35 : 0); f1(p, 'uFlutHz', (P.swayHz ?? 0.4) * 3.2); f1(p, 'uLSig', P.lsig ?? ({9:0.1, 10:0.12, 11:0.14, 13:0.24}[sh] || 0.12));
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
     f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
-    tex(p, 'uPaint', paintTex(), 1);
+    tex(p, 'uPaint', paintTex(), 1); f1(p, 'uPaintUp', res / PAINT.N); f1(p, 'uOvlUp', res / 512);
     const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) tex(p, 'uOvl', ovlTex(ovlTarget('shapes')), 2);
   });
   return out;
@@ -3960,10 +4019,8 @@ function motionInfo(P) {
   if (P.blend > 0) bits.push(`morphing to a new version every ${((P.blendT ?? 8) / (P.mSpeed ?? 1)).toFixed(1)} s`);
   return bits.length ? '\nMotion: ' + bits.join(', ') + (P.gust > 0 && (P.drift > 0 || P.sway > 0) ? ', in gusts' : '') : '\nStill';
 }
-function usesPool() {
-  const k = MODES[S.mode].kind, P = S.p[S.mode];
-  return (k === 'trees' && (P.framing | 0) === 2) || (k === 'shapes' && (P.framing | 0) === 1);
-}
+// the light pool: every pattern can be framed in a soft pool of light that fades to black at the edges
+function usesPool() { return !!S.p[S.mode].pool; }
 function poolPass(src) {
   const P = S.p[S.mode], out = tgt('poolOut', src.w, src.h, 'f16');
   pass(PR.pool, out, p => { tex(p, 'uSrc', src.tex, 0); f1(p, 'uSize', P.poolSize ?? 0.9); f1(p, 'uSoft', P.poolSoft ?? 0.5); u1(p, 'uSeed', (P.seed | 0) + 3); });
@@ -4021,7 +4078,7 @@ let goboInfo = '';
 function display() {
   const fin = targets.final;
   if (!fin) return;
-  if (S.view === 'scene') { info = goboInfo + '\n' + drawScene(fin).join('\n'); gizDraw(); return; }
+  if (S.view === 'scene') { const others = otherLights(); info = goboInfo + '\n' + drawScene(targets.final, others).join('\n'); gizDraw(); return; }
   if (gcv && gcv.width) gizDraw();
   info = goboInfo;
   pass(PR.disp, null, p => {
@@ -4086,6 +4143,8 @@ uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
 uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
 uniform vec4 uSph;
 uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
+// several lights: each draws its own light, linear, added together (uAcc); only the first adds the ambient and sky (uAmbK)
+uniform int uAcc; uniform float uAmbK;
 const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0, DY = 1.5;
 // ray / axis-aligned box
 float box(vec3 ro, vec3 rd, vec3 lo, vec3 hi, out vec3 n){
@@ -4215,13 +4274,13 @@ void main(){
   float t = hitScene(ro, rd, n, id);
   vec3 col;
   vec3 sky = uSet >= 2 ? vec3(0.55, 0.68, 0.85) * (0.4 + 2.5 * uAmb) : vec3(0.012, 0.013, 0.015);
-  if (id < 0) col = sky * (uSet >= 2 ? 0.7 + 0.5 * max(rd.y, 0.0) : 1.0 + 0.6 * rd.y);
+  if (id < 0) col = uAmbK * sky * (uSet >= 2 ? 0.7 + 0.5 * max(rd.y, 0.0) : 1.0 + 0.6 * rd.y);
   else if (id == 3){
     // open water: dark body, sky (or dock underside) seen in reflection
     float c = max(-rd.y, 0.0), F = 0.02 + 0.98 * pow(1.0 - c, 5.0);
     vec3 rr = reflect(rd, vec3(0, 1, 0)), nn; vec3 refl = sky;
     if (uSet == 2){ vec3 pw = ro + t * rd; vec3 pd = pw + rr * (DY - pw.y) / max(rr.y, 1e-3); if (abs(pd.x) < 4.1 && pd.z > -1.1 && pd.z < 5.1) refl = vec3(0.03) * uAlb; }
-    col = mix(vec3(0.004, 0.012, 0.014) * (1.0 + 4.0 * uAmb), refl, F);
+    col = uAmbK * mix(vec3(0.004, 0.012, 0.014) * (1.0 + 4.0 * uAmb), refl, F);
   } else {
     vec3 p = ro + t * rd, l;
     // texture footprint for filtering the projected gobo
@@ -4229,7 +4288,7 @@ void main(){
     vec3 e = lightAt(p, l, 0.0, pixW);
     float ndl = max(dot(n, l), 0.0);
     vec3 alb = id == 4 ? uAlb * vec3(1.0, 0.95, 0.88) : vec3(uAlb);
-    col = alb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
+    col = alb * (e * ndl + uAmbK * uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
   }
   float tEnd = min(t, 30.0);
   // light gizmo
@@ -4250,15 +4309,41 @@ void main(){
       vec3 e = lightAt(p, l, uBlurLod + 1.0, 0.0);
       float g = 0.45, mu = dot(rd, -l);
       float ph = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
-      ins += Tr * sig * dt * e * ph * 4.0 + Tr * sig * dt * uAmb * 0.25;
+      ins += Tr * sig * dt * e * ph * 4.0 + Tr * sig * dt * uAmb * uAmbK * 0.25;
       Tr *= exp(-sig * dt);
     }
     col = col * Tr + ins;
   }
+  if (uAcc == 1){ fragColor = vec4(col, 1.0); return; }
   col *= exp2(uExpo);
   fragColor = vec4(srgb(aces(col)) + (h12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
 PR.scene = program(VS_FULL, FS_SCENE, 'scene preview');
+// several lights, added up linearly, then exposed and tone mapped once; alpha 0 marks plain background
+const FS_TONE = COMMON + `
+uniform sampler2D uSrc; uniform float uExpo;
+float h12t(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+vec3 acesT(vec3 x){ return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgbT(vec3 c){ return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main(){
+  vec4 a = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0);
+  if (a.a < 0.5){ fragColor = vec4(0.03, 0.035, 0.04, 1.0); return; }
+  fragColor = vec4(srgbT(acesT(a.rgb * exp2(uExpo))) + (h12t(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+PR.tone = program(VS_FULL, FS_TONE, 'scene lights');
+// an accumulation target the size of the preview, with a depth buffer for the orbiting shot model
+function accTarget(depth) {
+  const w = cv.width, h = cv.height, key = depth ? 'accD' : 'acc';
+  let t = targets[key];
+  if (t && t.w === w && t.h === h) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); if (t.rb) gl.deleteRenderbuffer(t.rb); }
+  const texo = makeTex(w, h, 'f16', false), fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texo, 0);
+  let rb = null;
+  if (depth) { rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb); }
+  return (targets[key] = {tex:texo, fb, rb, w, h, fmt:'f16'});
+}
+function toneOut(acc, expo) { gl.disable(gl.BLEND); pass(PR.tone, null, p => { tex(p, 'uSrc', acc.tex, 0); f1(p, 'uExpo', expo); }); }
 
 const SCENE_DEFAULTS = {
   set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
@@ -4281,10 +4366,10 @@ const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.
 const MODE_SCENE = {
   under:  {set:0, ltype:0, cone:90, dist:4, el:90, az:0, aimX:0, aimY:0, aimZ:0, sphere:true},
   over:   {set:2, ltype:0, cone:90, dist:4, el:-68, az:0, aimX:0, aimY:1.5, aimZ:2, sphere:false, amb:0.08, ev:1.3},
-  hull:   {set:3, ltype:1, follow:true, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1, ev:0.5},
+  hull:   {set:3, ltype:0, follow:true, dist:5, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1, ev:0.5},
   trees:  {set:1, ltype:0, cone:70, dist:6, el:62, az:18, aimX:0, aimY:0.45, aimZ:1.5, sphere:true},
   shapes: {set:1, ltype:0, cone:60, dist:6, el:55, az:18, aimX:0, aimY:0.45, aimZ:1.5, sphere:true},
-  windows:{set:1, ltype:1, el:35, az:-28, aimX:0, aimY:0.12, aimZ:0.75, sphere:true, amb:0.06, color:'#fff4e6'},
+  windows:{set:1, ltype:0, dist:5, el:35, az:-28, aimX:0, aimY:0.12, aimZ:0.75, sphere:true, amb:0.06, color:'#fff4e6'},
 };
 // spotlights start with the gobo at its real size where they are aimed
 const MODE_CAMS = {windows:{az:24, el:22, dist:3.6, tx:0.15, ty:0.35, tz:0.75}, trees:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}, shapes:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}};
@@ -4302,6 +4387,8 @@ if (!S.scenes || !(S.savedVer >= 5)) S.scenes = {};
 if (!S.cams || !(S.savedVer >= 5)) S.cams = {};
 for (const m of Object.keys(MODES)) {
   S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
+  // v11: lights default to spotlights
+  if (!(S.savedVer >= 11)) S.scenes[m].ltype = 0;
   // a loaded shot lives only in the tab it was opened in
   if ((S.scenes[m].set | 0) === 4) { const d = sceneDefaults(m); Object.assign(S.scenes[m], {set:d.set, aimX:d.aimX, aimY:d.aimY, aimZ:d.aimZ, az:d.az, sphere:d.sphere}); S.cams[m] = null; }
   if (!S.cams[m]) S.cams[m] = camDefault(m);
@@ -4402,11 +4489,10 @@ function camPos(cam) {
   return {p, t0};
 }
 let LASTSCENE = null, VIEWCAM = null;
-function drawScene(fin) {
-  const c = SC(), L = sceneLight(), cam = CAM();
+/* One light, as the preview draws it: the current light (the one swapped in), with its own gobo texture. */
+function lightDesc(fin) {
+  const c = SC(), L = sceneLight();
   if (c.ltype === 1 && c.el < 2) c.el = 2;
-  const {p:cpos, t0} = camPos(cam);
-  const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
   const tile0 = sceneTile();
   // a framed gobo (single element, light pool, a window) fills the projection angle; when the framing first
   // switches to one, the spot opens up to about twice the gobo's real width, so it reaches the ground and wall around the subject
@@ -4415,14 +4501,34 @@ function drawScene(fin) {
     c._framed = framed;
     if (framed && c.ltype === 0 && c.real) { c.cone = clamp(+(2 * Math.atan(tile0 / c.dist) / DEG).toFixed(1), 50, 100); setTimeout(buildPanel, 0); }
   }
-  const G = goboProjection(c), {cone, rep, tanC, single, sunSize, sunScale} = G, kind = MODES[S.mode].kind;
-  const blur = c.blur / 100 * (c.ltype === 1 ? 1 : rep);
+  const G = goboProjection(c);
+  const blur = c.blur / 100 * (c.ltype === 1 ? 1 : G.rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
+  return {c, L, fin, G, tanC:G.tanC, rep:G.rep, single:G.single, sunSize:G.sunSize, blur, lod, mode:S.mode, I:Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)};
+}
+// the light uniforms every scene shader shares
+function lightUniforms(p, d) {
+  const c = d.c, L = d.L;
+  tex(p, 'uGobo', d.fin.tex, 0);
+  i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', d.single);
+  f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
+  f3(p, 'uLCol', ...hex3(c.color));
+  f1(p, 'uTanC', d.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', d.rep); f1(p, 'uBlur', d.blur); f1(p, 'uBlurLod', d.lod);
+  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w);
+}
+/* others: the other lights of the scene (descriptions made while each was swapped in, see lights.js) */
+function drawScene(fin, others = []) {
+  const D = lightDesc(fin), c = D.c, L = D.L, cam = CAM();
+  if (!lightOn()) D.off = true;
+  const all = [D, ...others];
+  const {p:cpos, t0} = camPos(cam);
+  const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
+  const {cone, rep, tanC, sunSize, sunScale} = D.G, kind = MODES[S.mode].kind;
   const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
-  const lightLines = () => c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
+  const lightLines = () => (others.length ? [`${others.length + 1} lights · ${lightName()} selected`] : []).concat(c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
     : [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${(2 * c.dist * tanC).toFixed(2)} m wide there`,
-       `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`];
-  LASTSCENE = {L, tanC, rep, sunSize, ltype:c.ltype, cpos, cf, cb};
+       `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`]);
+  LASTSCENE = {L, tanC, rep, sunSize, ltype:c.ltype, cpos, cf, cb, others};
   // how the preview camera maps world points to the screen (for the light manipulator)
   { const tf = Math.tan(20 * DEG);
     VIEWCAM = {pos:cpos, f:cf, r:cb.r, u:cb.u, project:X => { const v = v3.sub(X, cpos), z = v3.dot(v, cf); if (z <= 1e-3) return null;
@@ -4430,22 +4536,27 @@ function drawScene(fin) {
       ray:(fx, fy) => { const sx = (fx * 2 - cv.width) / cv.height, sy = (fy * 2 - cv.height) / cv.height; return {ro:cpos, rd:v3.norm(v3.add(cf, v3.add(v3.mul(cb.r, tf * sx), v3.mul(cb.u, tf * sy))))}; }}; }
   if (shotActive()) {
     shotSync();
-    if (shotReady()) { drawShot(fin, c, L, {tanC, rep, blur, lod, single, sunSize}); return [SHOT.status, ...lightLines()]; }
+    if (shotReady()) { drawShot(all); return [SHOT.status, ...lightLines()]; }
     bindTarget(null); gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT);
     return [SHOT.status || 'Building the shot…'];
   }
-  pass(PR.scene, null, p => {
-    tex(p, 'uGobo', fin.tex, 0);
+  // the set, the camera and the fill light come from the selected light's scene; every light adds its own light
+  const setU = (p, ambK, acc) => {
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
-    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single); i1(p, 'uSet', c.set | 0);
-    i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
-    f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
-    f3(p, 'uLCol', ...hex3(c.color));
-    f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
-    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sunSize); f1(p, 'uSrcR', 0.04);
+    i1(p, 'uSet', c.set | 0); i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0); f1(p, 'uSrcR', 0.04);
     gl.uniform4f(p.u('uSph'), ...(MODE_SPHERE[S.mode] && (MODE_SCENE[S.mode] || {}).set === (c.set | 0) ? MODE_SPHERE[S.mode] : SET_SPHERE[c.set | 0]));
-    f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
-  });
+    f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t);
+    i1(p, 'uAcc', acc); f1(p, 'uAmbK', ambK);
+  };
+  if (all.length === 1) {
+    pass(PR.scene, null, p => { lightUniforms(p, D); setU(p, 1, 0); });
+    return lightLines();
+  }
+  const acc = accTarget(false);
+  bindTarget(acc); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  all.forEach((d, i) => pass(PR.scene, acc, p => { lightUniforms(p, d); setU(p, i === 0 ? 1 : 0, 1); }));
+  toneOut(acc, c.expo);
   return lightLines();
 }
 /* How the scene light projects the gobo: shared by the preview, the light rig export and any host.
@@ -4459,7 +4570,7 @@ function goboProjection(c = SC()) {
     sunScale = 1;
     if (c.ltype === 0) rep = framed ? 1 : Math.max(1, 2 * c.dist * Math.tan(cone * 0.5 * DEG) / tile0);
   }
-  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 && !shotActive() ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const single = S.mode === 'hull' ? (usesPool() || (S.p.hull.fade > 0 && !shotActive()) ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   const sunSize = tile0 * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
   return {cone, tanC:Math.tan(cone * 0.5 * DEG), rep, sunScale, sunSize, single, framed, tile:tile0};
 }
@@ -4592,6 +4703,8 @@ function control(def, store, idPrefix, dflt, onChange) {
 const changed = () => { dirty = true; save(); };
 
 function buildModes() {
+  // the light list shows each light's pattern
+  try { lightsBar(); } catch (e) {}
   const nav = $('modes'); nav.innerHTML = '';
   for (const [k, m] of Object.entries(MODES)) {
     const b = document.createElement('button');
@@ -4613,7 +4726,7 @@ function buildPanel() {
       const prev = S.p[S.mode];
       S.p[S.mode] = {...DEFAULTS[S.mode], ...ps.v, seed:prev.seed};
       // a framing the user chose stays put when they try other presets
-      if (S.userFraming && S.userFraming[S.mode]) for (const k of ['framing', 'poolSize', 'poolSoft']) if (prev[k] !== undefined) S.p[S.mode][k] = prev[k];
+      if (S.userFraming && S.userFraming[S.mode]) for (const k of ['framing', 'pool', 'poolSize', 'poolSoft']) if (prev[k] !== undefined) S.p[S.mode][k] = prev[k];
       buildPanel(); changed();
     };
     pr.append(b);
@@ -4673,6 +4786,18 @@ function buildPanel() {
     };
     top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
   }
+  // the light pool: a soft circle of light with dark edges, for every pattern
+  {
+    const pd = [{k:'pool', l:'Light pool, dark edges', type:'chk', h:'Frames the gobo in a soft pool of light that fades to black toward the edges, with an organic rim, as a spotlight pool does.'}];
+    if (store.pool) pd.push(
+      {k:'poolSize', l:'Pool radius', min:0.3, max:1.4, step:0.01, fmt:v => v.toFixed(2) + '×', h:'1 reaches the edges of the frame; smaller pulls the pool in.'},
+      {k:'poolSoft', l:'Edge fade', min:0.05, max:1, step:0.01, h:'How far in from the rim the light fades to black. Low is a crisp edge, high a long soft falloff.'});
+    const d = document.createElement('details'); d.className = 'grp'; d.open = true;
+    const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label">Light pool</span>';
+    const c = document.createElement('div'); c.className = 'ctrls';
+    pd.forEach(def => c.append(control(def, store, S.mode, DEFAULTS[S.mode], k => { if (k === 'pool') { if (m.onParam) m.onParam(k, store); buildPanel(); } changed(); })));
+    d.append(sm, c); groups.append(d);
+  }
   groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode], true, !!g.off, !!g.first));
   mk('Output levels', POST, S.post[S.mode], MODES[S.mode].post, false);
 }
@@ -4695,7 +4820,10 @@ function buildTimeline() {
 // view controls
 const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHeat'), vSeams = $('vSeams');
 vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
-vRes.onchange = () => { S.res = +vRes.value; changed(); };
+// the gobo's own resolution: everything is recalculated at it (painted layers are smoothly upscaled), and exports follow it
+{ const mx = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+  for (const o of [...vRes.options]) if (+o.value > mx) o.remove(); }
+vRes.onchange = () => { S.res = +vRes.value; if (S.exp) S.exp.res = S.res; changed(); };
 vQual.onchange = () => { S.quality = vQual.value; changed(); };
 vTiles.onchange = () => { S.tiles = +vTiles.value; viewDirty = true; save(); };
 vHeat.onchange = () => { S.heat = vHeat.checked; viewDirty = true; };
@@ -4822,7 +4950,7 @@ function paintCanvas() {
   PAINT.cv = c; PAINT.ctx = c.getContext('2d', {willReadFrequently:false});
   PAINT.ctx.fillStyle = '#fff'; PAINT.ctx.fillRect(0, 0, PAINT.N, PAINT.N);
   try {
-    const url = localStorage.getItem(PAINT_KEY);
+    const url = localStorage.getItem(PAINT.key || PAINT_KEY);
     if (url) { const im = new Image(); im.onload = () => { PAINT.ctx.drawImage(im, 0, 0, PAINT.N, PAINT.N); PAINT.dirty = true; dirty = true; }; im.src = url; }
   } catch (e) {}
   return PAINT;
@@ -4848,13 +4976,14 @@ function paintTex() {
 /* ---------- paint targets: the Paint-your-own gobo, or a mode's paint-over layer ---------- */
 PAINT.key = PAINT_KEY; PAINT.set = () => S.p.shapes; PAINT.kind = 'gobo';
 const OVL = {};
+let OVL_PREFIX = 'cucLab.ovl.';   // each light keeps its own paint-over layers (lights.js)
 if (!S.ovl) S.ovl = {};
 S.ovl = {on:{}, pbTool:0, pbInk:0, pbSize:10, pbSoft:0.8, pbFlow:0.35, pbWrap:true, pbBlur:0.5, ...S.ovl};
 const ovlOn = () => !!(S.ovl.on || {})[S.mode];
 function ovlTarget(m = S.mode) {
   if (OVL[m]) return OVL[m];
   const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
-  const T = OVL[m] = {cv:c, ctx:c.getContext('2d'), N, tex:null, dirty:true, undo:[], last:null, saveT:0, key:'cucLab.ovl.' + m, set:() => S.ovl, kind:'ovl', used:false};
+  const T = OVL[m] = {cv:c, ctx:c.getContext('2d'), N, tex:null, dirty:true, undo:[], last:null, saveT:0, key:OVL_PREFIX + m, set:() => S.ovl, kind:'ovl', used:false};
   T.ctx.fillStyle = 'rgb(128,128,128)'; T.ctx.fillRect(0, 0, N, N);
   try { const url = localStorage.getItem(T.key); if (url) { T.used = true; const im = new Image(); im.onload = () => { T.ctx.drawImage(im, 0, 0, N, N); T.dirty = true; dirty = true; }; im.src = url; } } catch (e) {}
   return T;
@@ -4923,7 +5052,10 @@ function noiseTile() {
 // one dab of the brush, repeated across the edges when wrapping so the gobo stays seamless
 function dab(x, y) {
   const b = PB(), N = PT().N, ctx = PT().ctx, r = Math.max(1, b.size / 100 * N * 0.5);
-  const col = PT().kind === 'ovl' ? ['255,255,255', '0,0,0', '128,128,128'][b.ink] : b.ink ? '255,255,255' : '0,0,0';
+  // paint-over inks: lighter grey opens, darker thickens, mid grey erases; "remove branches" pulls green down alone
+  // (multiplied in, so red, which carries leaf density, is untouched; blue minus green says how far branches are removed)
+  const branch = PT().kind === 'ovl' && b.ink === 3 && MODES[S.mode].kind === 'trees';
+  const col = PT().kind === 'ovl' ? ['255,255,255', '0,0,0', '128,128,128', '255,0,255'][b.ink] : b.ink ? '255,255,255' : '0,0,0';
   const ext = b.tool === 4 ? Math.max(r, r * b.len) : b.tool === 5 ? r * 2 : r * 1.6;
   const offs = [[0, 0]];
   if (b.wrap) for (const ox of [-N, 0, N]) for (const oy of [-N, 0, N]) if ((ox || oy) && x + ox > -ext && x + ox < N + ext && y + oy > -ext && y + oy < N + ext) offs.push([ox, oy]);
@@ -4965,6 +5097,7 @@ function dab(x, y) {
   for (const [ox, oy] of offs) {
     const cx = x + ox, cy = y + oy;
     ctx.save();
+    if (branch) ctx.globalCompositeOperation = 'multiply';
     if (spr) {
       ctx.translate(cx, cy); ctx.rotate(sang); ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
     } else if (b.tool === 6) {
@@ -5084,7 +5217,10 @@ function padRedraw() {
         const N = T.N, id = T.ctx.getImageData(0, 0, N, N), o = x.createImageData(N, N);
         for (let i = 0; i < N * N; i++) { const k = (id.data[i * 4] - 128) / 127, j = i * 4;
           if (k > 0) { o.data[j] = 255; o.data[j + 1] = 190; o.data[j + 2] = 60; o.data[j + 3] = Math.min(255, k * 160); }
-          else { o.data[j] = 70; o.data[j + 1] = 140; o.data[j + 2] = 255; o.data[j + 3] = Math.min(255, -k * 160); } }
+          else { o.data[j] = 70; o.data[j + 1] = 140; o.data[j + 2] = 255; o.data[j + 3] = Math.min(255, -k * 160); }
+          // branches removed: magenta diagonal hatching
+          const br = (id.data[i * 4 + 2] - id.data[i * 4 + 1]) / 127;
+          if (br > 0.15 && ((i % N) + Math.floor(i / N)) % 10 < 4) { o.data[j] = 235; o.data[j + 1] = 70; o.data[j + 2] = 200; o.data[j + 3] = Math.min(255, 90 + br * 160); } }
         const tmp = document.createElement('canvas'); tmp.width = tmp.height = N; tmp.getContext('2d').putImageData(o, 0, 0);
         x.drawImage(tmp, 0, 0, c.width, c.height);
       } else x.drawImage(T.cv, 0, 0, c.width, c.height);
@@ -5251,10 +5387,10 @@ function paintDefs() {
    stays put while the pattern moves underneath.
    ===================================================================== */
 const FS_OVL = COMMON + OVL_GLSL + `
-uniform sampler2D uSrc, uOvl;
+uniform sampler2D uSrc, uOvl; uniform float uUp;
 void main(){
   vec2 uv = gl_FragCoord.xy / uRes;
-  fragColor = vec4(ovlMod(texture(uSrc, uv).rgb, texture(uOvl, uv).r * 2.0 - 1.0), 1.0);
+  fragColor = vec4(ovlMod(texture(uSrc, uv).rgb, texSmooth(uOvl, uv, uUp).r * 2.0 - 1.0), 1.0);
 }`;
 PR.ovl = program(VS_FULL, FS_OVL, 'paint over');
 function ovlTex(T) {
@@ -5277,7 +5413,7 @@ function ovlApply(src) {
   if (!ovlOn() || ['trees', 'shapes'].includes(MODES[S.mode].kind)) return src;
   const T = ovlTarget(); if (!T.used) return src;
   const out = tgt('ovlOut', src.w, src.h, 'f16');
-  pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); });
+  pass(PR.ovl, out, p => { tex(p, 'uSrc', src.tex, 0); tex(p, 'uOvl', ovlTex(T), 1); f1(p, 'uUp', src.w / T.N); });
   return out;
 }
 function ovlAction(a) {
@@ -5290,10 +5426,12 @@ function ovlAction(a) {
 function ovlGroup() {
   const on = ovlOn(), P = S.ovl, tool = P.pbTool | 0;
   const trees = MODES[S.mode].kind === 'trees';
+  if (!trees && (P.pbInk | 0) === 3) P.pbInk = 0;
   const defs = [{k:'__on', l:trees ? 'Paint leaf density' : 'Paint over the gobo', type:'chk', h:trees ? 'Paint where the canopy should be thinner or fuller. Leaves are removed or grown where you paint (and the finer twigs go where it is cleared right out), so it still looks and moves like a tree.' : 'Paint on top of the pattern in chosen areas to open it up or thicken it. On moving shapes the painting travels with the pattern.'}];
   if (on) defs.push(
     {type:'mount', mount:el => paintPad(el, ovlTarget())},
-    {k:'pbInk', l:'Effect', opts:MODES[S.mode].kind === 'trees' ? ['Thin out the leaves (more light)', 'Fill in the leaves (more shadow)', 'Erase back to the original'] : ['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original']},
+    {k:'pbInk', l:'Effect', opts:trees ? ['Thin out the leaves (more light)', 'Fill in the leaves (more shadow)', 'Erase back to the original', 'Remove branches'] : ['Open up (more light)', 'Thicken (more shadow)', 'Erase back to the original'],
+     h:trees ? 'Remove branches takes out every branch and twig where you paint, limbs included, for the long branch shadows left after clearing leaves. Erase brings them back.' : undefined},
     {k:'pbTool', l:'Brush', opts:['Soft round', 'Soft cloud', 'Mottle (soft noise)', 'Soft dots', 'Blur (soften the painting)'], vals:[0, 6, 7, 8, 3]},
     {k:'pbSize', l:'Brush size', min:0.5, max:60, step:0.1, u:'%'},
     {k:'pbSoft', l:'Brush softness', min:0, max:1, step:0.01},
@@ -5301,7 +5439,7 @@ function ovlGroup() {
     ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
     {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
     {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
-    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
+    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
   );
   return defs;
 }
@@ -5480,7 +5618,7 @@ const EXR = (() => {
 const SHOT = {src:null, frames:[], cache:new Map(), frame:null, loading:null, status:'', tex:null};
 if (!S.shot) S.shot = {};
 S.shot = {view:0, detail:1, disp:0, ...S.shot};
-S.shotSel = S.shotSel || ''; S.shotLights = S.shotLights || {}; S.shotCams = S.shotCams || {}; S.tlBackup = S.tlBackup || {};
+S.shotSel = S.shotSel || ''; S.shotLights = S.savedVer >= 11 && S.shotLights || {}; S.shotCams = S.shotCams || {}; S.tlBackup = S.tlBackup || {};
 const DETAIL = [1, 2, 4];
 const shotReady = () => !!(SHOT.frame && SHOT.tex);
 const shotActive = () => !!S.shotSel && !!SHOT.src;
@@ -5495,11 +5633,13 @@ const SHOTS = [
    cam:{eye:[0.8, 1.48, 2.15], at:[0.0, 1.3, 0.0], vfov:30},
    // one big tree overhead, framed in open sunlight, so its shadow covers the person
    preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
-   lights:{trees:{ltype:1, follow:true, aim:[0, 1.35, 0], amb:0.2}}},
+   lights:{trees:{ltype:0, aim:[0, 1.35, 0], el:62, az:22, dist:7, amb:0.2}}},
   {id:'ph_room', placeholder:true, seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
    cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},
    // the window is behind the camera, off screen: only the gobo says it is there
-   anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}}, lights:{windows:{ltype:1, follow:true, amb:0.14, ev:1}}},
+   anchors:{windows:{at:[0.1, 1.25, 2.85], azOff:0}},
+   // a spotlight outside the window, aimed in through it at the floor
+   lights:{windows:{ltype:0, aim:[-0.35, 0.0, 0.55], az:11, el:28, dist:5.2, amb:0.14, ev:1.4}}},
 ];
 // the shots the host offers (the placeholders on the web); filled in when the host answers
 let SHOTLIST = [];
@@ -5516,7 +5656,7 @@ function shotLight(m) {
   // each placeholder shot comes with a light already set up for the pattern it was made for
   const o = (shotDef(k).lights || {})[m];
   if (o) { const {aim, ...rest} = o; Object.assign(d, rest); if (aim) [d.aimX, d.aimY, d.aimZ] = aim; }
-  const an = shotAnchor(m); if (an) [d.aimX, d.aimY, d.aimZ] = an.at;
+  const an = shotAnchor(m); if (an && d.ltype === 1) [d.aimX, d.aimY, d.aimZ] = an.at;
   return (all[m] = d);
 }
 function shotCam() {
@@ -5925,6 +6065,7 @@ void main(){
 }`;
 const FS_SHOTMESH = HEAD + SHOT_LIGHT + `
 uniform sampler2D uN, uC; uniform int uMode; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam;
+uniform int uAcc; uniform float uAmbK;
 in vec3 vP; in vec2 vUV; in float vD;
 layout(location=0) out vec4 o0;
 void main(){
@@ -5936,20 +6077,21 @@ void main(){
   if (uDisp > 0){ o0 = vec4(passView(vP, texture(uN, vUV).xyz, texture(uC, vUV).rgb), 1.0); return; }
   vec3 alb = pow(texture(uC, vUV).rgb, vec3(2.2)) * uAlb * 2.0, l;
   vec3 e = lightAt(vP, n, l);
-  vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
-  o0 = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+  vec3 col = alb * (e * max(dot(n, l), 0.0) + uAmbK * uAmb * (0.6 + 0.4 * n.y));
+  o0 = uAcc == 1 ? vec4(col, 1.0) : vec4(srgb(aces(col * exp2(uExpo))), 1.0);
 }`;
 // through the shot camera: every screen pixel is a pixel of the shot, lit exactly
 const FS_SHOTIMG = COMMON + SHOT_LIGHT + `
 uniform sampler2D uP, uN, uC; uniform vec4 uFit; uniform float uAlb, uAmb, uExpo; uniform vec3 uCam, uLImg; uniform int uGizmo;
+uniform int uAcc; uniform float uAmbK;
 void main(){
   vec2 f = (gl_FragCoord.xy - uFit.xy) / uFit.zw;
-  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0){ fragColor = vec4(0.03, 0.035, 0.04, 1.0); return; }
+  if (f.x < 0.0 || f.y < 0.0 || f.x > 1.0 || f.y > 1.0){ fragColor = uAcc == 1 ? vec4(0.0) : vec4(0.03, 0.035, 0.04, 1.0); return; }
   ivec2 s = textureSize(uP, 0);
   ivec2 px = clamp(ivec2(f.x * float(s.x), (1.0 - f.y) * float(s.y)), ivec2(0), s - 1);
   vec4 p = texelFetch(uP, px, 0);
   vec3 col;
-  if (p.w < 0.5) col = vec3(0.012, 0.014, 0.018);
+  if (p.w < 0.5) col = uAmbK * vec3(0.012, 0.014, 0.018);
   else {
     vec3 n = texelFetch(uN, px, 0).xyz;
     n = dot(n, n) > 1e-8 ? normalize(n) : normalize(uCam - p.xyz);
@@ -5957,14 +6099,14 @@ void main(){
     if (uDisp > 0){ fragColor = vec4(passView(p.xyz, texelFetch(uN, px, 0).xyz, texelFetch(uC, px, 0).rgb), 1.0); return; }
     vec3 alb = pow(texelFetch(uC, px, 0).rgb, vec3(2.2)) * uAlb * 2.0, l;
     vec3 e = lightAt(p.xyz, n, l);
-    col = alb * (e * max(dot(n, l), 0.0) + uAmb * (0.6 + 0.4 * n.y));
+    col = alb * (e * max(dot(n, l), 0.0) + uAmbK * uAmb * (0.6 + 0.4 * n.y));
   }
   // the light itself, where the camera can see it
   if (uGizmo == 1 && uLImg.z > 0.0){
     float d = length(gl_FragCoord.xy - uLImg.xy);
     if (d < 7.0 && (p.w < 0.5 || uLImg.z < distance(p.xyz, uCam))) col = mix(col, uLCol * 4.0, 1.0 - smoothstep(4.0, 7.0, d));
   }
-  fragColor = vec4(srgb(aces(col * exp2(uExpo))), 1.0);
+  fragColor = uAcc == 1 ? vec4(col, 1.0) : vec4(srgb(aces(col * exp2(uExpo))), 1.0);
 }`;
 const VS_GIZMO = HEAD + `uniform mat4 uVP; uniform vec3 uA, uB; uniform float uSize;
 void main(){ gl_Position = uVP * vec4(gl_VertexID == 0 ? uA : uB, 1.0); gl_PointSize = uSize; }`;
@@ -5994,15 +6136,34 @@ const m4 = {
   },
   mul(a, b) { const o = new Array(16).fill(0); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) for (let k = 0; k < 4; k++) o[j * 4 + i] += a[k * 4 + i] * b[j * 4 + k]; return o; },
 };
-function shotLightUniforms(p, c, L, fin, ext) {
+function shotLightUniforms(p, d, ext) {
   const fr = SHOT.frame;
   i1(p, 'uDisp', S.shot.disp | 0); f3(p, 'uSC', ...fr.Cm); f3(p, 'uCtr', ...fr.ctr); f1(p, 'uRad', fr.R); f1(p, 'uDMed', fr.dMed);
-  tex(p, 'uGobo', fin.tex, 0); tex(p, 'uShadow', SHOT.sm.tex, 1);
-  i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', ext.single);
-  f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim); f3(p, 'uLCol', ...hex3(c.color));
-  f1(p, 'uTanC', ext.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', ext.rep); f1(p, 'uBlur', ext.blur); f1(p, 'uBlurLod', ext.lod);
-  f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', ext.sunSize); f1(p, 'uGoboRes', fin.w);
+  lightUniforms(p, d); tex(p, 'uShadow', SHOT.sm.tex, 1);
   f1(p, 'uShT', ext.shT); f1(p, 'uShHalf', ext.shHalf); f1(p, 'uShFar', ext.shFar); f1(p, 'uShRes', SHOT.sm.w);
+}
+// the shadow map covers what the light can reach: the spot's cone, or the shot around the sun's aim point
+function shadowExt(d) {
+  const fr = SHOT.frame, c = d.c, L = d.L, ext = {};
+  const toCtr = Math.hypot(...v3.sub(fr.ctr, L.aim));
+  ext.shT = d.tanC * (c.shape === 1 ? 1.45 : 1.05);
+  ext.shHalf = Math.min(fr.R + toCtr, Math.max(d.sunSize * 3, 25));
+  ext.shFar = 6 * (fr.R + toCtr);
+  if (c.ltype === 0) ext.shFar = Math.max(v3.dot(v3.sub(fr.ctr, L.pos), L.f) + fr.R * 3, 1);
+  return ext;
+}
+function renderShadow(d, ext) {
+  const fr = SHOT.frame, c = d.c, L = d.L, sm = shadowTarget(2048), pm = PR.shotMesh;
+  gl.useProgram(pm.p); gl.bindVertexArray(vao);
+  // keep the shadow map off every sampler while it is being drawn
+  tex(pm, 'uGobo', d.fin.tex, 0); tex(pm, 'uShadow', d.fin.tex, 1);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sm.fb); gl.viewport(0, 0, sm.w, sm.h);
+  gl.clearColor(1e9, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  i1(pm, 'uType', c.ltype); f3(pm, 'uLPos', ...L.pos); f3(pm, 'uLF', ...L.f); f3(pm, 'uLR', ...L.r); f3(pm, 'uLU', ...L.u); f3(pm, 'uAim', ...L.aim);
+  f1(pm, 'uShT', ext.shT); f1(pm, 'uShHalf', ext.shHalf); f1(pm, 'uShFar', ext.shFar); f3(pm, 'uCam', ...fr.Cm);
+  meshDraw(pm, 1, fr);
+  gl.disable(gl.DEPTH_TEST);
 }
 const meshStep = () => (S.shot.detail | 0) === 0 ? 2 : 1;
 function meshDraw(pm, mode, fr) {
@@ -6012,26 +6173,11 @@ function meshDraw(pm, mode, fr) {
   f1(pm, 'uPixAng', fr.cam.vfov * DEG / fr.H * stp); f3(pm, 'uSC', ...fr.Cm);
   gl.drawArrays(gl.TRIANGLES, 0, grid[0] * grid[1] * 6);
 }
-function drawShot(fin, c, L, ext) {
-  const fr = SHOT.frame;
-  // the shadow map covers what the light can reach: the spot's cone, or the shot around the sun's aim point
-  const toCtr = Math.hypot(...v3.sub(fr.ctr, L.aim));
-  ext.shT = ext.tanC * (c.shape === 1 ? 1.45 : 1.05);
-  ext.shHalf = Math.min(fr.R + toCtr, Math.max(ext.sunSize * 3, 25));
-  ext.shFar = 6 * (fr.R + toCtr);
-  if (c.ltype === 0) ext.shFar = Math.max(v3.dot(v3.sub(fr.ctr, L.pos), L.f) + fr.R * 3, 1);
-  const sm = shadowTarget(2048);
+/* all: the scene's lights (the selected one first), each as lightDesc() describes it. One light draws straight to
+   the screen; several are added up linearly in a float target, each with its own shadow map, then tone mapped once. */
+function drawShot(all) {
+  const fr = SHOT.frame, D = all[0], c = D.c, L = D.L, multi = all.length > 1;
   const pm = PR.shotMesh;
-  gl.useProgram(pm.p); gl.bindVertexArray(vao);
-  // keep the shadow map off every sampler while it is being drawn
-  tex(pm, 'uGobo', fin.tex, 0); tex(pm, 'uShadow', fin.tex, 1);
-  gl.bindFramebuffer(gl.FRAMEBUFFER, sm.fb); gl.viewport(0, 0, sm.w, sm.h);
-  gl.clearColor(1e9, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-  i1(pm, 'uType', c.ltype); f3(pm, 'uLPos', ...L.pos); f3(pm, 'uLF', ...L.f); f3(pm, 'uLR', ...L.r); f3(pm, 'uLU', ...L.u); f3(pm, 'uAim', ...L.aim);
-  f1(pm, 'uShT', ext.shT); f1(pm, 'uShHalf', ext.shHalf); f1(pm, 'uShFar', ext.shFar); f3(pm, 'uCam', ...fr.Cm);
-  meshDraw(pm, 1, fr);
-  gl.disable(gl.DEPTH_TEST);
   if ((S.shot.view | 0) === 0) {
     // through the shot camera, letterboxed into the preview
     const sc = Math.min(cv.width / fr.W, cv.height / fr.H), fw = fr.W * sc, fh = fr.H * sc;
@@ -6046,20 +6192,31 @@ function drawShot(fin, c, L, ext) {
         ray:(fx, fy) => { const px = (fx - fit[0]) / fw * fr.W, py = (1 - (fy - fit[1]) / fh) * fr.H, I = fr.cam.inv;
           let d = I.map(rw => rw[0] * px + rw[1] * py + rw[2]); if (v3.dot(d, fr.cam.fwd) < 0) d = d.map(v => -v);
           return {ro:fr.Cm, rd:v3.norm(up ? [d[0], d[2], -d[1]] : d)}; }}; }
-    let li = [0, 0, -1];
-    if (c.ltype === 0) {
-      const P = fr.cam.P, um = fr.um, up = S.shot.upZ;
-      const raw = up ? [L.pos[0] / um, -L.pos[2] / um, L.pos[1] / um] : L.pos.map(v => v / um);
+    // where each spotlight shows in the frame (each light's own little glow)
+    const liOf = d => {
+      if (d.c.ltype !== 0) return [0, 0, -1];
+      const P = fr.cam.P, um = fr.um, up = S.shot.upZ, Lp = d.L.pos;
+      const raw = up ? [Lp[0] / um, -Lp[2] / um, Lp[1] / um] : Lp.map(v => v / um);
       const q = P.map(r => r[0] * raw[0] + r[1] * raw[1] + r[2] * raw[2] + r[3]);
       const fwd = up ? [fr.cam.fwd[0], fr.cam.fwd[2], -fr.cam.fwd[1]] : fr.cam.fwd;
-      if (v3.dot(v3.sub(L.pos, fr.Cm), fwd) > 0) li = [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, Math.hypot(...v3.sub(L.pos, fr.Cm))];
-    }
-    pass(PR.shotImg, null, p => {
-      shotLightUniforms(p, c, L, fin, ext);
+      return v3.dot(v3.sub(Lp, fr.Cm), fwd) > 0 ? [fit[0] + q[0] / q[2] / fr.W * fw, fit[1] + (1 - q[1] / q[2] / fr.H) * fh, Math.hypot(...v3.sub(Lp, fr.Cm))] : [0, 0, -1];
+    };
+    const draw = (d, ext, target, ambK, acc) => pass(PR.shotImg, target, p => {
+      shotLightUniforms(p, d, ext);
       tex(p, 'uP', SHOT.tex.P, 2); tex(p, 'uN', SHOT.tex.N, 3); tex(p, 'uC', SHOT.tex.C, 4);
       gl.uniform4f(p.u('uFit'), ...fit); f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uExpo', c.expo); f3(p, 'uCam', ...fr.Cm);
-      f3(p, 'uLImg', ...li); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
+      f3(p, 'uLImg', ...liOf(d)); i1(p, 'uGizmo', c.gizmo ? 1 : 0); i1(p, 'uAcc', acc); f1(p, 'uAmbK', ambK);
     });
+    if (!multi) { const ext = shadowExt(D); renderShadow(D, ext); draw(D, ext, null, 1, 0); return; }
+    const acc = accTarget(false);
+    bindTarget(acc); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    all.forEach((d, i) => {
+      const ext = shadowExt(d); renderShadow(d, ext);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      draw(d, ext, acc, i === 0 ? 1 : 0, 1);
+      gl.disable(gl.BLEND);
+    });
+    toneOut(acc, c.expo);
     return;
   }
   // orbiting the rough 3D model
@@ -6072,24 +6229,48 @@ function drawShot(fin, c, L, ext) {
       return [(c4[0] / c4[3] * 0.5 + 0.5) * cv.width, (c4[1] / c4[3] * 0.5 + 0.5) * cv.height, c4[3]]; },
       ray:(fx, fy) => { const tv = Math.tan((SHOT.vfov || 40) * DEG / 2), sx = (fx / cv.width * 2 - 1) * cv.width / cv.height, sy = fy / cv.height * 2 - 1;
         return {ro:cpos, rd:v3.norm(v3.add(f, v3.add(v3.mul(b.r, tv * sx), v3.mul(b.u, tv * sy))))}; }}; }
-  bindTarget(null);
-  gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-  gl.useProgram(pm.p);
-  shotLightUniforms(pm, c, L, fin, ext);
-  gl.uniformMatrix4fv(pm.u('uVP'), false, vp); f3(pm, 'uCam', ...cpos);
-  f1(pm, 'uAlb', c.alb); f1(pm, 'uAmb', c.amb); f1(pm, 'uExpo', c.expo);
-  meshDraw(pm, 0, fr);
+  const meshPass = (d, ext, ambK, acc) => {
+    gl.useProgram(pm.p); gl.bindVertexArray(vao);
+    shotLightUniforms(pm, d, ext);
+    gl.uniformMatrix4fv(pm.u('uVP'), false, vp); f3(pm, 'uCam', ...cpos);
+    f1(pm, 'uAlb', c.alb); f1(pm, 'uAmb', c.amb); f1(pm, 'uExpo', c.expo); i1(pm, 'uAcc', acc); f1(pm, 'uAmbK', ambK);
+    meshDraw(pm, 0, fr);
+  };
+  if (!multi) {
+    const ext = shadowExt(D); renderShadow(D, ext);
+    bindTarget(null);
+    gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    meshPass(D, ext, 1, 0);
+  } else {
+    const acc = accTarget(true);
+    all.forEach((d, i) => {
+      const ext = shadowExt(d); renderShadow(d, ext);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, acc.fb); gl.viewport(0, 0, acc.w, acc.h);
+      gl.enable(gl.DEPTH_TEST);
+      if (i === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); }
+      // later lights add onto exactly the surfaces the first one found
+      else { gl.depthFunc(gl.LEQUAL); gl.depthMask(false); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE); }
+      meshPass(d, ext, i === 0 ? 1 : 0, 1);
+      gl.disable(gl.BLEND); gl.depthMask(true); gl.depthFunc(gl.LESS); gl.disable(gl.DEPTH_TEST);
+    });
+    toneOut(acc, c.expo);
+    // the gizmo points below are drawn without the model's depth
+    bindTarget(null); gl.clear(gl.DEPTH_BUFFER_BIT);
+  }
   if (c.gizmo) {
+    gl.enable(gl.DEPTH_TEST);
     const g = PR.gizmo; gl.useProgram(g.p);
     gl.uniformMatrix4fv(g.u('uVP'), false, vp);
-    // the shot camera, the light and its aim point
+    // the shot camera, each light and its aim point
     f3(g, 'uA', ...fr.Cm); f1(g, 'uSize', 9); f3(g, 'uCol', 0.35, 0.7, 1); gl.drawArrays(gl.POINTS, 0, 1);
-    f3(g, 'uA', ...L.aim); f1(g, 'uSize', 8); f3(g, 'uCol', 1, 0.6, 0.2); gl.drawArrays(gl.POINTS, 0, 1);
-    if (c.ltype === 0) {
-      f3(g, 'uA', ...L.pos); f1(g, 'uSize', 13); f3(g, 'uCol', ...hex3(c.color)); gl.drawArrays(gl.POINTS, 0, 1);
-      f3(g, 'uA', ...L.pos); f3(g, 'uB', ...L.aim); f3(g, 'uCol', 0.8, 0.8, 0.8); gl.drawArrays(gl.LINES, 0, 2);
-    }
+    all.forEach((d, i) => {
+      f3(g, 'uA', ...d.L.aim); f1(g, 'uSize', i ? 6 : 8); f3(g, 'uCol', 1, 0.6, 0.2); gl.drawArrays(gl.POINTS, 0, 1);
+      if (d.c.ltype === 0) {
+        f3(g, 'uA', ...d.L.pos); f1(g, 'uSize', i ? 10 : 13); f3(g, 'uCol', ...hex3(d.c.color)); gl.drawArrays(gl.POINTS, 0, 1);
+        f3(g, 'uA', ...d.L.pos); f3(g, 'uB', ...d.L.aim); f3(g, 'uCol', 0.8, 0.8, 0.8); gl.drawArrays(gl.LINES, 0, 2);
+      }
+    });
   }
   gl.disable(gl.DEPTH_TEST);
 }
@@ -6414,6 +6595,18 @@ function lightNow() {
   const pos = c.ltype === 1 ? v3.add(L.aim, v3.mul(dir, gd)) : L.pos;
   return {c, L, dir, pos, gd};
 }
+// where another light of the scene shows (its icon), from its description in the last drawn scene
+function otherIcon(d) {
+  const dir = v3.mul(d.L.f, -1);
+  let gd = d.c.dist;
+  if (d.c.ltype === 1 && VIEWCAM) for (let i = 0; i < 12 && gd > 0.3; i++) { const q = toCss(v3.add(d.L.aim, v3.mul(dir, gd))); if (q && onScreen(q, 70)) break; gd *= 0.75; }
+  return toCss(d.c.ltype === 1 ? v3.add(d.L.aim, v3.mul(dir, gd)) : d.L.pos);
+}
+function otherPick(m) {
+  const os = (LASTSCENE && LASTSCENE.others) || [];
+  for (const d of os) { const q = otherIcon(d); if (q && Math.hypot(m[0] - q[0], m[1] - q[1]) < 12) return d; }
+  return null;
+}
 const onScreen = (q, m) => q[0] > m && q[1] > m && q[0] < cv.clientWidth - m && q[1] < cv.clientHeight - m;
 // bring a light that is out of view into view (leaving the shot camera if need be)
 function frameLight() {
@@ -6509,6 +6702,15 @@ function gizDraw() {
   gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, W, Hh);
   if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
   gctx.setTransform(d, 0, 0, d, 0, 0);
+  // the scene's other lights: small icons with their names; click one to select it
+  for (const o of (LASTSCENE && LASTSCENE.others) || []) {
+    const q = otherIcon(o); if (!q) continue;
+    const a = toCss(o.L.aim);
+    if (a) { gctx.setLineDash([2, 5]); gctx.strokeStyle = 'rgba(255,255,255,.3)'; gctx.lineWidth = 1; gctx.beginPath(); gctx.moveTo(q[0], q[1]); gctx.lineTo(a[0], a[1]); gctx.stroke(); gctx.setLineDash([]); }
+    gctx.lineWidth = 1.5; gctx.strokeStyle = 'rgba(255,255,255,.7)'; gctx.fillStyle = 'rgba(14,17,21,.7)';
+    gctx.beginPath(); gctx.arc(q[0], q[1], 6, 0, 7); gctx.fill(); gctx.stroke();
+    gctx.font = '600 11px system-ui, sans-serif'; gctx.fillStyle = 'rgba(255,255,255,.75)'; gctx.fillText(o.name || '', q[0] + 10, q[1] + 4);
+  }
   const H = gizHandles(); if (!H) return;
   const {Ln, ctr} = H, sun = Ln.c.ltype === 1;
   // the light's icon, and a line to where it is aimed
@@ -6518,6 +6720,7 @@ function gizDraw() {
     gctx.fillStyle = '#f0a040'; gctx.beginPath(); gctx.arc(aim[0], aim[1], 3.5, 0, 7); gctx.fill(); }
   gctx.strokeStyle = GIZ.sel ? GCOL.sel : 'rgba(255,255,255,.9)'; gctx.fillStyle = 'rgba(14,17,21,.75)';
   gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 8, 0, 7); gctx.fill(); gctx.stroke();
+  if (lightMulti()) { gctx.font = '600 11px system-ui, sans-serif'; gctx.fillStyle = GIZ.sel ? GCOL.sel : 'rgba(255,255,255,.9)'; gctx.fillText(lightName(), ctr[0] + 12, ctr[1] + 16); gctx.fillStyle = 'rgba(14,17,21,.75)'; }
   if (sun) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; gctx.beginPath(); gctx.moveTo(ctr[0] + Math.cos(a) * 10, ctr[1] + Math.sin(a) * 10); gctx.lineTo(ctr[0] + Math.cos(a) * 14, ctr[1] + Math.sin(a) * 14); gctx.stroke(); }
   else { gctx.beginPath(); gctx.arc(ctr[0], ctr[1], 3, 0, 7); gctx.fillStyle = gctx.strokeStyle; gctx.fill(); }
   if (!GIZ.sel) return;
@@ -6548,7 +6751,11 @@ function gizDraw() {
   let pend = null;
   plate.addEventListener('pointerdown', e => {
     if (S.view !== 'scene' || e.target !== cv || e.altKey || e.button !== 0) return;
-    const m = mpos(e), hit = gizPick(m);
+    const m = mpos(e);
+    // another light: select it (its gobo and settings come up in the panel)
+    const other = otherPick(m);
+    if (other) { e.stopPropagation(); e.preventDefault(); GIZ.eatUp = true; GIZ.sel = true; selectLight(other.idx); toolButtons(); return; }
+    const hit = gizPick(m);
     if (!hit) { if (GIZ.sel) pend = {x:e.clientX, y:e.clientY}; return; }
     e.stopPropagation(); e.preventDefault(); GIZ.eatUp = true;
     if (hit.light && !GIZ.sel) { GIZ.sel = true; buildPanel(); gizDraw(); return; }
@@ -6610,6 +6817,214 @@ function toolButtons() {
 }
 
 /* =====================================================================
+   LIGHTS
+   A scene can hold several gobo lights. Each light is a whole gobo of
+   its own: its pattern and every setting (for every pattern type), its
+   output levels, timeline, paint layers and its placement in the set or
+   in each shot. The panel always edits the selected light: selecting
+   another swaps that light's state and caches in (cheap: references
+   only), so every other part of the tool keeps working on "the" light.
+   The Scene view draws the other lights by swapping each in briefly,
+   re-rendering its gobo only when the time or resolution moved on.
+   ===================================================================== */
+// what a light owns in S (references, swapped as a whole)
+const LIGHT_STATE = ['mode', 'p', 'post', 'tl', 'scenes', 'shotLights', 'ovl'];
+if (!S.rig || !Array.isArray(S.rig.lights) || !S.rig.lights.length) S.rig = {sel:0, lights:[{id:'L1', name:'Key', on:true}]};
+S.rig.sel = clamp(S.rig.sel | 0, 0, S.rig.lights.length - 1);
+const RIG = S.rig;
+const lightCur = () => RIG.lights[RIG.sel];
+const lightOn = () => lightCur().on !== false;
+const lightName = () => lightCur().name || 'Light';
+const lightMulti = () => RIG.lights.length > 1;
+// the selected light's state lives in S itself
+for (const k of LIGHT_STATE) lightCur()[k] = S[k];
+// browser storage keys for a light's paint layers (the first light keeps the original keys)
+const paintKeyFor = id => id === 'L1' ? 'cucLab.paint' : 'cucLab.paint.' + id;
+const ovlPrefixFor = id => id === 'L1' ? 'cucLab.ovl.' : 'cucLab.ovl.' + id + '.';
+PAINT.key = paintKeyFor(lightCur().id);
+OVL_PREFIX = ovlPrefixFor(lightCur().id);
+
+/* caches that belong to one light's gobo: tree geometry and wind, window layers, the water spectrum, the
+   paint canvases and the light's own finished gobo */
+const takeCache = () => ({TR:{...TR}, WIN:{...WIN}, water:{...water}, taps:tapsCache, PAINT:{...PAINT}, OVL:{...OVL}, final:targets.final, winL:targets.winL});
+const freshCache = id => ({TR:{sig:'', windSig:'', data:null, leafVAO:null, segVAO:null, flutBuf:null, dispTex:null, dispData:null, nLeaves:0, nSegs:0}, WIN:{cover:3},
+  water:{sig:'', tex:null, N:0, kappa:0}, taps:{sig:'', tex:null, n:0, maxR:0},
+  PAINT:{cv:null, ctx:null, tex:null, dirty:true, undo:[], last:null, saveT:0, N:1024, key:paintKeyFor(id), set:() => S.p.shapes, kind:'gobo'}, OVL:{}, final:null, winL:null});
+const refill = (o, src) => { for (const k of Object.keys(o)) delete o[k]; Object.assign(o, src); };
+function lightStash(Lr) { for (const k of LIGHT_STATE) Lr[k] = S[k]; Lr.cache = takeCache(); }
+function lightUnstash(Lr) {
+  for (const k of LIGHT_STATE) if (Lr[k] !== undefined) S[k] = Lr[k];
+  const c = Lr.cache || freshCache(Lr.id);
+  refill(TR, c.TR); refill(WIN, c.WIN); refill(water, c.water); tapsCache = c.taps; refill(PAINT, c.PAINT); refill(OVL, c.OVL);
+  if (c.final) targets.final = c.final; else delete targets.final;
+  if (c.winL) targets.winL = c.winL; else delete targets.winL;
+  OVL_PREFIX = ovlPrefixFor(Lr.id);
+  Lr.cache = null;
+  if (typeof THUMB !== 'undefined' && THUMB) THUMB.stale = true;
+}
+// a light's settings filled in for every pattern (a light saved by an older version, or a new one)
+function lightNormalize() {
+  for (const m of Object.keys(MODES)) {
+    S.p[m] = {...DEFAULTS[m], ...(S.p[m] || {})};
+    S.post[m] = {...MODES[m].post, ...(S.post[m] || {})};
+    S.tl[m] = {...MODES[m].tl, ...(S.tl[m] || {})};
+    S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
+  }
+  S.ovl = {on:{}, pbTool:0, pbInk:0, pbSize:10, pbSoft:0.8, pbFlow:0.35, pbWrap:true, pbBlur:0.5, ...(S.ovl || {})};
+  S.shotLights = S.shotLights || {};
+}
+function lightsChanged() { buildModes(); buildPanel(); buildTimeline(); lightsBar(); dirty = true; viewDirty = true; save(); }
+function selectLight(k) {
+  k = clamp(k | 0, 0, RIG.lights.length - 1);
+  if (k === RIG.sel) return;
+  if (EXPORT.busy) return;
+  lightStash(lightCur()); RIG.sel = k; lightUnstash(lightCur()); lightNormalize();
+  GIZ.drag = null;
+  lightsChanged();
+}
+const deep = o => JSON.parse(JSON.stringify(o, (k, v) => k.startsWith('_') ? undefined : v));
+// a new light: a copy of the selected one (same gobo), turned 45° around its aim point so the two do not overlap
+function addLight() {
+  const used = new Set(RIG.lights.map(l => l.id));
+  let n = RIG.lights.length + 1; while (used.has('L' + n)) n++;
+  const id = 'L' + n, src = lightCur();
+  const Lr = {id, name:`Light ${n}`, on:true};
+  for (const k of LIGHT_STATE) Lr[k] = deep(S[k]);
+  for (const sc of Object.values(Lr.scenes)) if (sc) { sc.az = ((sc.az || 0) + 45 + 540) % 360 - 180; sc.follow = false; }
+  for (const shot of Object.values(Lr.shotLights || {})) for (const sc of Object.values(shot || {})) if (sc) { sc.az = ((sc.az || 0) + 45 + 540) % 360 - 180; sc.follow = false; }
+  Lr.ovl.on = {};                                 // its paint-over starts empty
+  RIG.lights.push(Lr);
+  // copy the painted gobo too, so the new light looks like the one it came from
+  try { if (src.id && PAINT.cv) localStorage.setItem(paintKeyFor(id), PAINT.cv.toDataURL('image/png')); } catch (e) {}
+  selectLight(RIG.lights.length - 1);
+}
+function removeLight(k = RIG.sel) {
+  if (RIG.lights.length < 2 || EXPORT.busy) return;
+  const gone = RIG.lights[k];
+  let sel = RIG.sel;
+  if (k === sel) {
+    // switch to a neighbour first, then drop the old light and its GPU resources
+    sel = k === 0 ? 1 : k - 1;
+    lightStash(gone); RIG.sel = sel; lightUnstash(lightCur()); lightNormalize();
+  }
+  const c = gone.cache;
+  if (c) { for (const t of [c.final, c.winL]) if (t) { gl.deleteTexture(t.tex); if (t.tex2) gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); } if (c.PAINT && c.PAINT.tex) gl.deleteTexture(c.PAINT.tex); }
+  try { localStorage.removeItem(paintKeyFor(gone.id)); for (const m of Object.keys(MODES)) localStorage.removeItem(ovlPrefixFor(gone.id) + m); } catch (e) {}
+  RIG.lights.splice(k, 1);
+  if (k < sel) sel--;
+  RIG.sel = sel;
+  lightsChanged();
+}
+/* Run fn with each light swapped in (the selected one included), then put the selected light back.
+   filter(Lr, i) chooses the lights; fn may be async. */
+async function forEachLight(fn, filter = () => true) {
+  const home = RIG.sel;
+  const out = [];
+  try {
+    for (let i = 0; i < RIG.lights.length; i++) {
+      if (!filter(RIG.lights[i], i)) continue;
+      if (i !== RIG.sel) { lightStash(lightCur()); RIG.sel = i; lightUnstash(lightCur()); lightNormalize(); }
+      out.push(await fn(RIG.lights[i], i));
+    }
+  } finally {
+    if (RIG.sel !== home) { lightStash(lightCur()); RIG.sel = home; lightUnstash(lightCur()); lightNormalize(); }
+  }
+  return out;
+}
+/* The other lights, as the Scene view draws them: each swapped in, its gobo rendered again only when the
+   time, resolution or quality moved on (or it has none yet), and described while it is in. */
+function otherLights() {
+  if (!lightMulti()) return [];
+  const home = RIG.sel, keepInfo = info, keepGobo = goboInfo, out = [];
+  const key = [S.t, S.res, S.quality, S.shotSel, SHOT.frame ? SHOT.frame.n : 0].join('|');
+  lightStash(lightCur());
+  try {
+    RIG.lights.forEach((Lr, i) => {
+      if (i === home || Lr.on === false) return;
+      RIG.sel = i; lightUnstash(Lr); lightNormalize();
+      if (Lr.rkey !== key || !targets.final || targets.final.w !== S.res) { render(); Lr.rkey = key; }
+      const d = lightDesc(targets.final); d.idx = i; d.name = Lr.name;
+      out.push(d);
+      lightStash(Lr);
+    });
+  } finally {
+    RIG.sel = home; lightUnstash(lightCur());
+    info = keepInfo; goboInfo = keepGobo;
+  }
+  return out;
+}
+
+/* what is saved: every light's settings (the selected light's are the top-level ones as before) */
+function rigSave() {
+  return {sel:RIG.sel, lights:RIG.lights.map((Lr, i) => {
+    const o = {id:Lr.id, name:Lr.name, on:Lr.on !== false};
+    if (i !== RIG.sel) for (const k of LIGHT_STATE) if (Lr[k] !== undefined) o[k] = Lr[k];
+    return o;
+  })};
+}
+
+/* ---------- the light list, at the top of the panel ---------- */
+const lbCss = document.createElement('style');
+lbCss.textContent = `
+.lightsbar{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.lightsbar .lbrow{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.lightsbar .lchip{display:flex;align-items:center;gap:6px;background:var(--raise);border:1px solid var(--line);border-radius:999px;padding:4px 10px 4px 6px;cursor:pointer;font-size:12px}
+.lightsbar .lchip[aria-pressed="true"]{border-color:var(--accent);background:rgba(240,178,94,.14);color:var(--fg)}
+.lightsbar .lchip .dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex:none}
+.lightsbar .lchip.off .dot{background:transparent;border:1px solid var(--mute)}
+.lightsbar .lchip.off{color:var(--mute)}
+.lightsbar .lchip small{color:var(--mute)}
+.lightsbar .ladd{background:none;border:1px dashed var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;font-size:12px;color:var(--mute)}
+.lightsbar .ladd:hover{border-color:var(--accent);color:var(--accent)}
+.lightsbar .lsel{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lightsbar .lsel input[type=text]{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 7px;width:9em;font-weight:600}
+.lightsbar .lsel button{background:var(--raise);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:12px;cursor:pointer}
+.lightsbar .lsel button:hover{border-color:var(--accent);color:var(--accent)}
+.lightsbar .lsel button.go{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.lightsbar .lsel button.go:hover{color:var(--accent-ink);filter:brightness(1.08)}
+.lightsbar .lnote{margin:0;color:var(--mute);font-size:11px;line-height:1.4}`;
+document.head.append(lbCss);
+const lightsBox = document.createElement('div');
+lightsBox.className = 'lightsbar'; lightsBox.id = 'lightsbar';
+{ const top = $('topctl'); if (top) top.before(lightsBox); }
+function lightsBar() {
+  const b = lightsBox; b.innerHTML = '';
+  const head = document.createElement('span'); head.className = 'sect-label'; head.textContent = 'Lights';
+  const row = document.createElement('div'); row.className = 'lbrow';
+  RIG.lights.forEach((Lr, i) => {
+    const ch = document.createElement('button');
+    ch.className = 'lchip' + (Lr.on === false ? ' off' : ''); ch.setAttribute('aria-pressed', String(i === RIG.sel));
+    const mode = i === RIG.sel ? S.mode : Lr.mode;
+    ch.innerHTML = '<span class="dot"></span><span></span><small></small>';
+    ch.children[1].textContent = Lr.name || `Light ${i + 1}`; ch.children[2].textContent = (MODES[mode] || {}).short || '';
+    ch.title = `Select ${Lr.name} to see and edit its gobo` + (Lr.on === false ? ' (hidden in the Scene view)' : '');
+    ch.onclick = () => selectLight(i);
+    row.append(ch);
+  });
+  const add = document.createElement('button'); add.className = 'ladd'; add.textContent = '+ Add light';
+  add.title = 'A new light with a copy of this gobo, turned 45° around its aim point. Change its pattern and settings freely.';
+  add.onclick = addLight; row.append(add);
+  const sel = document.createElement('div'); sel.className = 'lsel';
+  const nm = document.createElement('input'); nm.type = 'text'; nm.value = lightName(); nm.setAttribute('aria-label', 'Light name'); nm.spellcheck = false;
+  nm.onchange = () => { lightCur().name = nm.value.trim().replace(/\s+/g, ' ').slice(0, 32) || lightName(); lightsBar(); save(); };
+  nm.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') nm.blur(); });
+  const vis = document.createElement('button'); vis.textContent = lightOn() ? 'Hide' : 'Show';
+  vis.title = 'Hide or show this light in the Scene view (its gobo and settings stay)';
+  vis.onclick = () => { lightCur().on = !lightOn(); lightsBar(); viewDirty = true; save(); };
+  sel.append(nm, vis);
+  if (lightMulti()) { const del = document.createElement('button'); del.textContent = 'Delete'; del.title = 'Remove this light'; del.onclick = () => removeLight(); sel.append(del); }
+  const ex = document.createElement('button'); ex.className = 'go';
+  ex.textContent = HOST.sendLight ? `Send to ${HOST.label}…` : 'Export light…';
+  ex.title = HOST.sendLight ? `Write this light's gobo and light rig and set it up in ${HOST.label}` : 'Write this light\'s gobo frames, with its light rig for Houdini';
+  ex.onclick = () => EXPORT.open({rig:'on', who:'this'});
+  sel.append(ex);
+  const note = document.createElement('p'); note.className = 'lnote';
+  note.textContent = lightMulti() ? 'Everything below belongs to the selected light. In the Scene view, click a light to select it.' : 'Add lights to build up a scene: each has its own gobo, pattern and placement.';
+  b.append(head, row, sel, note);
+}
+lightsBar();
+
+/* =====================================================================
    EXPORT
    The final gobo (after Levels and Paint over) as one frame or a frame
    range, at a chosen square resolution, written as PNG, JPEG, TIFF,
@@ -6625,7 +7040,7 @@ const EXPORT = (() => {
     jpg: {label:'JPEG  .jpg', ext:'jpg', depths:[['8', '8-bit']]},
   };
   const isFloat = d => d === 'half' || d === 'float' || d === '32';
-  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on'};
+  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this'};
   S.exp = {...DEF, ...(S.exp || {})};
   if (!FMT[S.exp.fmt]) S.exp.fmt = 'exr';
   const st = {busy:false, cancel:false};
@@ -6980,7 +7395,7 @@ const EXPORT = (() => {
     return {w:R, h:R, nch, data:out};
   }
   async function encode(img, o) {
-    const periodic = !!MODES[S.mode].tileable && !(S.p[S.mode].framing > 0);
+    const periodic = !!MODES[S.mode].tileable && !usesPool() && !(S.p[S.mode].framing > 0);
     if (o.fmt === 'png') return new Blob([await writePNG(img, o.depth, o.enc)]);
     if (o.fmt === 'jpg') return new Blob([await writeJPG(img, o.enc)]);
     if (o.fmt === 'tif') return writeTIF(img, o.depth, o.enc);
@@ -6996,11 +7411,15 @@ const EXPORT = (() => {
     if (sd) return {shot:true, lo:sd.first, hi:sd.last, cur:sd.first + cur, time:f => (f - sd.first) / S.fps, num:f => f};
     return {shot:false, lo:1, hi:total, cur:cur + 1, time:f => (f - 1) / S.fps, num:f => (e.first | 0) + f - 1};
   }
-  const baseName = (e = S.exp) => (e.name || '').trim().replace(/[^\w.-]+/g, '_') || defaultName();
+  // with several lights, each light's files carry its name
+  const lightTag = () => lightMulti() ? usdPrimName(lightName()) + '_' : '';
+  const baseName = (e = S.exp) => { const n = (e.name || '').trim().replace(/[^\w.-]+/g, '_'); return n ? (lightMulti() ? n + '_' + usdPrimName(lightName()) : n) : defaultName(); };
   function defaultName() {
     const sd = shotActive() && shotDef(S.shotSel);
-    return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + S.mode;
+    return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + lightTag() + S.mode;
   }
+  // the name of an export of every light together
+  const groupName = (e = S.exp) => { const n = (e.name || '').trim().replace(/[^\w.-]+/g, '_'); if (n) return n + '_lights'; const sd = shotActive() && shotDef(S.shotSel); return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + 'lights'; };
   const fname = (n, e = S.exp) => `${baseName(e)}.${String(n).padStart(4, '0')}.${FMT[e.fmt].ext}`;
   const rigNames = (e = S.exp) => ({usd:`${baseName(e)}.light.usda`, settings:`${baseName(e)}.cucoloris.json`});
   function list(e = S.exp) {
@@ -7042,47 +7461,72 @@ const EXPORT = (() => {
   }
 
   /* ---------- the run ----------
-     over: settings that replace the dialog's for this run only (the scripting API passes them) */
+     over: settings that replace the dialog's for this run only (the scripting API passes them).
+     who: 'this' light, or 'all' shown lights one after another (each with its own frames and light rig). */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   async function run(onProgress, over = {}) {
     if (st.busy) throw new Error('An export is already running.');
-    const e = {...S.exp, ...over}, F = frames(e), fl = list(e), R = +e.res, nch = e.chans === 'y' ? 1 : 3;
-    if (!FMT[e.fmt]) throw new Error(`Unknown format "${e.fmt}".`);
-    if (!FMT[e.fmt].depths.some(d => d[0] === e.depth)) e.depth = FMT[e.fmt].depths[0][0];
-    const ext = FMT[e.fmt].ext, base = baseName(e), rig = wantsRig(e), send = wantsSend(e), hw = hostWrites();
-    const multi = fl.length > 1;
-    let dir = null;
-    if (!hw && multi && e.dest === 'folder' && canFolder) {
-      try { dir = await window.showDirectoryPicker({mode:'readwrite', id:'cucoloris-export'}); }
-      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true, written:0, total:fl.length}; dir = null; }
+    const e0 = {...S.exp, ...over};
+    if (!FMT[e0.fmt]) throw new Error(`Unknown format "${e0.fmt}".`);
+    const every = e0.who === 'all' && lightMulti();
+    const nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;
+    const ctx = {zip:null, zparts:0, dir:null, shared:every, lo:Infinity, hi:-Infinity};
+    const many = every || list(e0).length > 1;
+    if (!hostWrites() && many && e0.dest === 'folder' && canFolder) {
+      try { ctx.dir = await window.showDirectoryPicker({mode:'readwrite', id:'cucoloris-export'}); }
+      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true, written:0, total:0}; ctx.dir = null; }
     }
-    // on the web, anything beyond a single directly downloadable file travels in a zip
-    const zipAll = !hw && !dir && (multi || rig || (DIRECT && !DIRECT.includes(ext)));
-    const outDir = hw ? exportDir(e) : '';
-    const keep = {res:S.res, quality:S.quality, t:S.t, playing:S.playing};
+    const playing = S.playing;
     st.busy = true; st.cancel = false;
     setPlaying(false);
+    try {
+      if (!every) return await runOne(onProgress, e0, ctx);
+      let k = 0;
+      const rs = await forEachLight(async Lr => {
+        if (st.cancel) return null;
+        const r = await runOne((i, n, f, ms) => onProgress && onProgress(k * n + i, n * nl, f, ms, Lr.name), e0, ctx);
+        k++; return r;
+      }, Lr => Lr.on !== false);
+      const done = rs.filter(Boolean);
+      if (ctx.zip && ctx.zip.n) await deliver(`${groupName(e0)}.${ctx.lo === ctx.hi ? ctx.lo : ctx.lo + '-' + ctx.hi}.zip`, ctx.zip.blob());
+      return {written:done.reduce((a, r) => a + r.written, 0), total:done.reduce((a, r) => a + r.total, 0), lights:done.length, cancelled:st.cancel,
+              ms:done.reduce((a, r) => a + r.ms, 0), folder:ctx.dir && ctx.dir.name, dir:done[0] && done[0].dir, rig:done.some(r => r.rig), sent:done.some(r => r.sent), each:done};
+    } finally {
+      st.busy = false;
+      setPlaying(playing);
+      dirty = true; viewDirty = true;
+    }
+  }
+  async function runOne(onProgress, e0, ctx) {
+    const e = {...e0}, F = frames(e), fl = list(e), R = +e.res, nch = e.chans === 'y' ? 1 : 3;
+    if (!FMT[e.fmt].depths.some(d => d[0] === e.depth)) e.depth = FMT[e.fmt].depths[0][0];
+    const ext = FMT[e.fmt].ext, base = baseName(e), rig = wantsRig(e), send = wantsSend(e), hw = hostWrites();
+    const multi = fl.length > 1, dir = ctx.dir;
+    // on the web, anything beyond a single directly downloadable file travels in a zip
+    const zipAll = !hw && !dir && (ctx.shared || multi || rig || (DIRECT && !DIRECT.includes(ext)));
+    const outDir = hw ? exportDir(e) : '';
+    const keep = {res:S.res, quality:S.quality, t:S.t};
     const ZIPCAP = 1 << 30;
-    let zip = null, zparts = 0, written = 0;
+    let written = 0;
     const paths = [];
     const t0 = performance.now();
     const flush = async (final) => {
+      const zip = ctx.zip;
       if (!zip || !zip.n) return;
-      zparts++;
-      const label = final && zparts === 1 ? '' : `_part${zparts}`;
-      await deliver(`${base}.${zip.lo === zip.hi ? zip.lo : zip.lo + '-' + zip.hi}.${ext}${label}.zip`, zip.blob());
-      zip = null;
+      ctx.zparts++;
+      const label = final && ctx.zparts === 1 ? '' : `_part${ctx.zparts}`;
+      await deliver(ctx.shared ? `${groupName(e)}${label}.zip` : `${base}.${zip.lo === zip.hi ? zip.lo : zip.lo + '-' + zip.hi}.${ext}${label}.zip`, zip.blob());
+      ctx.zip = null;
     };
     // one file to wherever this export writes; returns the path the light rig should use for it
     const put = async (name, blob, num) => {
       if (hw) return (await HOST.writeFile(joinPath(outDir, name), blob)) || joinPath(outDir, name);
       if (dir) { const fh = await dir.getFileHandle(name, {create:true}), ws = await fh.createWritable(); await ws.write(blob); await ws.close(); return './' + name; }
       if (!zipAll) { await deliver(name, blob); return './' + name; }
-      if (!zip) { zip = new Zip(); zip.lo = zip.hi = num; }
-      await zip.add(name, blob); if (num !== undefined) zip.hi = num;
+      if (!ctx.zip) { ctx.zip = new Zip(); ctx.zip.lo = ctx.zip.hi = num; }
+      await ctx.zip.add(name, blob); if (num !== undefined) { ctx.zip.hi = num; ctx.lo = Math.min(ctx.lo, num); ctx.hi = Math.max(ctx.hi, num); }
       return './' + name;
     };
-    let result = null;
     try {
       S.res = R; S.quality = e.qual;
       for (let i = 0; i < fl.length; i++) {
@@ -7097,7 +7541,7 @@ const EXPORT = (() => {
         const num = F.num(f);
         paths.push({frame:num, path:await put(fname(num, e), blob, num)});
         written++;
-        if (zip && zip.size > ZIPCAP) await flush(false);
+        if (ctx.zip && ctx.zip.size > ZIPCAP) await flush(false);
       }
       // the light rig and the settings that made these frames
       let rigOut = null;
@@ -7112,17 +7556,13 @@ const EXPORT = (() => {
         const usdPath = await put(rn.usd, new Blob([rigUSDA(rigObj)], {type:'text/plain'}));
         rigOut = {rig:rigObj, files:{gobo:paths.map(p => p.path), usd:usdPath, settings:setPath}};
       }
-      await flush(!st.cancel || zparts === 0);          // a stopped export still hands over the frames it finished
+      if (!ctx.shared) await flush(!st.cancel || ctx.zparts === 0);   // a stopped export still hands over the frames it finished
       if (rigOut && send) await HOST.sendLight(rigOut.rig, rigOut.files);
       onProgress && onProgress(written, fl.length, null, performance.now() - t0);
-      result = {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send)};
-      return result;
+      return {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send), light:lightName()};
     } finally {
       S.res = keep.res; S.quality = keep.quality; S.t = keep.t;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
-      st.busy = false;
-      setPlaying(keep.playing);
-      dirty = true;
     }
   }
 
@@ -7165,6 +7605,7 @@ const EXPORT = (() => {
   wrap.className = 'expwrap'; wrap.hidden = true;
   wrap.innerHTML = `<div class="expdlg" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="expT">
   <h2 id="expT">Export gobo <button class="x" data-x aria-label="Close">×</button></h2>
+  <div class="exprow" data-show="who"><span>Lights</span><div class="expseg" data-seg="who"><button data-v="this" data-out="thislbl">This light</button><button data-v="all">All lights</button></div></div>
   <div class="exprow"><span>Frames</span><div class="expseg" data-seg="range"><button data-v="current">Current frame</button><button data-v="range">Frame range</button><button data-v="all">Whole timeline</button></div></div>
   <div class="exprow" data-show="range"><span>Range</span><div class="expinl"><label>from <input type="number" data-k="from" step="1"></label><label>to <input type="number" data-k="to" step="1"></label><span class="expnote" data-out="count"></span></div></div>
   <div class="exprow" data-show="first"><span>First file number</span><div class="expinl"><input type="number" data-k="first" step="1" min="0"><span class="expnote">timeline frame 1 is written as this number</span></div></div>
@@ -7213,6 +7654,9 @@ const EXPORT = (() => {
     q('[data-show="hostdir"]').hidden = !hw;
     if (hw) q('[data-out="hostdir"]').textContent = exportDir() || '(the host decides)';
     q('[data-show="send"]').hidden = !HOST.sendLight;
+    q('[data-show="who"]').hidden = !lightMulti();
+    q('[data-out="thislbl"]').textContent = `This light (${lightName()})`;
+    const every = e.who === 'all' && lightMulti(), nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;
     q('[data-out="sendlbl"]').textContent = `Create or update the light in ${HOST.label}`;
     q('[data-run]').textContent = send ? `Export & send to ${HOST.label}` : 'Export';
     q('[data-out="count"]').textContent = `${fl.length} frame${fl.length === 1 ? '' : 's'}` + (F.shot ? ` · shot ${F.lo}–${F.hi}` : ` · timeline 1–${F.hi}`);
@@ -7228,15 +7672,16 @@ const EXPORT = (() => {
     const rigNote = rig ? ` Next to the frames: <b>${rn.usd}</b> (the light, in ${shotActive() ? "the shot's own units and up axis" : 'the stand-in set, metres, Y up'}, with the gobo attached) and <b>${rn.settings}</b> (every setting).` + (send ? ` Then ${HOST.label} builds or updates the light from them.` : '') : '';
     const notes = {
       exr: 'Scanline OpenEXR, ZIP compressed, linear values.',
-      ptx: `One quad face (face 0) with mipmaps down to 4×4, v = 0 at the bottom of the image${MODES[S.mode].tileable && !(S.p[S.mode].framing > 0) ? ', periodic borders so the tile wraps' : ''}. Put it on a single-face card, or read face 0 in your light filter.`,
+      ptx: `One quad face (face 0) with mipmaps down to 4×4, v = 0 at the bottom of the image${MODES[S.mode].tileable && !usesPool() && !(S.p[S.mode].framing > 0) ? ', periodic borders so the tile wraps' : ''}. Put it on a single-face card, or read face 0 in your light filter.`,
       tif: 'Deflate-compressed TIFF.',
       png: '', jpg: 'JPEG is lossy: handy for previews and reviews, not for lighting.',
     };
     const encNote = isFloat(e.depth) ? 'Float values are linear transmission, exactly as rendered.' : e.enc === 'srgb' ? 'sRGB-encoded: a renderer that reads this as sRGB gets back the exact linear transmission the preview shows.' : 'Linear values written straight into the integer file: tell your renderer the texture is raw / linear.';
-    q('[data-out="sum"]').innerHTML = `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}${rigNote}`;
+    q('[data-out="sum"]').innerHTML = (every ? `Every shown light (${nl}), one after another, each with its own files, for example ` : '') + `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}${rigNote}`;
     q('[data-run]').disabled = st.busy;
   }
-  function open() {
+  function open(over) {
+    if (over) Object.assign(S.exp, over);
     const F = frames(), e = S.exp;
     if (!(e.from >= F.lo) || (F.shot && e.from > F.hi)) e.from = F.lo;
     if (!(e.to >= e.from) || (F.shot && e.to > F.hi)) e.to = F.hi;
@@ -7264,11 +7709,11 @@ const EXPORT = (() => {
     stat.className = 'expstat';
     q('[data-run]').disabled = true; q('[data-stop]').hidden = false;
     try {
-      const r = await run((i, n, f, ms) => {
+      const r = await run((i, n, f, ms, who) => {
         bar.style.width = `${(i / n * 100).toFixed(1)}%`;
-        if (f !== null) stat.textContent = `Rendering ${fname(frames().num(f))} · ${i + 1} of ${n}` + (i > 0 ? ` · ${(ms / i / 1000).toFixed(1)} s a frame` : '');
+        if (f !== null) stat.textContent = (who ? who + ' · ' : '') + `Rendering ${fname(frames().num(f))} · ${i + 1} of ${n}` + (i > 0 && ms > 0 ? ` · ${(ms / Math.max(1, i % Math.max(1, n)) / 1000).toFixed(1)} s a frame` : '');
       });
-      if (r && !r.cancelled) stat.textContent = `Done: ${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : r.dir ? ` into ${r.dir}` : '') + (r.rig ? ', with the light rig' : '') + (r.sent ? `; the light is set up in ${HOST.label}` : '') + '.';
+      if (r && !r.cancelled) stat.textContent = `Done: ${r.lights ? r.lights + ' lights, ' : ''}${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : r.dir ? ` into ${r.dir}` : '') + (r.rig ? ', with the light rig' : '') + (r.sent ? `; the light is set up in ${HOST.label}` : '') + '.';
       else if (r) stat.textContent = `Stopped after ${r.written} of ${r.total} frames` + (r.written ? '; the finished frames were saved.' : '.');
     } catch (err) {
       console.error(err);
@@ -7315,7 +7760,7 @@ const EXPORT = (() => {
                        applySettings() reads one back
    docs/HOUDINI.md explains each field and how a TD maps it onto a light.
    ===================================================================== */
-const RIG_VERSION = 1, SETTINGS_VERSION = 1, TOOL_NAME = 'Cucoloris Lab';
+const RIG_VERSION = 1, SETTINGS_VERSION = 2, TOOL_NAME = 'Cucoloris Lab';
 
 /* The tool works in metres with Y up. A shot keeps its own units and axes: the shot's passes were
    scaled by um (metres per scene unit) and, for a Z-up scene, turned (x, y, z) → (x, z, -y). */
@@ -7346,6 +7791,7 @@ function lightRig(info = {}) {
     space:{upAxis:sp.upAxis, metersPerUnit:sp.um, note:`Positions are in ${sp.label}.`},
     mode:S.mode, pattern:MODES[S.mode].short,
     light:{
+      name:lightName(), prim:usdPrimName(lightName()),
       type:sun ? 'distant' : 'spot',
       position:r6v(T), aim:r6v(sp.pos(L.aim)),
       right:r6v(X), up:r6v(Y), forward:r6v(sp.dir(L.f)),
@@ -7375,6 +7821,8 @@ function lightRig(info = {}) {
 }
 
 /* ---------- USD ---------- */
+// a light's name as a USD prim name: letters, digits and underscores, not starting with a digit
+const usdPrimName = n => { let p = String(n || 'gobo_light').replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, ''); if (!p || /^[0-9]/.test(p)) p = 'light_' + p; return p; };
 const usdStr = s => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
 const usdAsset = s => '@' + String(s).replace(/@/g, '') + '@';
 const usdNum = v => { const s = (+v).toPrecision(9); return String(parseFloat(s)); };
@@ -7404,8 +7852,9 @@ function rigUSDA(rig) {
   add('    }');
   add(')');
   add('{');
-  if (sun) add('    def DistantLight "gobo_light"');
-  else { add('    def SphereLight "gobo_light" ('); add('        prepend apiSchemas = ["ShapingAPI"]'); add('    )'); }
+  const prim = L.prim || 'gobo_light';
+  if (sun) add(`    def DistantLight "${prim}"`);
+  else { add(`    def SphereLight "${prim}" (`); add('        prepend apiSchemas = ["ShapingAPI"]'); add('    )'); }
   add('    {');
   add('        float inputs:intensity = 1');
   add(`        float inputs:exposure = ${usdNum(L.exposure)}`);
@@ -7448,6 +7897,7 @@ function rigUSDA(rig) {
   add(`        custom point3d cucoloris:aim = ${usdTup(L.aim)}`);
   add(`        custom float cucoloris:irradianceAtAim = ${usdNum(L.irradianceAtAim)}`);
   add(`        custom string cucoloris:mode = ${usdStr(rig.mode)}`);
+  if (L.name) add(`        custom string cucoloris:lightName = ${usdStr(L.name)}`);
   if (rig.settings) add(`        custom asset cucoloris:settings = ${usdAsset(rig.settings)}`);
   add('    }');
   add('}');
@@ -7464,7 +7914,7 @@ function settingsFile() {
   return {
     schema:'cucoloris.settings', version:SETTINGS_VERSION,
     savedWith:{tool:TOOL_NAME, host:HOST.name, stateVersion:10, date:new Date().toISOString()},
-    mode:m, fps:S.fps,
+    mode:m, fps:S.fps, lightName:lightName(),
     pattern:plain(S.p[m]), levels:plain(S.post[m]), timeline:plain(S.tl[m]),
     light:plain(SC()), lightSpace:'tool (metres, Y up)',
     shot:def ? {id:def.id, seq:def.seq, shot:def.shot} : null,
@@ -7486,6 +7936,13 @@ async function applySettings(o) {
   }
   S.mode = m;
   S.p[m] = {...DEFAULTS[m], ...(o.pattern || {})};
+  // version 1 files come from before the light pool switch: they keep their look (a pool framing becomes the switch)
+  if (!(o.version >= 2)) {
+    const P = S.p[m], fr = (o.pattern || {}).framing | 0;
+    P.pool = (m === 'trees' && fr === 2) || (m === 'shapes' && fr === 1);
+    if (m === 'trees' && fr === 2) P.framing = (SPECIES[P.species | 0] || {}).kind === 'palm' ? 1 : 0;
+    if (m === 'shapes' && fr === 1) P.framing = 0;
+  }
   S.post[m] = {...MODES[m].post, ...(o.levels || {})};
   S.tl[m] = {...MODES[m].tl, ...(o.timeline || {})};
   if (o.fps) S.fps = o.fps;
@@ -7517,6 +7974,13 @@ window.cucoloris = Object.freeze({
   // the pattern ('under', 'over', 'hull', 'trees', 'windows', 'shapes') and the shot ('' for the stand-in sets)
   setMode(m) { if (!MODES[m]) throw new Error(`Unknown pattern "${m}".`); S.mode = m; buildModes(); buildPanel(); buildTimeline(); dirty = true; viewDirty = true; save(); },
   getMode:() => S.mode,
+  // the scene's lights: each has its own gobo; the selected one is what every other call works on
+  lights:() => RIG.lights.map((Lr, i) => ({index:i, id:Lr.id, name:Lr.name, on:Lr.on !== false, mode:i === RIG.sel ? S.mode : Lr.mode, selected:i === RIG.sel})),
+  selectLight:i => selectLight(i),
+  addLight() { addLight(); return RIG.sel; },
+  removeLight:i => removeLight(i === undefined ? RIG.sel : i),
+  renameLight(name, i = RIG.sel) { RIG.lights[i].name = String(name).slice(0, 32); lightsBar(); save(); },
+  showLight(on, i = RIG.sel) { RIG.lights[i].on = !!on; lightsBar(); viewDirty = true; save(); },
   selectShot(id) { if (id && !shotDef(id)) throw new Error(`No shot "${id}".`); selectShot(id || '', true); },
   shotReady:() => !shotActive() || shotReady(),
   // frame numbers as the export writes them (the shot's own numbers in a shot, otherwise from the first file number)
@@ -7546,7 +8010,8 @@ window.cucoloris = Object.freeze({
       dirty = true;
     }
   },
-  // run an export: any export dialog setting can be given ({fmt, depth, res, range, from, to, first, chans, enc, qual, name, rig, send})
+  // run an export: any export dialog setting can be given ({fmt, depth, res, range, from, to, first, chans, enc, qual, name, rig, send,
+  // who: 'this' light or 'all' shown lights})
   exportFrames:(opts = {}, onProgress) => EXPORT.run(onProgress, opts),
   cancelExport() { if (EXPORT.busy) document.querySelector('[data-stop]').click(); },
   openExportDialog:() => EXPORT.open(),
@@ -7585,7 +8050,7 @@ function tick(now) {
 }
 
 buildModes(); buildPanel(); buildTimeline(); fit(); setPlaying(true); updateHud(0);
-window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR, SC, sceneLight, goboProjection, shotSpace, HOST};
+window.__cuc = {SHOT, selectShot, shotPick, gizHandles, GIZ, windSetup, EXR, EXPORT, S, render: () => { render(); display(); $('info').textContent = info; }, display, drawScene, MODES, DEFAULTS, targets, gl, runFFT, tgt, PR, pass, dataTex, tex, i1, f1, TR, SC, sceneLight, goboProjection, shotSpace, HOST, PAINT, paintCanvas, OVL, ovlTarget};
 requestAnimationFrame(tick);
 })();
 

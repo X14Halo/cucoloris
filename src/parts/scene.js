@@ -13,6 +13,8 @@ uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
 uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
 uniform vec4 uSph;
 uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
+// several lights: each draws its own light, linear, added together (uAcc); only the first adds the ambient and sky (uAmbK)
+uniform int uAcc; uniform float uAmbK;
 const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0, DY = 1.5;
 // ray / axis-aligned box
 float box(vec3 ro, vec3 rd, vec3 lo, vec3 hi, out vec3 n){
@@ -142,13 +144,13 @@ void main(){
   float t = hitScene(ro, rd, n, id);
   vec3 col;
   vec3 sky = uSet >= 2 ? vec3(0.55, 0.68, 0.85) * (0.4 + 2.5 * uAmb) : vec3(0.012, 0.013, 0.015);
-  if (id < 0) col = sky * (uSet >= 2 ? 0.7 + 0.5 * max(rd.y, 0.0) : 1.0 + 0.6 * rd.y);
+  if (id < 0) col = uAmbK * sky * (uSet >= 2 ? 0.7 + 0.5 * max(rd.y, 0.0) : 1.0 + 0.6 * rd.y);
   else if (id == 3){
     // open water: dark body, sky (or dock underside) seen in reflection
     float c = max(-rd.y, 0.0), F = 0.02 + 0.98 * pow(1.0 - c, 5.0);
     vec3 rr = reflect(rd, vec3(0, 1, 0)), nn; vec3 refl = sky;
     if (uSet == 2){ vec3 pw = ro + t * rd; vec3 pd = pw + rr * (DY - pw.y) / max(rr.y, 1e-3); if (abs(pd.x) < 4.1 && pd.z > -1.1 && pd.z < 5.1) refl = vec3(0.03) * uAlb; }
-    col = mix(vec3(0.004, 0.012, 0.014) * (1.0 + 4.0 * uAmb), refl, F);
+    col = uAmbK * mix(vec3(0.004, 0.012, 0.014) * (1.0 + 4.0 * uAmb), refl, F);
   } else {
     vec3 p = ro + t * rd, l;
     // texture footprint for filtering the projected gobo
@@ -156,7 +158,7 @@ void main(){
     vec3 e = lightAt(p, l, 0.0, pixW);
     float ndl = max(dot(n, l), 0.0);
     vec3 alb = id == 4 ? uAlb * vec3(1.0, 0.95, 0.88) : vec3(uAlb);
-    col = alb * (e * ndl + uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
+    col = alb * (e * ndl + uAmbK * uAmb * ao(p, n, id) * vec3(0.92, 0.96, 1.0));
   }
   float tEnd = min(t, 30.0);
   // light gizmo
@@ -177,15 +179,41 @@ void main(){
       vec3 e = lightAt(p, l, uBlurLod + 1.0, 0.0);
       float g = 0.45, mu = dot(rd, -l);
       float ph = (1.0 - g * g) / (4.0 * PI * pow(1.0 + g * g - 2.0 * g * mu, 1.5));
-      ins += Tr * sig * dt * e * ph * 4.0 + Tr * sig * dt * uAmb * 0.25;
+      ins += Tr * sig * dt * e * ph * 4.0 + Tr * sig * dt * uAmb * uAmbK * 0.25;
       Tr *= exp(-sig * dt);
     }
     col = col * Tr + ins;
   }
+  if (uAcc == 1){ fragColor = vec4(col, 1.0); return; }
   col *= exp2(uExpo);
   fragColor = vec4(srgb(aces(col)) + (h12(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
 PR.scene = program(VS_FULL, FS_SCENE, 'scene preview');
+// several lights, added up linearly, then exposed and tone mapped once; alpha 0 marks plain background
+const FS_TONE = COMMON + `
+uniform sampler2D uSrc; uniform float uExpo;
+float h12t(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+vec3 acesT(vec3 x){ return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+vec3 srgbT(vec3 c){ return mix(12.92 * c, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+void main(){
+  vec4 a = texelFetch(uSrc, ivec2(gl_FragCoord.xy), 0);
+  if (a.a < 0.5){ fragColor = vec4(0.03, 0.035, 0.04, 1.0); return; }
+  fragColor = vec4(srgbT(acesT(a.rgb * exp2(uExpo))) + (h12t(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
+}`;
+PR.tone = program(VS_FULL, FS_TONE, 'scene lights');
+// an accumulation target the size of the preview, with a depth buffer for the orbiting shot model
+function accTarget(depth) {
+  const w = cv.width, h = cv.height, key = depth ? 'accD' : 'acc';
+  let t = targets[key];
+  if (t && t.w === w && t.h === h) return t;
+  if (t) { gl.deleteTexture(t.tex); gl.deleteFramebuffer(t.fb); if (t.rb) gl.deleteRenderbuffer(t.rb); }
+  const texo = makeTex(w, h, 'f16', false), fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texo, 0);
+  let rb = null;
+  if (depth) { rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb); }
+  return (targets[key] = {tex:texo, fb, rb, w, h, fmt:'f16'});
+}
+function toneOut(acc, expo) { gl.disable(gl.BLEND); pass(PR.tone, null, p => { tex(p, 'uSrc', acc.tex, 0); f1(p, 'uExpo', expo); }); }
 
 const SCENE_DEFAULTS = {
   set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
@@ -208,10 +236,10 @@ const SET_SPHERE = [[1.1, 0.45, 0.9, 0.45], [-1.3, 0.5, 1.7, 0.5], [0, -9, 0, 0.
 const MODE_SCENE = {
   under:  {set:0, ltype:0, cone:90, dist:4, el:90, az:0, aimX:0, aimY:0, aimZ:0, sphere:true},
   over:   {set:2, ltype:0, cone:90, dist:4, el:-68, az:0, aimX:0, aimY:1.5, aimZ:2, sphere:false, amb:0.08, ev:1.3},
-  hull:   {set:3, ltype:1, follow:true, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1, ev:0.5},
+  hull:   {set:3, ltype:0, follow:true, dist:5, el:-30, az:0, aimX:0, aimY:1.0, aimZ:0, sphere:false, amb:0.1, ev:0.5},
   trees:  {set:1, ltype:0, cone:70, dist:6, el:62, az:18, aimX:0, aimY:0.45, aimZ:1.5, sphere:true},
   shapes: {set:1, ltype:0, cone:60, dist:6, el:55, az:18, aimX:0, aimY:0.45, aimZ:1.5, sphere:true},
-  windows:{set:1, ltype:1, el:35, az:-28, aimX:0, aimY:0.12, aimZ:0.75, sphere:true, amb:0.06, color:'#fff4e6'},
+  windows:{set:1, ltype:0, dist:5, el:35, az:-28, aimX:0, aimY:0.12, aimZ:0.75, sphere:true, amb:0.06, color:'#fff4e6'},
 };
 // spotlights start with the gobo at its real size where they are aimed
 const MODE_CAMS = {windows:{az:24, el:22, dist:3.6, tx:0.15, ty:0.35, tz:0.75}, trees:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}, shapes:{az:28, el:20, dist:7.5, tx:0, ty:0.7, tz:1.2}};
@@ -229,6 +257,8 @@ if (!S.scenes || !(S.savedVer >= 5)) S.scenes = {};
 if (!S.cams || !(S.savedVer >= 5)) S.cams = {};
 for (const m of Object.keys(MODES)) {
   S.scenes[m] = {...sceneDefaults(m), ...(S.scenes[m] || {})};
+  // v11: lights default to spotlights
+  if (!(S.savedVer >= 11)) S.scenes[m].ltype = 0;
   // a loaded shot lives only in the tab it was opened in
   if ((S.scenes[m].set | 0) === 4) { const d = sceneDefaults(m); Object.assign(S.scenes[m], {set:d.set, aimX:d.aimX, aimY:d.aimY, aimZ:d.aimZ, az:d.az, sphere:d.sphere}); S.cams[m] = null; }
   if (!S.cams[m]) S.cams[m] = camDefault(m);
@@ -329,11 +359,10 @@ function camPos(cam) {
   return {p, t0};
 }
 let LASTSCENE = null, VIEWCAM = null;
-function drawScene(fin) {
-  const c = SC(), L = sceneLight(), cam = CAM();
+/* One light, as the preview draws it: the current light (the one swapped in), with its own gobo texture. */
+function lightDesc(fin) {
+  const c = SC(), L = sceneLight();
   if (c.ltype === 1 && c.el < 2) c.el = 2;
-  const {p:cpos, t0} = camPos(cam);
-  const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
   const tile0 = sceneTile();
   // a framed gobo (single element, light pool, a window) fills the projection angle; when the framing first
   // switches to one, the spot opens up to about twice the gobo's real width, so it reaches the ground and wall around the subject
@@ -342,14 +371,34 @@ function drawScene(fin) {
     c._framed = framed;
     if (framed && c.ltype === 0 && c.real) { c.cone = clamp(+(2 * Math.atan(tile0 / c.dist) / DEG).toFixed(1), 50, 100); setTimeout(buildPanel, 0); }
   }
-  const G = goboProjection(c), {cone, rep, tanC, single, sunSize, sunScale} = G, kind = MODES[S.mode].kind;
-  const blur = c.blur / 100 * (c.ltype === 1 ? 1 : rep);
+  const G = goboProjection(c);
+  const blur = c.blur / 100 * (c.ltype === 1 ? 1 : G.rep);
   const lod = c.blur > 0 ? lodFor(blur, fin.w, 12, 1) : 0;
+  return {c, L, fin, G, tanC:G.tanC, rep:G.rep, single:G.single, sunSize:G.sunSize, blur, lod, mode:S.mode, I:Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)};
+}
+// the light uniforms every scene shader shares
+function lightUniforms(p, d) {
+  const c = d.c, L = d.L;
+  tex(p, 'uGobo', d.fin.tex, 0);
+  i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', d.single);
+  f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
+  f3(p, 'uLCol', ...hex3(c.color));
+  f1(p, 'uTanC', d.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', d.rep); f1(p, 'uBlur', d.blur); f1(p, 'uBlurLod', d.lod);
+  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w);
+}
+/* others: the other lights of the scene (descriptions made while each was swapped in, see lights.js) */
+function drawScene(fin, others = []) {
+  const D = lightDesc(fin), c = D.c, L = D.L, cam = CAM();
+  if (!lightOn()) D.off = true;
+  const all = [D, ...others];
+  const {p:cpos, t0} = camPos(cam);
+  const cf = v3.norm(v3.sub(t0, cpos)), cb = basis(cf);
+  const {cone, rep, tanC, sunSize, sunScale} = D.G, kind = MODES[S.mode].kind;
   const tile = sceneTile(), what = kind === 'windows' ? 'the gobo' : 'one tile';
-  const lightLines = () => c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
+  const lightLines = () => (others.length ? [`${others.length + 1} lights · ${lightName()} selected`] : []).concat(c.ltype === 1 ? [`Scene: sun at ${(followsSun() ? S.p[S.mode].sunElev : c.el).toFixed(1)}° elevation · ${what} spans ${(tile * sunScale).toFixed(2)} m across the beam (real size ${tile.toFixed(2)} m)`]
     : [`Scene: spotlight ${c.dist.toFixed(2)} m from the aim point · the ${cone.toFixed(1)}° projection is ${(2 * c.dist * tanC).toFixed(2)} m wide there`,
-       `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`];
-  LASTSCENE = {L, tanC, rep, sunSize, ltype:c.ltype, cpos, cf, cb};
+       `${what[0].toUpperCase() + what.slice(1)} spans ${(2 * c.dist * tanC / rep).toFixed(2)} m at the aim point (real size ${tile.toFixed(2)} m${Math.abs(2 * c.dist * tanC / rep - tile) / tile < 0.03 ? ', matched' : ''})`]);
+  LASTSCENE = {L, tanC, rep, sunSize, ltype:c.ltype, cpos, cf, cb, others};
   // how the preview camera maps world points to the screen (for the light manipulator)
   { const tf = Math.tan(20 * DEG);
     VIEWCAM = {pos:cpos, f:cf, r:cb.r, u:cb.u, project:X => { const v = v3.sub(X, cpos), z = v3.dot(v, cf); if (z <= 1e-3) return null;
@@ -357,22 +406,27 @@ function drawScene(fin) {
       ray:(fx, fy) => { const sx = (fx * 2 - cv.width) / cv.height, sy = (fy * 2 - cv.height) / cv.height; return {ro:cpos, rd:v3.norm(v3.add(cf, v3.add(v3.mul(cb.r, tf * sx), v3.mul(cb.u, tf * sy))))}; }}; }
   if (shotActive()) {
     shotSync();
-    if (shotReady()) { drawShot(fin, c, L, {tanC, rep, blur, lod, single, sunSize}); return [SHOT.status, ...lightLines()]; }
+    if (shotReady()) { drawShot(all); return [SHOT.status, ...lightLines()]; }
     bindTarget(null); gl.clearColor(0.03, 0.035, 0.04, 1); gl.clear(gl.COLOR_BUFFER_BIT);
     return [SHOT.status || 'Building the shot…'];
   }
-  pass(PR.scene, null, p => {
-    tex(p, 'uGobo', fin.tex, 0);
+  // the set, the camera and the fill light come from the selected light's scene; every light adds its own light
+  const setU = (p, ambK, acc) => {
     f3(p, 'uCamPos', ...cpos); f3(p, 'uCamF', ...cf); f3(p, 'uCamR', ...cb.r); f3(p, 'uCamU', ...cb.u); f1(p, 'uTanF', Math.tan(20 * DEG));
-    i1(p, 'uType', c.ltype); i1(p, 'uShape', c.shape); i1(p, 'uSingle', single); i1(p, 'uSet', c.set | 0);
-    i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0);
-    f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
-    f3(p, 'uLCol', ...hex3(c.color));
-    f1(p, 'uTanC', tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', rep); f1(p, 'uBlur', blur); f1(p, 'uBlurLod', lod);
-    f1(p, 'uI', Math.pow(2, c.ev) * (c.ltype === 1 ? 1 : 25)); f1(p, 'uSunSize', sunSize); f1(p, 'uSrcR', 0.04);
+    i1(p, 'uSet', c.set | 0); i1(p, 'uSphere', c.sphere && c.set < 2 ? 1 : 0); i1(p, 'uGizmo', c.gizmo ? 1 : 0); f1(p, 'uSrcR', 0.04);
     gl.uniform4f(p.u('uSph'), ...(MODE_SPHERE[S.mode] && (MODE_SCENE[S.mode] || {}).set === (c.set | 0) ? MODE_SPHERE[S.mode] : SET_SPHERE[c.set | 0]));
-    f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t); f1(p, 'uGoboRes', fin.w);
-  });
+    f1(p, 'uAlb', c.alb); f1(p, 'uAmb', c.amb); f1(p, 'uHaze', c.haze); f1(p, 'uExpo', c.expo); f1(p, 'uT', S.t);
+    i1(p, 'uAcc', acc); f1(p, 'uAmbK', ambK);
+  };
+  if (all.length === 1) {
+    pass(PR.scene, null, p => { lightUniforms(p, D); setU(p, 1, 0); });
+    return lightLines();
+  }
+  const acc = accTarget(false);
+  bindTarget(acc); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  all.forEach((d, i) => pass(PR.scene, acc, p => { lightUniforms(p, d); setU(p, i === 0 ? 1 : 0, 1); }));
+  toneOut(acc, c.expo);
   return lightLines();
 }
 /* How the scene light projects the gobo: shared by the preview, the light rig export and any host.
@@ -386,7 +440,7 @@ function goboProjection(c = SC()) {
     sunScale = 1;
     if (c.ltype === 0) rep = framed ? 1 : Math.max(1, 2 * c.dist * Math.tan(cone * 0.5 * DEG) / tile0);
   }
-  const single = S.mode === 'hull' ? (S.p.hull.fade > 0 && !shotActive() ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
+  const single = S.mode === 'hull' ? (usesPool() || (S.p.hull.fade > 0 && !shotActive()) ? 2 : 3) : kind === 'windows' || usesPool() || (kind === 'shapes' && !SHAPE_SEAMLESS[S.p.shapes.shape | 0]) ? 2 : kind === 'trees' && (S.p[S.mode].framing | 0) === 1 ? 1 : 0;
   const sunSize = tile0 * sunScale * (S.mode === 'hull' && followsSun() ? Math.cos(S.p.hull.sunElev * DEG) : 1);
   return {cone, tanC:Math.tan(cone * 0.5 * DEG), rep, sunScale, sunSize, single, framed, tile:tile0};
 }

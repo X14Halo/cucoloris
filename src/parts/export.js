@@ -14,7 +14,7 @@ const EXPORT = (() => {
     jpg: {label:'JPEG  .jpg', ext:'jpg', depths:[['8', '8-bit']]},
   };
   const isFloat = d => d === 'half' || d === 'float' || d === '32';
-  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on'};
+  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this'};
   S.exp = {...DEF, ...(S.exp || {})};
   if (!FMT[S.exp.fmt]) S.exp.fmt = 'exr';
   const st = {busy:false, cancel:false};
@@ -369,7 +369,7 @@ const EXPORT = (() => {
     return {w:R, h:R, nch, data:out};
   }
   async function encode(img, o) {
-    const periodic = !!MODES[S.mode].tileable && !(S.p[S.mode].framing > 0);
+    const periodic = !!MODES[S.mode].tileable && !usesPool() && !(S.p[S.mode].framing > 0);
     if (o.fmt === 'png') return new Blob([await writePNG(img, o.depth, o.enc)]);
     if (o.fmt === 'jpg') return new Blob([await writeJPG(img, o.enc)]);
     if (o.fmt === 'tif') return writeTIF(img, o.depth, o.enc);
@@ -385,11 +385,15 @@ const EXPORT = (() => {
     if (sd) return {shot:true, lo:sd.first, hi:sd.last, cur:sd.first + cur, time:f => (f - sd.first) / S.fps, num:f => f};
     return {shot:false, lo:1, hi:total, cur:cur + 1, time:f => (f - 1) / S.fps, num:f => (e.first | 0) + f - 1};
   }
-  const baseName = (e = S.exp) => (e.name || '').trim().replace(/[^\w.-]+/g, '_') || defaultName();
+  // with several lights, each light's files carry its name
+  const lightTag = () => lightMulti() ? usdPrimName(lightName()) + '_' : '';
+  const baseName = (e = S.exp) => { const n = (e.name || '').trim().replace(/[^\w.-]+/g, '_'); return n ? (lightMulti() ? n + '_' + usdPrimName(lightName()) : n) : defaultName(); };
   function defaultName() {
     const sd = shotActive() && shotDef(S.shotSel);
-    return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + S.mode;
+    return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + lightTag() + S.mode;
   }
+  // the name of an export of every light together
+  const groupName = (e = S.exp) => { const n = (e.name || '').trim().replace(/[^\w.-]+/g, '_'); if (n) return n + '_lights'; const sd = shotActive() && shotDef(S.shotSel); return 'gobo_' + (sd ? sd.shot.replace(/[^\w]+/g, '_') + '_' : '') + 'lights'; };
   const fname = (n, e = S.exp) => `${baseName(e)}.${String(n).padStart(4, '0')}.${FMT[e.fmt].ext}`;
   const rigNames = (e = S.exp) => ({usd:`${baseName(e)}.light.usda`, settings:`${baseName(e)}.cucoloris.json`});
   function list(e = S.exp) {
@@ -431,47 +435,72 @@ const EXPORT = (() => {
   }
 
   /* ---------- the run ----------
-     over: settings that replace the dialog's for this run only (the scripting API passes them) */
+     over: settings that replace the dialog's for this run only (the scripting API passes them).
+     who: 'this' light, or 'all' shown lights one after another (each with its own frames and light rig). */
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   async function run(onProgress, over = {}) {
     if (st.busy) throw new Error('An export is already running.');
-    const e = {...S.exp, ...over}, F = frames(e), fl = list(e), R = +e.res, nch = e.chans === 'y' ? 1 : 3;
-    if (!FMT[e.fmt]) throw new Error(`Unknown format "${e.fmt}".`);
-    if (!FMT[e.fmt].depths.some(d => d[0] === e.depth)) e.depth = FMT[e.fmt].depths[0][0];
-    const ext = FMT[e.fmt].ext, base = baseName(e), rig = wantsRig(e), send = wantsSend(e), hw = hostWrites();
-    const multi = fl.length > 1;
-    let dir = null;
-    if (!hw && multi && e.dest === 'folder' && canFolder) {
-      try { dir = await window.showDirectoryPicker({mode:'readwrite', id:'cucoloris-export'}); }
-      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true, written:0, total:fl.length}; dir = null; }
+    const e0 = {...S.exp, ...over};
+    if (!FMT[e0.fmt]) throw new Error(`Unknown format "${e0.fmt}".`);
+    const every = e0.who === 'all' && lightMulti();
+    const nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;
+    const ctx = {zip:null, zparts:0, dir:null, shared:every, lo:Infinity, hi:-Infinity};
+    const many = every || list(e0).length > 1;
+    if (!hostWrites() && many && e0.dest === 'folder' && canFolder) {
+      try { ctx.dir = await window.showDirectoryPicker({mode:'readwrite', id:'cucoloris-export'}); }
+      catch (err) { if (err && err.name === 'AbortError') return {cancelled:true, written:0, total:0}; ctx.dir = null; }
     }
-    // on the web, anything beyond a single directly downloadable file travels in a zip
-    const zipAll = !hw && !dir && (multi || rig || (DIRECT && !DIRECT.includes(ext)));
-    const outDir = hw ? exportDir(e) : '';
-    const keep = {res:S.res, quality:S.quality, t:S.t, playing:S.playing};
+    const playing = S.playing;
     st.busy = true; st.cancel = false;
     setPlaying(false);
+    try {
+      if (!every) return await runOne(onProgress, e0, ctx);
+      let k = 0;
+      const rs = await forEachLight(async Lr => {
+        if (st.cancel) return null;
+        const r = await runOne((i, n, f, ms) => onProgress && onProgress(k * n + i, n * nl, f, ms, Lr.name), e0, ctx);
+        k++; return r;
+      }, Lr => Lr.on !== false);
+      const done = rs.filter(Boolean);
+      if (ctx.zip && ctx.zip.n) await deliver(`${groupName(e0)}.${ctx.lo === ctx.hi ? ctx.lo : ctx.lo + '-' + ctx.hi}.zip`, ctx.zip.blob());
+      return {written:done.reduce((a, r) => a + r.written, 0), total:done.reduce((a, r) => a + r.total, 0), lights:done.length, cancelled:st.cancel,
+              ms:done.reduce((a, r) => a + r.ms, 0), folder:ctx.dir && ctx.dir.name, dir:done[0] && done[0].dir, rig:done.some(r => r.rig), sent:done.some(r => r.sent), each:done};
+    } finally {
+      st.busy = false;
+      setPlaying(playing);
+      dirty = true; viewDirty = true;
+    }
+  }
+  async function runOne(onProgress, e0, ctx) {
+    const e = {...e0}, F = frames(e), fl = list(e), R = +e.res, nch = e.chans === 'y' ? 1 : 3;
+    if (!FMT[e.fmt].depths.some(d => d[0] === e.depth)) e.depth = FMT[e.fmt].depths[0][0];
+    const ext = FMT[e.fmt].ext, base = baseName(e), rig = wantsRig(e), send = wantsSend(e), hw = hostWrites();
+    const multi = fl.length > 1, dir = ctx.dir;
+    // on the web, anything beyond a single directly downloadable file travels in a zip
+    const zipAll = !hw && !dir && (ctx.shared || multi || rig || (DIRECT && !DIRECT.includes(ext)));
+    const outDir = hw ? exportDir(e) : '';
+    const keep = {res:S.res, quality:S.quality, t:S.t};
     const ZIPCAP = 1 << 30;
-    let zip = null, zparts = 0, written = 0;
+    let written = 0;
     const paths = [];
     const t0 = performance.now();
     const flush = async (final) => {
+      const zip = ctx.zip;
       if (!zip || !zip.n) return;
-      zparts++;
-      const label = final && zparts === 1 ? '' : `_part${zparts}`;
-      await deliver(`${base}.${zip.lo === zip.hi ? zip.lo : zip.lo + '-' + zip.hi}.${ext}${label}.zip`, zip.blob());
-      zip = null;
+      ctx.zparts++;
+      const label = final && ctx.zparts === 1 ? '' : `_part${ctx.zparts}`;
+      await deliver(ctx.shared ? `${groupName(e)}${label}.zip` : `${base}.${zip.lo === zip.hi ? zip.lo : zip.lo + '-' + zip.hi}.${ext}${label}.zip`, zip.blob());
+      ctx.zip = null;
     };
     // one file to wherever this export writes; returns the path the light rig should use for it
     const put = async (name, blob, num) => {
       if (hw) return (await HOST.writeFile(joinPath(outDir, name), blob)) || joinPath(outDir, name);
       if (dir) { const fh = await dir.getFileHandle(name, {create:true}), ws = await fh.createWritable(); await ws.write(blob); await ws.close(); return './' + name; }
       if (!zipAll) { await deliver(name, blob); return './' + name; }
-      if (!zip) { zip = new Zip(); zip.lo = zip.hi = num; }
-      await zip.add(name, blob); if (num !== undefined) zip.hi = num;
+      if (!ctx.zip) { ctx.zip = new Zip(); ctx.zip.lo = ctx.zip.hi = num; }
+      await ctx.zip.add(name, blob); if (num !== undefined) { ctx.zip.hi = num; ctx.lo = Math.min(ctx.lo, num); ctx.hi = Math.max(ctx.hi, num); }
       return './' + name;
     };
-    let result = null;
     try {
       S.res = R; S.quality = e.qual;
       for (let i = 0; i < fl.length; i++) {
@@ -486,7 +515,7 @@ const EXPORT = (() => {
         const num = F.num(f);
         paths.push({frame:num, path:await put(fname(num, e), blob, num)});
         written++;
-        if (zip && zip.size > ZIPCAP) await flush(false);
+        if (ctx.zip && ctx.zip.size > ZIPCAP) await flush(false);
       }
       // the light rig and the settings that made these frames
       let rigOut = null;
@@ -501,17 +530,13 @@ const EXPORT = (() => {
         const usdPath = await put(rn.usd, new Blob([rigUSDA(rigObj)], {type:'text/plain'}));
         rigOut = {rig:rigObj, files:{gobo:paths.map(p => p.path), usd:usdPath, settings:setPath}};
       }
-      await flush(!st.cancel || zparts === 0);          // a stopped export still hands over the frames it finished
+      if (!ctx.shared) await flush(!st.cancel || ctx.zparts === 0);   // a stopped export still hands over the frames it finished
       if (rigOut && send) await HOST.sendLight(rigOut.rig, rigOut.files);
       onProgress && onProgress(written, fl.length, null, performance.now() - t0);
-      result = {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send)};
-      return result;
+      return {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send), light:lightName()};
     } finally {
       S.res = keep.res; S.quality = keep.quality; S.t = keep.t;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
-      st.busy = false;
-      setPlaying(keep.playing);
-      dirty = true;
     }
   }
 
@@ -554,6 +579,7 @@ const EXPORT = (() => {
   wrap.className = 'expwrap'; wrap.hidden = true;
   wrap.innerHTML = `<div class="expdlg" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="expT">
   <h2 id="expT">Export gobo <button class="x" data-x aria-label="Close">×</button></h2>
+  <div class="exprow" data-show="who"><span>Lights</span><div class="expseg" data-seg="who"><button data-v="this" data-out="thislbl">This light</button><button data-v="all">All lights</button></div></div>
   <div class="exprow"><span>Frames</span><div class="expseg" data-seg="range"><button data-v="current">Current frame</button><button data-v="range">Frame range</button><button data-v="all">Whole timeline</button></div></div>
   <div class="exprow" data-show="range"><span>Range</span><div class="expinl"><label>from <input type="number" data-k="from" step="1"></label><label>to <input type="number" data-k="to" step="1"></label><span class="expnote" data-out="count"></span></div></div>
   <div class="exprow" data-show="first"><span>First file number</span><div class="expinl"><input type="number" data-k="first" step="1" min="0"><span class="expnote">timeline frame 1 is written as this number</span></div></div>
@@ -602,6 +628,9 @@ const EXPORT = (() => {
     q('[data-show="hostdir"]').hidden = !hw;
     if (hw) q('[data-out="hostdir"]').textContent = exportDir() || '(the host decides)';
     q('[data-show="send"]').hidden = !HOST.sendLight;
+    q('[data-show="who"]').hidden = !lightMulti();
+    q('[data-out="thislbl"]').textContent = `This light (${lightName()})`;
+    const every = e.who === 'all' && lightMulti(), nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;
     q('[data-out="sendlbl"]').textContent = `Create or update the light in ${HOST.label}`;
     q('[data-run]').textContent = send ? `Export & send to ${HOST.label}` : 'Export';
     q('[data-out="count"]').textContent = `${fl.length} frame${fl.length === 1 ? '' : 's'}` + (F.shot ? ` · shot ${F.lo}–${F.hi}` : ` · timeline 1–${F.hi}`);
@@ -617,15 +646,16 @@ const EXPORT = (() => {
     const rigNote = rig ? ` Next to the frames: <b>${rn.usd}</b> (the light, in ${shotActive() ? "the shot's own units and up axis" : 'the stand-in set, metres, Y up'}, with the gobo attached) and <b>${rn.settings}</b> (every setting).` + (send ? ` Then ${HOST.label} builds or updates the light from them.` : '') : '';
     const notes = {
       exr: 'Scanline OpenEXR, ZIP compressed, linear values.',
-      ptx: `One quad face (face 0) with mipmaps down to 4×4, v = 0 at the bottom of the image${MODES[S.mode].tileable && !(S.p[S.mode].framing > 0) ? ', periodic borders so the tile wraps' : ''}. Put it on a single-face card, or read face 0 in your light filter.`,
+      ptx: `One quad face (face 0) with mipmaps down to 4×4, v = 0 at the bottom of the image${MODES[S.mode].tileable && !usesPool() && !(S.p[S.mode].framing > 0) ? ', periodic borders so the tile wraps' : ''}. Put it on a single-face card, or read face 0 in your light filter.`,
       tif: 'Deflate-compressed TIFF.',
       png: '', jpg: 'JPEG is lossy: handy for previews and reviews, not for lighting.',
     };
     const encNote = isFloat(e.depth) ? 'Float values are linear transmission, exactly as rendered.' : e.enc === 'srgb' ? 'sRGB-encoded: a renderer that reads this as sRGB gets back the exact linear transmission the preview shows.' : 'Linear values written straight into the integer file: tell your renderer the texture is raw / linear.';
-    q('[data-out="sum"]').innerHTML = `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}${rigNote}`;
+    q('[data-out="sum"]').innerHTML = (every ? `Every shown light (${nl}), one after another, each with its own files, for example ` : '') + `<b>${first}</b>${fl.length > 1 ? ` … <b>${lastN}</b>` : ''}, ${where}. About ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB a frame before compression. ${notes[e.fmt]} ${encNote}${rigNote}`;
     q('[data-run]').disabled = st.busy;
   }
-  function open() {
+  function open(over) {
+    if (over) Object.assign(S.exp, over);
     const F = frames(), e = S.exp;
     if (!(e.from >= F.lo) || (F.shot && e.from > F.hi)) e.from = F.lo;
     if (!(e.to >= e.from) || (F.shot && e.to > F.hi)) e.to = F.hi;
@@ -653,11 +683,11 @@ const EXPORT = (() => {
     stat.className = 'expstat';
     q('[data-run]').disabled = true; q('[data-stop]').hidden = false;
     try {
-      const r = await run((i, n, f, ms) => {
+      const r = await run((i, n, f, ms, who) => {
         bar.style.width = `${(i / n * 100).toFixed(1)}%`;
-        if (f !== null) stat.textContent = `Rendering ${fname(frames().num(f))} · ${i + 1} of ${n}` + (i > 0 ? ` · ${(ms / i / 1000).toFixed(1)} s a frame` : '');
+        if (f !== null) stat.textContent = (who ? who + ' · ' : '') + `Rendering ${fname(frames().num(f))} · ${i + 1} of ${n}` + (i > 0 && ms > 0 ? ` · ${(ms / Math.max(1, i % Math.max(1, n)) / 1000).toFixed(1)} s a frame` : '');
       });
-      if (r && !r.cancelled) stat.textContent = `Done: ${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : r.dir ? ` into ${r.dir}` : '') + (r.rig ? ', with the light rig' : '') + (r.sent ? `; the light is set up in ${HOST.label}` : '') + '.';
+      if (r && !r.cancelled) stat.textContent = `Done: ${r.lights ? r.lights + ' lights, ' : ''}${r.written} frame${r.written === 1 ? '' : 's'} in ${(r.ms / 1000).toFixed(1)} s` + (r.folder ? ` into “${r.folder}”` : r.dir ? ` into ${r.dir}` : '') + (r.rig ? ', with the light rig' : '') + (r.sent ? `; the light is set up in ${HOST.label}` : '') + '.';
       else if (r) stat.textContent = `Stopped after ${r.written} of ${r.total} frames` + (r.written ? '; the finished frames were saved.' : '.');
     } catch (err) {
       console.error(err);

@@ -67,7 +67,7 @@ const MOCK = {
   // the same optional starting set-up the placeholder courtyard carries, so the two can be compared
   shots: cb => cb(R([{id:'court010_sh0020', seq:'court010', shot:'sh0020', label:'court010 / sh0020', first:1001, last:1001, mode:'trees',
                       preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
-                      lights:{trees:{ltype:1, follow:true, aim:[0, 1.35, 0], amb:0.2}}}])),
+                      lights:{trees:{ltype:0, aim:[0, 1.35, 0], el:62, az:22, dist:7, amb:0.2}}}])),
   shotPasses: (id, cb) => cb(R({units:1, upZ:false, layers:{pos:'P', nrm:'N', col:'albedo'}, frames:{'1001':[%(exr)s]}})),
   shotCamera: (id, frame, cb) => cb(R(%(cam)s)),
   readFile: (path, cb) => window.pyRead(path).then(b => cb(R(b))),
@@ -106,7 +106,7 @@ const MOCK = {
     check(len(written) == 4 and any(k.endswith('.light.usda') for k in written), 'files written through writeFile: ' + ', '.join(os.path.basename(k) for k in sorted(written)))
     check(sent and sent['files']['usd'].startswith(out_root), 'sendLight got the rig and absolute paths')
     from pxr import Usd
-    st = Usd.Stage.Open(sent['files']['usd']); a = st.GetPrimAtPath('/cucoloris/gobo_light').GetAttribute('cucoloris:gobo:file')
+    st = Usd.Stage.Open(sent['files']['usd']); a = st.GetPrimAtPath('/cucoloris').GetChildren()[0].GetAttribute('cucoloris:gobo:file')
     check(a.GetTimeSamples() == [1001.0, 1002.0] and a.Get(1002).path.startswith(out_root), 'the USD layer points at the written frames, per frame')
     check(len(frames) > 0, f'frameChanged reached the bridge ({frames[-1] if frames else "-"})')
     if errs: check(False, 'page errors: ' + '; '.join(errs))
