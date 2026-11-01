@@ -134,7 +134,7 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
-        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Either can sit in a light pool with dark edges (Light pool, below).'},
+        {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Seamless canopy tiles in every direction.'},
         {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
         {k:'trunks', l:'Trunk shadows', type:'chk', h:'Off keeps only the canopy, as when you look up into the trees from beneath them.'},
@@ -218,6 +218,7 @@ for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v
 const POOL_DEFAULT = {pool:true, poolSize:1.0, poolSoft:0.55};
 for (const m of Object.keys(DEFAULTS)) DEFAULTS[m] = {...POOL_DEFAULT, ...DEFAULTS[m]};
 for (const m of Object.keys(MODES)) for (const ps of MODES[m].presets) if (ps.v.framing === 2 && m === 'trees') ps.v.framing = 0;
+for (const ps of MODES.trees.presets) if (ps.v.framing === 1 && ps.v.pool === undefined) ps.v.pool = false;
 
 /* =====================================================================
    STATE (+ per-viewer persistence)

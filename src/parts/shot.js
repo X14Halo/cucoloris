@@ -27,7 +27,7 @@ const SHOTS = [
   {id:'ph_court_mid', placeholder:true, seq:'court010', shot:'sh0020', mode:'trees', scene:0, label:'court010 / sh0020 · person in a courtyard, mid shot (tree dapple)', first:1001, last:1001,
    cam:{eye:[0.8, 1.48, 2.15], at:[0.0, 1.3, 0.0], vfov:30},
    // one big tree overhead, framed in open sunlight, so its shadow covers the person
-   preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
+   preset:{mode:'trees', name:'Oak canopy overhead', v:{framing:1, pool:false, tileSize:15.5, leafDensity:0.45, elemSize:0.75}},
    lights:{trees:{ltype:0, aim:[0, 1.35, 0], el:62, az:22, dist:7, amb:0.2}}},
   {id:'ph_room', placeholder:true, seq:'house030', shot:'sh0010', mode:'windows', scene:2, label:'house030 / sh0010 · living room, faked window light', first:1001, last:1001,
    cam:{eye:[1.35, 1.45, 2.3], at:[-0.7, 0.62, -1.3], vfov:50}, preset:{mode:'windows', name:'Tall French window'},

@@ -128,29 +128,32 @@ function buildPanel() {
     ovlGroup().forEach(def => c.append(control(def, S.ovl, 'ovl', null, ovlChanged)));
     d.append(sm, c); groups.prepend(d);
   }
-  // Framing is the first decision for a gobo, so it sits above everything else in the panel
-  const top = $('topctl'); top.innerHTML = ''; top.hidden = true;
+  // Framing is the first decision for a gobo, so it sits above everything else in the panel. Every pattern can sit
+  // in a light pool with dark edges (the default) or fill the frame as designed; trees can also be a single element.
+  const top = $('topctl'); top.innerHTML = ''; top.hidden = false;
   const groupsNow = m.groups.map(g => ({...g, params:g.params.filter(d => d.k !== 'framing')}));
   const fdef = m.groups.flatMap(g => g.params).find(d => d.k === 'framing');
-  if (fdef) {
-    top.hidden = false;
-    const onCh = k => {
-      S.userFraming = S.userFraming || {};
-      S.userFraming[S.mode] = (store.framing | 0) !== (DEFAULTS[S.mode].framing | 0);
-      if (!m.onParam || m.onParam(k, store)) buildPanel(); changed();
-    };
-    top.append(control({...fdef, l:'Framing'}, store, S.mode, DEFAULTS[S.mode], onCh));
-  }
-  // the light pool: a soft circle of light with dark edges, for every pattern
-  {
-    const pd = [{k:'pool', l:'Light pool, dark edges', type:'chk', h:'Frames the gobo in a soft pool of light that fades to black toward the edges, with an organic rim, as a spotlight pool does.'}];
-    if (store.pool) pd.push(
+  const trees = m.kind === 'trees';
+  const full = trees ? 'Seamless canopy' : m.kind === 'shapes' ? 'As designed' + (SHAPE_SEAMLESS[store.shape | 0] ? ' (seamless tile)' : '') : m.tileable ? 'Seamless tile' : 'Full frame';
+  const fopts = ['Light pool, dark edges', full, ...(trees ? ['Single element in white'] : [])];
+  const fs = {fr:store.pool ? 0 : trees && (store.framing | 0) === 1 ? 2 : 1};
+  top.append(control({k:'fr', l:'Framing', opts:fopts, h:(fdef && fdef.h ? fdef.h + ' ' : '') + 'A light pool lets light through only in the middle of the frame, fading softly to black toward an organic rim, as a spotlight pool does.'}, fs, S.mode + '-framing', {fr:0}, () => {
+    store.pool = fs.fr === 0;
+    if (trees) store.framing = fs.fr === 2 ? 1 : 0;
+    S.userFraming = S.userFraming || {};
+    S.userFraming[S.mode] = fs.fr !== 0;
+    if (m.onParam) m.onParam('framing', store);
+    buildPanel(); changed();
+  }));
+  // the pool's own controls, while the gobo sits in one
+  if (store.pool) {
+    const pd = [
       {k:'poolSize', l:'Pool radius', min:0.3, max:1.4, step:0.01, fmt:v => v.toFixed(2) + '×', h:'1 reaches the edges of the frame; smaller pulls the pool in.'},
-      {k:'poolSoft', l:'Edge fade', min:0.05, max:1, step:0.01, h:'How far in from the rim the light fades to black. Low is a crisp edge, high a long soft falloff.'});
+      {k:'poolSoft', l:'Edge fade', min:0.05, max:1, step:0.01, h:'How far in from the rim the light fades to black. Low is a crisp edge, high a long soft falloff.'}];
     const d = document.createElement('details'); d.className = 'grp'; d.open = true;
     const sm = document.createElement('summary'); sm.innerHTML = '<span class="sect-label">Light pool</span>';
     const c = document.createElement('div'); c.className = 'ctrls';
-    pd.forEach(def => c.append(control(def, store, S.mode, DEFAULTS[S.mode], k => { if (k === 'pool') { if (m.onParam) m.onParam(k, store); buildPanel(); } changed(); })));
+    pd.forEach(def => c.append(control(def, store, S.mode, DEFAULTS[S.mode], changed)));
     d.append(sm, c); groups.append(d);
   }
   groupsNow.filter(g => g.params.length).forEach(g => mk(g.name, g.params, store, DEFAULTS[S.mode], true, !!g.off, !!g.first));
