@@ -12,7 +12,7 @@ uniform int uType, uShape, uSingle, uSphere, uGizmo, uSet;
 uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
 uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
 uniform vec4 uSph;
-uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
+uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT; uniform vec2 uGoboOff;
 // several lights: each draws its own light, linear, added together (uAcc); only the first adds the ambient and sky (uAmbK)
 uniform int uAcc; uniform float uAmbK;
 const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0, DY = 1.5;
@@ -61,6 +61,7 @@ float occl(vec3 p, vec3 l, float dl){
 }
 
 vec3 gobo(vec2 uv, float lod){
+  uv -= uGoboOff;   // the gobo slid across the beam (Keep hero lit): the image moves by this much of its width
   if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }   // tiles sideways only (hulls and walls)
   else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return textureLod(uGobo, uv, lod).rgb;
@@ -216,7 +217,7 @@ function accTarget(depth) {
 function toneOut(acc, expo) { gl.disable(gl.BLEND); pass(PR.tone, null, p => { tex(p, 'uSrc', acc.tex, 0); f1(p, 'uExpo', expo); }); }
 
 const SCENE_DEFAULTS = {
-  set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
+  set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0, goffX:0, goffY:0,
   dist:5, az:25, el:40, roll:0, ev:0, color:'#ffffff',
   aimX:0, aimY:0.8, aimZ:0.8,
   sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0, follow:true, real:true,
@@ -285,6 +286,8 @@ const SCENE_GROUPS = () => {
   );
   light.push(
     {k:'blur', l:'Gobo blur', min:0, max:5, step:0.05, u:'%', h:'Defocus of the gobo image, as a percentage of the image width. Real projectors throw a slightly soft image; these gobos already contain the sun\'s own blur.'},
+    {k:'goffX', l:'Gobo offset across', min:-0.5, max:0.5, step:0.005, h:'Slides the image across the beam, as a fraction of its width, without moving the light. Keep hero lit sets it for you.'},
+    {k:'goffY', l:'Gobo offset up', min:-0.5, max:0.5, step:0.005, h:'Slides the image up the beam, as a fraction of its height.'},
     {k:'roll', l:'Gobo rotation', min:-180, max:180, step:1, u:'°', h:'Rotates the image around the light\'s axis.'},
     {k:'ev', l:'Intensity', min:-6, max:6, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV', h:sun ? 'Irradiance in stops.' : 'Stops. At 0 EV the light gives an irradiance of 1 at 5 m; it falls off with the inverse square of distance.'},
     {k:'color', l:'Light colour', type:'color', h:'The gobo multiplies the light\'s colour, as when a texture is assigned to the light colour.'},
@@ -310,7 +313,7 @@ const SCENE_GROUPS = () => {
     {k:'alb', l:shot && SHOT.frame.hasCol ? 'Surface colour gain' : 'Surface grey', min:0.05, max:0.9, step:0.01, h:shot && SHOT.frame.hasCol ? 'Scales the shot\'s surface colour; 0.5 uses it as rendered.' : 'Albedo of the set.'},
     {k:'expo', l:'Camera exposure', min:-4, max:4, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV'},
   ];
-  const out = [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:sa ? 'Display' : 'Set & camera', params:set}];
+  const out = [{name:'Scene light', params:light}, {name:'Light placement', params:place}, heroGroup(), {name:sa ? 'Display' : 'Set & camera', params:set}];
   return sa ? [{name:'Shot', params:shotDefs(), shot:true}, ...out] : out;
 };
 const hex3 = h => { const n = parseInt((h || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)); };
@@ -384,7 +387,7 @@ function lightUniforms(p, d) {
   f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
   f3(p, 'uLCol', ...hex3(c.color));
   f1(p, 'uTanC', d.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', d.rep); f1(p, 'uBlur', d.blur); f1(p, 'uBlurLod', d.lod);
-  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w);
+  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w); f2(p, 'uGoboOff', c.goffX || 0, c.goffY || 0);
 }
 /* others: the other lights of the scene (descriptions made while each was swapped in, see lights.js) */
 function drawScene(fin, others = []) {

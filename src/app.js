@@ -29,6 +29,12 @@ const WATER = name => ({name, params:[
 const IMPERF = {name:'Imperfections', params:[
   {k:'uneven', l:'Uneven wave energy', min:0, max:1, step:0.01, h:'Real water is never uniform: sheltered corners, wave groups and leftover swell leave some areas busier than others. The pattern of busy and calm areas drifts slowly.'},
 ]};
+// splashes: rain, drips or a fish breaking the surface, each a ring of waves where short ripples outrun long ones
+const SPLASH = {name:'Splashes', params:[
+  {k:'distRate', l:'Splashes per minute', min:0, max:600, step:1, log:false, h:'Rain drops, drips or fish breaking the surface, at random places across the tile. Each sends out a ring of waves by the exact gravity–capillary dispersion of water: the short ripples outrun the long ones. 0 turns them off.'},
+  {k:'distAmt', l:'Splash strength', min:0.02, max:0.6, step:0.01, h:'The steepest slope of the water right after each splash. Rain is about 0.1–0.3; a stone or a fish 0.4 and up.'},
+  {k:'distSize', l:'Splash size', min:0.005, max:0.3, step:0.001, log:true, u:'m', h:'Radius of the dent each splash makes. Rain drops are 1–3 mm across but dent about 1–2 cm; a fish is 10 cm and up.'},
+]};
 const MOTION = {name:'Motion', params:[
   {k:'timeScale', l:'Time scale', min:0.05, max:2, step:0.01, u:'×', h:'1 = real speed from the gravity–capillary dispersion relation. Lower it only as a deliberate art-direction choice.'},
 ]};
@@ -48,6 +54,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'depth', l:'Depth below surface', min:0.1, max:15, step:0.05, u:'m', h:'Distance from the water surface to the surface receiving the caustics.'},
         {k:'sunElev', l:'Sun elevation (in air)', min:10, max:90, step:0.5, u:'°'},
@@ -72,6 +79,7 @@ const MODES = {
       {name:'River riffle', v:{tileSize:1.5, wavelength:0.2, slope:0.09, tail:0.7, peak:1.1, directional:0.85, opposing:0.6, ripple:0.005, uneven:0.6, chop:0.4, depth:0.4, sunElev:55, waterType:4}},
       {name:'Clear river pool', v:{tileSize:2, wavelength:0.25, slope:0.05, tail:0.35, peak:1.3, directional:0.5, opposing:0.25, ripple:0.002, uneven:0.45, depth:1.0, sunElev:50, waterType:4}},
       {name:'Swimming pool', v:{tileSize:3, wavelength:0.32, slope:0.05, tail:0.3, peak:1.2, directional:0.15, opposing:0.55, ripple:0, depth:1.5, sunElev:62, waterType:0}},
+      {name:'Rain on a still pond', v:{tileSize:2, wavelength:0.25, slope:0.025, tail:0.3, peak:1.2, directional:0.3, opposing:0.2, ripple:0.001, uneven:0.4, depth:0.5, sunElev:55, waterType:4, distRate:240, distAmt:0.25, distSize:0.015}},
     ],
     post:{...LEVELS},
   },
@@ -80,6 +88,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'depth', l:'Height above water', min:0.1, max:15, step:0.05, u:'m', h:'Height of the ceiling, dock or hull underside above the water.'},
         {k:'sunElev', l:'Sun elevation', min:10, max:85, step:0.5, u:'°'},
@@ -103,6 +112,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'sunElev', l:'Sun elevation', min:5, max:75, step:0.5, u:'°', h:'Lower sun stretches the pattern into horizontal bands; higher sun stretches it upward.'},
         {k:'sunAz', l:'Sun angle to the wall', min:-75, max:75, step:0.5, u:'°', h:'0 = the sun faces the wall squarely across the water.'},
@@ -134,6 +144,7 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
+        {k:'snow', l:'Snow on the branches', min:0, max:1, step:0.01, h:'Snow lying along every branch level enough to hold it, and in pillows on spruce and fir sprays. It is opaque, so branch shadows fatten and the crown closes up; snow-laden boughs also stop fluttering.'},
         {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Seamless canopy tiles in every direction.'},
         {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
@@ -168,6 +179,14 @@ const MODES = {
       {name:'Oak sprig, white frame', v:{species:0, tileSize:4, cover:1.0, canopyTop:3.5, canopyDepth:1.8, framing:1, elemSize:0.5, sunElev:55}},
       {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:0, pool:true, poolSize:1.0, poolSoft:0.6}},
       {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
+      {name:'Spruce forest', v:{species:6, tileSize:12, cover:0.6, canopyTop:16, canopyDepth:7, sunElev:60, windSpeed:3}},
+      {name:'Snow-laden spruce', v:{species:6, tileSize:12, cover:0.55, canopyTop:14, canopyDepth:6, snow:0.75, sunElev:50, windSpeed:1.5}},
+      {name:'Fir spires on a slope', v:{species:7, tileSize:10, cover:0.5, canopyTop:13, canopyDepth:6, snow:0.35, sunElev:55, windSpeed:2}},
+      {name:'Larch stand', v:{species:8, tileSize:12, cover:0.6, canopyTop:16, canopyDepth:7, sunElev:58, windSpeed:3}},
+      {name:'Bare winter birches', v:{species:9, tileSize:4, cover:0.9, canopyTop:7, canopyDepth:4.5, sunElev:32, windSpeed:3}},
+      {name:'Frosted aspen grove', v:{species:10, tileSize:4, cover:0.9, canopyTop:7, canopyDepth:4.5, snow:0.45, sunElev:32, windSpeed:1.5}},
+      {name:'Bare birch branch, white frame', v:{species:9, framing:1, tileSize:4, elemSize:0.55, cover:1, canopyTop:3.5, canopyDepth:2, sunElev:55}},
+      {name:'Lone spruce, white frame', v:{species:6, framing:1, tileSize:12, elemSize:0.4, cover:1, canopyTop:12, canopyDepth:8, snow:0.4, sunElev:60}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
   },
@@ -193,7 +212,7 @@ for (const m of ['under', 'over', 'hull']) {
   Object.defineProperty(MODES.trees, 'groups', {get() {
     const fr = (S.p.trees.framing | 0);
     const top = [all.framing, ...(fr === 1 ? [all.elemSize] : []),
-                 all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.woody, all.trunks];
+                 all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.snow, all.woody, all.trunks];
     return [{name:'Trees', params:top}, ...TG.slice(1)];
   }});
 }
@@ -217,6 +236,9 @@ for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v
 // every pattern starts framed in a soft pool of light with dark edges (Light pool, in the panel)
 const POOL_DEFAULT = {pool:true, poolSize:1.0, poolSoft:0.55};
 for (const m of Object.keys(DEFAULTS)) DEFAULTS[m] = {...POOL_DEFAULT, ...DEFAULTS[m]};
+for (const m of ['under', 'over', 'hull']) DEFAULTS[m] = {distRate:0, distAmt:0.2, distSize:0.015, ...DEFAULTS[m]};
+DEFAULTS.windows = {tint:0, tintK:0.8, refract:true, ...DEFAULTS.windows};
+DEFAULTS.trees = {snow:0, ...DEFAULTS.trees};
 for (const m of Object.keys(MODES)) for (const ps of MODES[m].presets) if (ps.v.framing === 2 && m === 'trees') ps.v.framing = 0;
 for (const ps of MODES.trees.presets) if (ps.v.framing === 1 && ps.v.pool === undefined) ps.v.pool = false;
 
@@ -256,7 +278,7 @@ try {
       }
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig', 'pip']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
@@ -265,7 +287,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), ver:11})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), pip:S.pip, ver:11})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -460,7 +482,7 @@ function rippleMask(P, t, tl) {
    gravity–capillary dispersion, so short ripples outrun longer waves exactly as in water. The modes are
    added straight into the simulated spectrum, which keeps them exactly periodic with the tile. */
 function disturbances(P, t, tl) {
-  const rate = 0, amt = 0, s = Math.max(P.distSize || 0.05, 0.005);
+  const rate = P.distRate || 0, amt = P.distAmt ?? 0.2, s = Math.max(P.distSize || 0.015, 0.005);
   const T = tl.loop ? tl.len : 60, tt = ((t % T) + T) % T;
   const life = Math.min(0.92 * T, 12);
   const n = rate > 0 && amt > 0 ? Math.max(1, Math.round(rate / 60 * T)) : 0;
@@ -614,13 +636,26 @@ function renderAt(t) {
   if (MODES[S.mode].kind === 'shapes') return renderShapes(S.p[S.mode], S.res, t, TL());
   return renderCaustics(S.p[S.mode], S.res, t, MODES[S.mode].target, TL());
 }
+const SIMCACHE = {key:'', name:'', info:''};
 function render(expT) {
   syncShotTimeline();
   const tl = TL(), Q = QUAL[S.quality];
   const sub = tl.shutter > 0 && (!S.playing || S.mbPlay) ? Q.sub : 1;
+  /* The simulated pattern is kept while only what comes after it changes (light pool, paint over on caustics and
+     windows, output levels): with the timeline paused and motion blur on, a Levels drag or a paint stroke would
+     otherwise re-run every motion-blur sub-frame of the simulation. */
+  const P = S.p[S.mode], kind = MODES[S.mode].kind;
+  const paintPending = (kind === 'shapes' && (P.shape | 0) === 14 && PAINT.dirty) || (['trees', 'shapes'].includes(kind) && ovlOn() && OVL[S.mode] && OVL[S.mode].dirty);
+  const simKey = JSON.stringify([S.mode, P, tl, S.t, S.res, S.quality, sub, S.fps, lightCur().id, TR.sig, TR.windSig, ovlOn(), S.shotSel],
+    (k, v) => (k === 'pool' || k === 'poolSize' || k === 'poolSoft' || k.startsWith('pb')) ? undefined : v);
   let out;
-  if (sub <= 1) out = renderAt(S.t);
-  else {
+  if (!paintPending && SIMCACHE.key === simKey && targets[SIMCACHE.name]) { out = targets[SIMCACHE.name]; info = SIMCACHE.info; }
+  else if (sub <= 1) {
+    out = renderAt(S.t);
+    const keep = tgt('simRaw', out.w, out.h, 'f16');
+    pass(PR.copy, keep, p => { tex(p, 'uSrc', out.tex, 0); f1(p, 'uGain', 1); });
+    out = keep; Object.assign(SIMCACHE, {key:simKey, name:'simRaw', info});
+  } else {
     const span = tl.shutter / 360 / S.fps;
     const acc = tgt('mblur', S.res, S.res, 'f16');
     let msg = '';
@@ -635,6 +670,7 @@ function render(expT) {
     }
     info = msg;
     out = acc;
+    Object.assign(SIMCACHE, {key:simKey, name:'mblur', info});
   }
   if (usesPool()) out = poolPass(out);
   // in a shot the hull pattern runs the length of the hull, so it is not faded at the sides
@@ -653,15 +689,34 @@ function render(expT) {
   goboInfo = info;
 }
 let goboInfo = '';
+// the gobo's average transmission after the output levels, read from the 1×1 top of its mip chain
+let meanFb = null;
+function goboMean() {
+  const f = targets.final; if (!f || !f.mip) return null;
+  if (!meanFb) meanFb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, meanFb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, Math.round(Math.log2(f.w)));
+  const px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2]) / 255;
+}
+const fmtMean = m => m === null ? '' : `Mean ${m.toFixed(2)} · ${m > 0.002 ? (Math.log2(m) >= 0 ? '+' : '−') + Math.abs(Math.log2(m)).toFixed(1) : '−9'} EV`;
 function display() {
   const fin = targets.final;
   if (!fin) return;
-  if (S.view === 'scene') { const others = otherLights(); info = goboInfo + '\n' + drawScene(targets.final, others).join('\n'); gizDraw(); return; }
-  if (gcv && gcv.width) gizDraw();
+  if (S.view === 'scene') {
+    const others = otherLights();
+    info = goboInfo + '\n' + drawScene(targets.final, others).join('\n');
+    if (SNAP.Lc) drawCompare(others);
+    gizDraw(); pipDraw();
+    return;
+  }
   info = goboInfo;
   pass(PR.disp, null, p => {
     tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0);
   });
+  if (SNAP.Lc) drawCompare();
+  gizDraw();
 }
 
 /*@@PART host@@*/
@@ -675,6 +730,7 @@ function display() {
 /*@@PART export@@*/
 /*@@PART rig@@*/
 /*@@PART api@@*/
+/*@@PART views@@*/
 /* =====================================================================
    LOOP
    ===================================================================== */

@@ -51,10 +51,12 @@ function ovlTarget(m = S.mode) {
   return T;
 }
 let CUR = null;   // the target of the stroke in progress
+let SCENE_RING = null;   // the brush footprint in the Scene view (world points), drawn on the light manipulator's overlay
 const PT = () => CUR || (ovlOn() ? ovlTarget() : paintCanvas());
 const PB = () => {
   const P = PT().set();
-  return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
+  const ink0 = P.pbInk | 0;
+  return {tool:P.pbTool | 0, ink:INK_FLIP && ink0 < 2 ? 1 - ink0 : ink0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
           angle:P.pbAngle ?? 20, len:P.pbLen ?? 6, streak:P.pbStreak ?? 0.5, blurAmt:P.pbBlur ?? 0.5};
 };
 function paintSave(T = PT()) {
@@ -62,11 +64,20 @@ function paintSave(T = PT()) {
   T.saveT = setTimeout(() => { try { localStorage.setItem(T.key, T.cv.toDataURL('image/png')); } catch (e) {} }, 700);
 }
 function paintChanged(T = PT()) { T.dirty = true; T.used = true; dirty = true; paintSave(T); padRedraw(); }
+const snapCanvas = T => { const c = document.createElement('canvas'); c.width = c.height = T.N; c.getContext('2d').drawImage(T.cv, 0, 0); return c; };
 function pushUndo(T = PT()) {
-  const c = document.createElement('canvas'); c.width = c.height = T.N;
-  c.getContext('2d').drawImage(T.cv, 0, 0);
-  T.undo.push(c); if (T.undo.length > 12) T.undo.shift();
+  T.undo.push(snapCanvas(T)); if (T.undo.length > 24) T.undo.shift();
+  T.redo = [];                            // a new stroke ends the redo trail
 }
+const putCanvas = (T, c) => { const ctx = T.ctx; ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; };
+// undo and redo for a paint target (the paint-your-own canvas or a paint-over layer)
+function undoPaint(T = PT()) { const c = T.undo.pop(); if (!c) return false; (T.redo = T.redo || []).push(snapCanvas(T)); putCanvas(T, c); paintChanged(T); return true; }
+function redoPaint(T = PT()) { const c = (T.redo || []).pop(); if (!c) return false; T.undo.push(snapCanvas(T)); putCanvas(T, c); paintChanged(T); return true; }
+// Shift while painting flips the ink (shadow and light, or open up and thicken)
+let INK_FLIP = false;
+document.addEventListener('keydown', e => { if (e.key === 'Shift') INK_FLIP = true; });
+document.addEventListener('keyup', e => { if (e.key === 'Shift') INK_FLIP = false; });
+window.addEventListener('blur', () => { INK_FLIP = false; });
 /* ---------- brush sprites: drawn once per dab as a white alpha mask, then tinted with the ink ---------- */
 function sprite(w, h, draw) {
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
@@ -318,6 +329,12 @@ function sceneHit(e) {
 }
 // where in the gobo the light that reaches this point came from (the same mapping the scene's light uses)
 function goboUVAt(p) {
+  const q = goboUVRaw(p); if (!q) return null;
+  const c = SC();
+  return [q[0] - (c.goffX || 0), q[1] - (c.goffY || 0)];
+}
+// the same, before the gobo offset: where the beam itself puts this point
+function goboUVRaw(p) {
   const S0 = LASTSCENE; if (!S0) return null;
   const L = S0.L;
   if (S0.ltype === 1) { const v = v3.sub(p, L.aim); return [v3.dot(v, L.r) / S0.sunSize + 0.5, v3.dot(v, L.u) / S0.sunSize + 0.5]; }
@@ -353,6 +370,32 @@ function goboUVAt(p) {
     CUR = PT(); pushUndo(); CUR.last = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     stroke(...q); ST.q = q; paintChanged();
   });
+  // the brush's footprint where the light lands: the gobo-space circle carried out along the light onto the surface
+  const footprint = e => {
+    SCENE_RING = null;
+    if (!scenePaintOn() || e.altKey || !LASTSCENE) return;
+    const p = sceneHit(e); if (!p) return;
+    const nb = (dx, dy) => sceneHit({clientX:e.clientX + dx, clientY:e.clientY + dy});
+    const a = nb(3, 0), b = nb(0, 3);
+    let n = a && b ? v3.cross(v3.sub(a, p), v3.sub(b, p)) : null;
+    const S0 = LASTSCENE, L = S0.L, sun = S0.ltype === 1;
+    if (!n || Math.hypot(...n) < 1e-9) n = v3.mul(L.f, -1); else n = v3.norm(n);
+    const ruv = PB().size / 200;           // brush radius as a fraction of the gobo's width
+    const z = sun ? 1 : v3.dot(v3.sub(p, L.pos), L.f); if (!sun && z <= 1e-3) return;
+    const R = sun ? ruv * S0.sunSize : ruv * 2 * z * S0.tanC / S0.rep;
+    const pts = [];
+    for (let i = 0; i <= 48; i++) {
+      const th = i / 48 * 2 * Math.PI, q = v3.add(p, v3.add(v3.mul(L.r, R * Math.cos(th)), v3.mul(L.u, R * Math.sin(th))));
+      // follow the light through q onto the surface's plane at p
+      const o = sun ? q : L.pos, d = sun ? L.f : v3.norm(v3.sub(q, L.pos)), dn = v3.dot(d, n);
+      if (Math.abs(dn) < 1e-4) { pts.push(null); continue; }
+      const t = v3.dot(v3.sub(p, o), n) / dn;
+      pts.push(v3.add(o, v3.mul(d, t)));
+    }
+    SCENE_RING = {pts, ctr:p};
+  };
+  cv.addEventListener('pointermove', e => { footprint(e); if (typeof gizDraw === 'function') gizDraw(); });
+  cv.addEventListener('pointerleave', () => { SCENE_RING = null; if (typeof gizDraw === 'function') gizDraw(); });
   cv.addEventListener('pointermove', e => {
     if (!ST) return;
     const h = point(e), q = h && toPaint(h.p);
@@ -366,8 +409,9 @@ function goboUVAt(p) {
 })();
 function paintAction(a) {
   const T = CUR = paintCanvas(), ctx = T.ctx, N = T.N;
-  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
-  else {
+  if (a === 'undo') { undoPaint(T); CUR = null; return; }
+  if (a === 'redo') { redoPaint(T); CUR = null; return; }
+  {
     pushUndo();
     if (a === 'light' || a === 'shadow') { ctx.fillStyle = a === 'light' ? '#fff' : '#000'; ctx.fillRect(0, 0, N, N); }
     else if (a === 'invert') { ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.globalCompositeOperation = 'source-over'; }
@@ -400,8 +444,8 @@ function paintDefs() {
     {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01},
     {k:'pbWrap', l:'Wrap at the edges (keeps it seamless)', type:'chk'},
     {k:'pbScene', l:'Paint in the Scene view too', type:'chk', h:'In the Scene view, painting lands in the gobo exactly where the light falls on the set or shot, so you can rough in shapes right where you want them. Alt-drag still orbits.'},
-    {type:'buttons', items:[['Undo', () => paintAction('undo')], ['Fill with soft noise', () => paintAction('breakup')], ['Clear to light', () => paintAction('light')], ['Clear to shadow', () => paintAction('shadow')], ['Invert', () => paintAction('invert')]]},
-    {type:'note', l:'Paint on the canvas above, straight onto the Gobo preview, or in the Scene view where the light lands. White lets light through, black blocks it; Blur softens the whole gobo, and the Motion controls bring it to life.'},
+    {type:'buttons', items:[['Undo', () => paintAction('undo')], ['Redo', () => paintAction('redo')], ['Fill with soft noise', () => paintAction('breakup')], ['Clear to light', () => paintAction('light')], ['Clear to shadow', () => paintAction('shadow')], ['Invert', () => paintAction('invert')]]},
+    {type:'note', l:'Paint on the canvas above, straight onto the Gobo preview, or in the Scene view where the light lands. White lets light through, black blocks it; Blur softens the whole gobo, and the Motion controls bring it to life. Keys: [ and ] size the brush, hold Shift to paint with the other ink, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.'},
   ];
 }
 // pointer painting on the preview
@@ -480,9 +524,10 @@ function ovlApply(src) {
 }
 function ovlAction(a) {
   const T = CUR = ovlTarget(), ctx = T.ctx, N = T.N;
-  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
-  else if (a === 'clear') { pushUndo(T); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, N, N); }
-  paintChanged(T); CUR = null;
+  if (a === 'undo') undoPaint(T);
+  else if (a === 'redo') redoPaint(T);
+  else if (a === 'clear') { pushUndo(T); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, N, N); paintChanged(T); }
+  CUR = null;
 }
 // the Paint over section, at the top of every pattern's panel
 function ovlGroup() {
@@ -500,8 +545,8 @@ function ovlGroup() {
     {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01, h:'How much each stroke adds. Light strokes thin the pattern out or fill it in; keep going over an area to clear it completely or close it up.'},
     ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
     {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
-    {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
-    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
+    {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Redo', () => ovlAction('redo')], ['Clear the paint-over', () => ovlAction('clear')]]},
+    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change. Keys: [ and ] size the brush, hold Shift for the opposite effect, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.'},
   );
   return defs;
 }
@@ -510,3 +555,23 @@ function ovlChanged(k) {
   else if (k === 'pbTool') buildPanel();
   save();
 }
+
+/* ---------- painting keys: [ ] brush size, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo ---------- */
+const paintActive = () => ovlOn() || paintShape();
+function setBrushSize(f) {
+  const T = PT(), P = T.set(), k = 'pbSize', id = (T.kind === 'ovl' ? 'ovl' : 'shapes') + '-pbSize';
+  const max = T.kind === 'ovl' ? 60 : 40;
+  P[k] = clamp(+((P[k] ?? 6) * f).toFixed(1), 0.5, max);
+  const rg = $(id);
+  if (rg && rg.type === 'range') { rg.value = P[k]; rg.oninput(); } else save();
+  padRedraw();
+}
+document.addEventListener('keydown', e => {
+  const ae = document.activeElement;
+  if (ae && (/INPUT|SELECT|TEXTAREA/.test(ae.tagName) && ae.type !== 'range' && ae.type !== 'checkbox')) return;
+  if (!paintActive()) return;
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redoPaint(); else undoPaint(); return; }
+  if (mod && k === 'y') { e.preventDefault(); redoPaint(); return; }
+  if (!mod && (e.key === '[' || e.key === ']')) { e.preventDefault(); setBrushSize(e.key === ']' ? 1.18 : 1 / 1.18); }
+});

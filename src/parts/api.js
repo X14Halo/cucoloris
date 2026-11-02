@@ -38,12 +38,14 @@ window.cucoloris = Object.freeze({
   // render one frame of the final gobo: {w, h, nch, data: Float32Array, linear, rows top to bottom}
   renderFrame(n, res = 1024, opts = {}) {
     if (EXPORT.busy) throw new Error('An export is running.');
-    const keep = {res:S.res, t:S.t, quality:S.quality};
+    const keep = {res:S.res, t:S.t, quality:S.quality}, keepSync = TREES_SYNC;
+    TREES_SYNC = true;
     try {
       if (n !== undefined && n !== null) this.setFrame(n);
       S.res = res; if (opts.quality) S.quality = opts.quality;
       return EXPORT.grab(res, opts.channels === 'y' ? 1 : 3);
     } finally {
+      TREES_SYNC = keepSync;
       S.res = keep.res; S.t = keep.t; S.quality = keep.quality;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
       dirty = true;

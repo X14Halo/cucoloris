@@ -124,8 +124,18 @@ function gizDraw() {
   const W = Math.round(r.width * d), Hh = Math.round(r.height * d);
   if (gcv.width !== W || gcv.height !== Hh) { gcv.width = W; gcv.height = Hh; }
   gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, W, Hh);
-  if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
   gctx.setTransform(d, 0, 0, d, 0, 0);
+  if (typeof drawWipe === 'function') drawWipe(gctx);
+  if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
+  // the paint brush's footprint where the light lands
+  if (SCENE_RING && scenePaintOn()) {
+    gctx.lineWidth = 1.5; gctx.strokeStyle = 'rgba(255,255,255,.9)'; gctx.shadowColor = 'rgba(0,0,0,.7)'; gctx.shadowBlur = 2;
+    gctx.beginPath(); let on = false;
+    for (const P of SCENE_RING.pts) { const q = P && toCss(P); if (!q) { on = false; continue; } if (on) gctx.lineTo(q[0], q[1]); else { gctx.moveTo(q[0], q[1]); on = true; } }
+    gctx.stroke(); gctx.shadowBlur = 0;
+    const c = toCss(SCENE_RING.ctr); if (c) { gctx.fillStyle = 'rgba(255,255,255,.9)'; gctx.beginPath(); gctx.arc(c[0], c[1], 1.5, 0, 7); gctx.fill(); }
+  }
+  if (typeof heroDraw === 'function') heroDraw(gctx);
   // the scene's other lights: small icons with their names; click one to select it
   for (const o of (LASTSCENE && LASTSCENE.others) || []) {
     const q = otherIcon(o); if (!q) continue;

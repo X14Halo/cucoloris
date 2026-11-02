@@ -15,6 +15,8 @@
  "mode": "under",
  "pattern": "Underwater",
  "light": {
+  "name": "Key",
+  "prim": "Key",
   "type": "spot",
   "position": [
    0,
@@ -73,6 +75,7 @@
   "coneSoftness": 0.15,
   "sourceRadius": 0.04,
   "exposure": 0,
+  "exposureCompensation": 0,
   "color": [
    1,
    1,
@@ -86,6 +89,7 @@
   "pattern": null,
   "hashPattern": null,
   "fps": 24,
+  "meanTransmission": null,
   "format": null,
   "bitDepth": null,
   "colorSpace": "linear",
@@ -97,6 +101,10 @@
    "tiling": 1.333333
   },
   "wrap": "repeat",
+  "offset": [
+   0,
+   0
+  ],
   "blur": 0,
   "imageAxes": "Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling."
  },

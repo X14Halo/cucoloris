@@ -58,6 +58,7 @@ async def run(page_html, cases):
             # set light type and compute tool-side uv for random points through the exposed internals
             res = await pg.evaluate("""(l) => {
               const c = __cuc.SC(); if (l !== null) { c.ltype = l; c.follow = false; c.real = true; c.roll = 23; }
+              c.goffX = 0.13; c.goffY = -0.07;   // a gobo offset (Keep hero lit) must survive the trip too
               const L = __cuc.sceneLight(), G = __cuc.goboProjection(c);
               const pts = [], uv = [];
               let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -67,7 +68,7 @@ async def run(page_html, cases):
                 if (c.ltype === 1) { const d = [p[0]-L.aim[0], p[1]-L.aim[1], p[2]-L.aim[2]]; q = [0.5 + (d[0]*L.r[0]+d[1]*L.r[1]+d[2]*L.r[2]) / G.sunSize, 0.5 + (d[0]*L.u[0]+d[1]*L.u[1]+d[2]*L.u[2]) / G.sunSize]; }
                 else { const v = [p[0]-L.pos[0], p[1]-L.pos[1], p[2]-L.pos[2]], z = v[0]*L.f[0]+v[1]*L.f[1]+v[2]*L.f[2]; if (z <= 0.01) continue;
                   q = [0.5 + 0.5 * (v[0]*L.r[0]+v[1]*L.r[1]+v[2]*L.r[2]) / (z * G.tanC) * G.rep, 0.5 + 0.5 * (v[0]*L.u[0]+v[1]*L.u[1]+v[2]*L.u[2]) / (z * G.tanC) * G.rep]; }
-                pts.push(__cuc.shotSpace().pos(p)); uv.push(q);
+                pts.push(__cuc.shotSpace().pos(p)); uv.push([q[0] - c.goffX, q[1] - c.goffY]);
               }
               return {pts, uv, usda: cucoloris.lightRigUSDA(), ltype:c.ltype};
             }""", ltype)
@@ -91,6 +92,8 @@ def check(label, res):
             x, y, z = np.dot(d, X), np.dot(d, Y), -np.dot(d, Z)
             t = math.tan(math.radians(fov / 2))
             u = 0.5 + 0.5 * (x / z) / t * til; v = 0.5 + 0.5 * (y / z) / t * til
+        o = p.GetAttribute('cucoloris:gobo:offset').Get()
+        u -= o[0]; v -= o[1]
         err = max(err, abs(u - q[0]), abs(v - q[1]))
     WORST[0] = max(WORST[0], err)
     print(f'{'ok  ' if err < 1e-4 else 'FAIL'} {label}: {p.GetTypeName()} upAxis={UsdGeom.GetStageUpAxis(st)} mpu={UsdGeom.GetStageMetersPerUnit(st)} pos={T.round(3)} points={len(res["pts"])} max uv error={err:.2e}')

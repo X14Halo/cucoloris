@@ -170,6 +170,12 @@ function growSC(sp, r, B, tree, bx, by, H, R, P) {
     const w = Math.exp(-over[(iz * VW + iy) * VW + ix] / ob0) / (1 + 0.4 * tip[i]);
     elig.push([i, w]); wsum += w; q++;
   }
+  if (sp.bare) {
+    const wm = wsum / Math.max(elig.length, 1);
+    for (const [i, w] of elig) { const k = Math.min(4, Math.round(2.5 * w / wm * (P.leafDensity ?? 1))); if (k) bareTwigs(sp, r, B, base + i, base + np[i], tree, k); }
+    addSnow(B, r, P.snow, base);
+    return;
+  }
   const cand = [];
   // leafy twigs: each shoot node sprouts a spray of short twigs; leaves sit alternately along them
   for (const [i, w] of elig) {
@@ -214,6 +220,7 @@ function growSC(sp, r, B, tree, bx, by, H, R, P) {
     occ.set(key, o + 1); placed++;
     addLeaf(B, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], sp.shape);
   }
+  addSnow(B, r, P.snow, base);
 }
 
 function growPine(sp, r, B, tree, bx, by, H, R, P) {
@@ -307,6 +314,106 @@ function growPalm(sp, r, B, tree, bx, by, H, R, P) {
   }
 }
 
+
+/* Spruces, firs and larches: a straight leader with whorls of branches every year's growth. Each branch sags under
+   its own weight and turns up at the tip (spruce), or lies out flat in layers (fir); side shoots carry flat sprays of
+   needles, and branchlets hang from them (Norway spruce, larch). The crown narrows to a spire (sp.conePow). */
+function growConifer(sp, r, B, tree, bx, by, H, R, P) {
+  // the crown starts at the species' own height up the stem, or lower down only Canopy depth below the top
+  const zb = Math.max(H * Math.min(sp.base * (P.crownBase ?? 1), 0.85), H - (P.canopyDepth || H));
+  const lean = [(r() - 0.5) * 0.04, (r() - 0.5) * 0.04];
+  const trunkR = z => 0.025 + H * 0.013 * (1 - z / H);
+  let prev = addNode(B, bx, by, 0, -1, 1, tree, trunkR(0));
+  const len = sp.len * P.leafScale, wid = sp.wid * P.leafScale, dens = P.leafDensity * (sp.dens || 1);
+  const snow = clamp(P.snow || 0, 0, 1);
+  // a flat spray of needles at a branch node, lying roughly level (needles face the sky), pointing out along the shoot
+  const spray = (node, dx, dy, k, sag) => {
+    const n = Math.floor(dens * k) + (r() < (dens * k) % 1 ? 1 : 0);
+    for (let j = 0; j < n; j++) {
+      const [ax, ay, az] = norm3(dx + gauss(r) * 0.4, dy + gauss(r) * 0.4, -sag + gauss(r) * 0.15);
+      const [lnx, lny, lnz] = norm3(gauss(r) * sp.tilt * 0.5, gauss(r) * sp.tilt * 0.5, 1);
+      const [aax, aay, aaz] = orthoAxis(lnx, lny, lnz, ax, ay, az);
+      const sc = 0.75 + 0.5 * r(), x = B.x[node] + gauss(r) * 0.04, y = B.y[node] + gauss(r) * 0.04, z = B.z[node] + gauss(r) * 0.03;
+      addLeaf(B, x, y, z, aax, aay, aaz, lnx, lny, lnz, len * sc, wid * sc, node, sp.shape);
+      // snow settles on the sprays as pillows, bigger than the spray beneath it and quite opaque
+      if (snow > 0 && r() < snow * 0.55) addLeaf(B, x, y, z + 0.04, aax, aay, aaz, 0, 0, 1, len * sc * (0.8 + 0.5 * snow), wid * sc * (1.0 + 0.7 * snow), node, 7);
+    }
+  };
+  const whorls = [];
+  for (let z = sp.whorl * 0.7; z <= H; z += sp.whorl * (0.8 + 0.4 * r())) {
+    prev = addNode(B, bx + lean[0] * z, by + lean[1] * z, z, prev, 1, tree, trunkR(z));
+    if (z >= zb && z <= H - 0.15) whorls.push(prev);
+  }
+  // the leader's own tuft at the top
+  spray(prev, 0, 0, 2, -1.2);
+  for (const tn of whorls) {
+    const z = B.z[tn], u = (z - zb) / Math.max(H - zb, 0.5);
+    const nb = sp.nb + Math.floor(r() * 3), ph = r() * Math.PI * 2;
+    const L = (R * Math.pow(Math.max(1 - u, 0), sp.conePow || 1) + 0.12) * (0.8 + 0.4 * r());
+    const st = Math.max(0.18, Math.min(0.32, L / 6));
+    for (let b = 0; b < nb; b++) {
+      const az = ph + b * 2 * Math.PI / nb + (r() - 0.5) * 0.6;
+      const el0 = sp.el + (r() - 0.5) * 0.15 - 0.25 * (1 - u) * (sp.sag || 0);
+      let p = tn, x = B.x[tn], y = B.y[tn], zz = z;
+      for (let s = st; s <= L + 1e-6; s += st) {
+        const f = s / L;
+        const el = el0 - (sp.sag || 0) * f + (sp.tipUp || 0) * f * f * f;
+        const dx = Math.cos(az) * Math.cos(el), dy = Math.sin(az) * Math.cos(el), dz = Math.sin(el);
+        x += dx * st; y += dy * st; zz += dz * st;
+        p = addNode(B, x, y, zz, p, 0, tree, (0.045 * Math.sqrt(L / 2) + 0.004) * (1 - f) + 0.005);
+        if (snow > 0 && r() < snow * 0.7) addLeaf(B, x - dx * st * 0.5, y - dy * st * 0.5, zz + 0.03, Math.cos(az), Math.sin(az), 0, 0, 0, 1, st * (1.0 + 0.4 * r()), 0.06 + 0.12 * snow * (1 - 0.5 * f), p, 7);
+        if (f < 0.15) continue;
+        spray(p, Math.cos(az), Math.sin(az), 1, (sp.pend || 0) * 0.5);
+        // side shoots in pairs, level and fanned out, with their own sprays and hanging branchlets
+        if (((s / st) | 0) % 2 === 0) for (const sgn of [-1, 1]) {
+          const sa = az + sgn * (sp.latA || 1.0) + (r() - 0.5) * 0.3, lat = Math.min(0.7, 0.5 * (L - s) + 0.15);
+          let q = p, qx = x, qy = y, qz = zz;
+          const nk = Math.max(1, Math.round(lat / 0.2));
+          for (let k = 0; k < nk; k++) {
+            qx += Math.cos(sa) * 0.2; qy += Math.sin(sa) * 0.2; qz += 0.02 - (sp.pend || 0) * 0.12 * (k + 1);
+            q = addNode(B, qx, qy, qz, q, 0, tree, 0.006);
+            spray(q, Math.cos(sa), Math.sin(sa), 1, sp.pend || 0);
+          }
+        }
+      }
+    }
+  }
+}
+/* Winter trees: no leaves, so the shadow is all wood. Every shoot at the crown's surface ends in a fan of fine twigs,
+   forked once or twice, the lace that bare birches and aspens throw on snow. */
+function bareTwigs(sp, r, B, gi, gp, tree, k) {
+  const [dx, dy, dz] = norm3(B.x[gi] - B.x[gp], B.y[gi] - B.y[gp], B.z[gi] - B.z[gp]);
+  for (let t = 0; t < k; t++) {
+    let [tx, ty, tz] = norm3(dx * 0.7 + gauss(r) * 0.8, dy * 0.7 + gauss(r) * 0.8, dz * 0.5 + 0.15 + gauss(r) * 0.4);
+    let q = gi, x = B.x[gi], y = B.y[gi], z = B.z[gi];
+    const n = 2 + Math.floor(r() * 3), sl = sp.cluster * (0.35 + 0.35 * r());
+    for (let j = 0; j < n; j++) {
+      tz -= (sp.droop || 0) * 0.35;
+      [tx, ty, tz] = norm3(tx + gauss(r) * 0.25, ty + gauss(r) * 0.25, tz + gauss(r) * 0.15);
+      x += tx * sl; y += ty * sl; z += tz * sl;
+      q = addNode(B, x, y, Math.max(0.1, z), q, 0, tree, 0.0032 - 0.0005 * j);
+      if (j < n - 1 && r() < 0.45) {           // a short fork
+        const [fx, fy, fz] = norm3(tx + gauss(r) * 0.9, ty + gauss(r) * 0.9, tz + gauss(r) * 0.4);
+        addNode(B, x + fx * sl * 0.8, y + fy * sl * 0.8, Math.max(0.1, z + fz * sl * 0.8), q, 0, tree, 0.002);
+      }
+    }
+  }
+}
+/* Snow lying along the upper side of every branch that is level enough to hold it: lumpy, opaque, it fattens the
+   branch shadows and fills the forks. Snow clumps do not flutter. */
+function addSnow(B, r, amt, start) {
+  if (!(amt > 0)) return;
+  const n = B.x.length;
+  for (let i = start; i < n; i++) {
+    const p = B.par[i]; if (p < 0 || B.trunk[i]) continue;
+    const dx = B.x[i] - B.x[p], dy = B.y[i] - B.y[p], dz = B.z[i] - B.z[p], l = Math.hypot(dx, dy, dz);
+    if (l < 0.02 || B.rad[i] < 0.0019) continue;
+    const lev = 1 - Math.abs(dz) / l;
+    if (r() > amt * lev * lev * 1.2) continue;
+    const w = (2 * B.rad[i] + 0.02 + 0.07 * amt * (0.5 + r())) * Math.min(1, 0.4 + 30 * B.rad[i]);
+    addLeaf(B, B.x[p] + dx * 0.1, B.y[p] + dy * 0.1, B.z[p] + dz * 0.1 + B.rad[i] + 0.01, dx / l, dy / l, dz / l, 0, 0, 1, l * (0.8 + 0.3 * r()), w, i, 7);
+  }
+}
 
 /* Periodic value noise on an integer lattice (tiles exactly) */
 function pnoise(r, px, py) {
@@ -407,7 +514,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   // woody area index: real canopies carry roughly 0.3–0.6 m² of branch silhouette per m² of ground
   let wood = 0;
   for (let i = 0; i < n; i++) if (np[i] >= 0) { const j = np[i]; wood += (rad[i] + rad[j]) * Math.hypot(nx[i] - nx[j], ny[i] - ny[j], nz[i] - nz[j]) * 0.8; }
-  const wai = wood / (Lx * Ly), waiT = 0.3;
+  const wai = wood / (Lx * Ly), waiT = sp.wai || 0.3;
   if (wai > waiT) { const k = waiT / wai; for (let i = 0; i < n; i++) rad[i] = Math.max(0.0018, rad[i] * k); }
   const droop = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -433,6 +540,12 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   const ob0 = Math.max(obs[Math.floor(obs.length * 0.5)] || 1, 1) * 0.6;
   const elig = []; let wsum = 0;
   for (let i = 0; i < n; i++) if (isEl(i)) { const [a, b, c] = vidx(i); const w = Math.exp(-over[(c * VY + b) * VX + a] / ob0) / (1 + 0.4 * tip[i]); elig.push([i, w]); wsum += w; }
+  if (sp.bare) {
+    const wm = wsum / Math.max(elig.length, 1);
+    for (const [i, w] of elig) { if (np[i] < 0) continue; const k = Math.min(4, Math.round(2.5 * w / wm * (P.leafDensity ?? 1))); if (k) bareTwigs(sp, r, B, base + i, base + np[i], B.tree[base + i], k); }
+    addSnow(B, r, P.snow, base);
+    return nStem;
+  }
   const cand = [];
   for (const [i, w] of elig) {
     const cnt = 1.8 * target * w / wsum;
@@ -471,6 +584,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
     occ.set(kk, o + 1); placed++;
     addLeaf(B, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], sp.shape);
   }
+  addSnow(B, r, P.snow, base);
   return nStem;
 }
 
@@ -510,12 +624,13 @@ function hierarchy(B, start, end, G) {
 
 const treeCache = new Map();
 function growOne(P, sp, idx) {
-  const key = [P.seed, P.species, P.canopyTop, P.leafDensity, P.leafScale, idx].join('|');
+  const key = [P.seed, P.species, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.snow || 0, idx].join('|');
   if (treeCache.has(key)) return treeCache.get(key);
   const r = rng(P.seed * 7717 + (P.species | 0) * 31 + idx * 104729 + 5);
   const H = P.canopyTop * (0.9 + 0.2 * r()), R = sp.R * (0.85 + 0.3 * r());
   const B = newBuilder();
-  if (sp.kind === 'pine') growPine(sp, r, B, 0, 0, 0, H, R, P);
+  if (sp.kind === 'conifer') growConifer(sp, r, B, 0, 0, 0, H, R, P);
+  else if (sp.kind === 'pine') growPine(sp, r, B, 0, 0, 0, H, R, P);
   else if (sp.kind === 'palm') growPalm(sp, r, B, 0, 0, 0, H, R, P);
   else growSC(sp, r, B, 0, 0, 0, H, R, P);
   const T = {B, H, R};
@@ -546,7 +661,8 @@ function genTrees(P) {
       const k = clamp(R / 2.5, 0.3, 2.2);
       const ls = Math.sqrt(Math.max(k, 1));   // and somewhat larger leaves, so a big crown is not tens of thousands of them
       const sp2 = {...sp, base:clamp(zbE / zt, 0.05, 0.85), seg:sp.seg * k, infl:sp.infl * k, kill:sp.kill * k, cluster:sp.cluster * Math.sqrt(k), lai:sp.lai * 1.8, len:sp.len * ls, wid:sp.wid * ls};
-      growSC(sp2, r0, B, 0, bx, by, zt, R, P);
+      if (sp.kind === 'conifer') growConifer(sp, r0, B, 0, bx, by, zt, R, P);
+      else growSC(sp2, r0, B, 0, bx, by, zt, R, P);
       B.treeH.push(zt); B.treeInfo.push({x:bx, y:by, H:zt, R});
     }
     // the element's extent in light space: every leaf from its base to its tip
@@ -573,7 +689,7 @@ function genTrees(P) {
     hierarchy(B, 0, B.x.length, G);
     return {B, G, sp, nTrees:1, Lx:Lx2, Ly:Ly2, single:true, extent:extent / fit, fit};
   }
-  if (sp.kind !== 'palm') {
+  if (sp.kind !== 'palm' && sp.kind !== 'conifer') {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 5);
     const B = newBuilder();
     const G = newG();
@@ -582,7 +698,7 @@ function genTrees(P) {
     return {B, G, sp, nTrees:nS, Lx, Ly, patch:true};
   }
   const Rm = sp.R;
-  const nT = clamp(Math.round(P.cover * Lx * Ly / (Math.PI * Rm * Rm)), 1, 16);
+  const nT = clamp(Math.round(P.cover * Lx * Ly / (Math.PI * Rm * Rm)), 1, sp.kind === 'conifer' ? 24 : 16);
   const r = rng(P.seed * 131 + 17);
   const pos = [];
   for (let t = 0; t < nT; t++) {
@@ -614,6 +730,25 @@ function genTrees(P) {
   return {B, G, sp, nTrees:nT, Lx, Ly};
 }
 
+/* Growing a canopy takes up to a few hundred milliseconds, so it runs on a worker thread: dragging Tile size or
+   Canopy cover keeps the page moving with the old trees until the new ones are grown. The worker is made from this
+   file's own functions (a blob URL), so the tool stays one page. Exports and scripted renders grow synchronously,
+   so a written frame always has the finished trees. */
+let TREES_SYNC = false;
+const TREE_WORKER = (() => {
+  let w = null, ok = false, seq = 0;
+  const waiting = new Map();
+  try {
+    const fns = [newBuilder, addNode, addLeaf, orthoAxis, norm3, growSC, growPine, growConifer, bareTwigs, addSnow, growPalm, pnoise, growPatch, hierarchy, growOne, genTrees, rng, gauss].map(f => f.toString()).join('\n');
+    const src = `const DEG = Math.PI / 180; const clamp = ${clamp}; const smooth = ${smooth}; const newG = ${newG}; const treeCache = new Map();\nconst SPECIES = ${JSON.stringify(SPECIES)};\n${fns}\n` +
+      'onmessage = e => { try { postMessage({id:e.data.id, T:genTrees(e.data.P)}); } catch (err) { postMessage({id:e.data.id, err:String(err && err.stack || err)}); } };';
+    w = new Worker(URL.createObjectURL(new Blob([src], {type:'text/javascript'})));
+    w.onmessage = e => { const j = waiting.get(e.data.id); if (!j) return; waiting.delete(e.data.id); if (e.data.err) j.rej(new Error(e.data.err)); else j.res(e.data.T); };
+    w.onerror = () => { ok = false; for (const j of waiting.values()) j.rej(new Error('The tree worker stopped.')); waiting.clear(); };
+    ok = true;
+  } catch (e) { ok = false; }
+  return {get ok() { return ok; }, grow:P => new Promise((res, rej) => { if (!ok) { rej(new Error('no worker')); return; } const id = ++seq; waiting.set(id, {res, rej}); w.postMessage({id, P:{...P}}); })};
+})();
 function uploadTrees(T, P) {
   const {B} = T;
   const F = null;
@@ -899,7 +1034,7 @@ function* windSetupGen(T, P, tl) {
   const fBase = sp.flutHz * (0.75 + 0.25 * clamp(U / 3, 0.3, 2.5));
   for (let i = 0; i < nL; i++) {
     const f2 = fBase * (0.75 + 0.5 * r()), a = r();
-    fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = famp * (0.15 + 1.4 * a * a);
+    fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = T.B.leaves[i * 13 + 3] >= 6.5 ? 0 : famp * (0.15 + 1.4 * a * a);
   }
   if (TR.data !== T) return;   // the tree changed while this ran
   gl.bindBuffer(gl.ARRAY_BUFFER, TR.flutBuf);
@@ -921,11 +1056,16 @@ function* windSetupGen(T, P, tl) {
     rms = Math.sqrt(xs.reduce((a2, v, i) => a2 + (v - mx) ** 2 + (ys[i] - my) ** 2, 0) / xs.length); mean = [mx, my];
     live.restore(live.cps[0]);
   }
-  TR.wind = {rec, F, rate, ng, groups, off, wts, Tl, wk, wa, live, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
+  TR.wind = {tree:T, rec, F, rate, ng, groups, off, wts, Tl, wk, wa, live, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
              twA:0, twF:[1, 1, 1], nG:0, fnLimb:groups[off[0]] ? groups[off[0]].fn : groups[0].fn, rmsTop:rms, lean:Math.hypot(...mean), nGroups:ng - off[0]};
 }
 function gustAt() { return 1; }
 function windEval(T, t) {
+  if (!windReady()) {
+    if (TR.calmFor !== TR.data) { TR.dispData.fill(0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, TR.rows, gl.RGBA, gl.FLOAT, TR.dispData); TR.calmFor = TR.data; }
+    return;
+  }
+  TR.calmFor = null;
   const {B, G} = T, W = TR.wind;
   const ng = W.ng;
   let g;
@@ -966,38 +1106,62 @@ function sunTaps(P, n) {
   tapsCache = {sig, tex:dataTex(n, 1, data), n, maxR:Math.tan(th) / P.tileSize};
   return tapsCache;
 }
+const treeChip = (cls, text, on) => {
+  const hud = $('hud'); if (!hud) return;
+  const c = hud.querySelector('.' + cls);
+  if (on && !c) { const chip = document.createElement('span'); chip.className = 'chip ok ' + cls; chip.textContent = text; hud.append(chip); }
+  if (!on && c) c.remove();
+};
 function treesFor(P, tl = S.tl.trees) {
-  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, Math.round(P.sunElev * 2) / 2].join('|');
+  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, P.snow || 0, Math.round(P.sunElev * 2) / 2].join('|');
   if (sig !== TR.sig) {
-    TR.data = genTrees(P);
-    uploadTrees(TR.data, P);
-    TR.sig = sig; TR.windSig = '';
+    // the first trees, exports and scripted renders: grown here and now; otherwise on the worker, while the old trees keep playing
+    if (TREES_SYNC || !TREE_WORKER.ok || !TR.data) {
+      TR.growing = null; treeChip('growchip', '', false);
+      TR.data = genTrees(P);
+      uploadTrees(TR.data, P);
+      TR.sig = sig; TR.windSig = '';
+    } else if (TR.growing !== sig) {
+      TR.growing = sig; treeChip('growchip', 'Growing the trees…', true);
+      const owner = lightCur().id, P2 = {...P};
+      TREE_WORKER.grow(P2).catch(() => genTrees(P2)).then(T => {
+        // a newer request, or another light now in front: drop it (it is asked for again when needed)
+        if (TR.growing !== sig || lightCur().id !== owner) return;
+        TR.growing = null; treeChip('growchip', '', false);
+        TR.data = T; uploadTrees(T, P2); TR.sig = sig; TR.windSig = ''; dirty = true;
+      });
+    }
   }
-  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.indep, tl.loop, tl.len].join('|');
+  const ws = [TR.sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.indep, tl.loop, tl.len].join('|');
   if (ws !== TR.windSig) {
-    // a new tree needs its wind now; a wind change on the same tree is simulated just after this frame,
-    // so the panel stays responsive and the preview says what is happening
-    if (!TR.wind || TR.wind.ng === undefined || TR.windTree !== TR.sig) { windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; }
+    const fresh = !windReady();
+    if (TREES_SYNC) { clearTimeout(TR.windTimer); TR.windPending = null; windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; treeChip('windchip', '', false); }
     else if (TR.windPending !== ws) {
-      // simulate the new wind in the background, a few milliseconds at a time; the old wind keeps playing meanwhile
+      // simulate the wind in the background, a few milliseconds at a time: a wind change keeps the old wind playing
+      // meanwhile; new trees stand still until theirs is ready
       TR.windPending = ws;
-      const hud = $('hud'); if (hud && !hud.querySelector('.windchip')) { const chip = document.createElement('span'); chip.className = 'chip ok windchip'; chip.textContent = 'Simulating the wind…'; hud.append(chip); }
+      if (fresh) TR.windTree = TR.sig;
+      treeChip('windchip', 'Simulating the wind…', true);
       clearTimeout(TR.windTimer);
-      const tree = TR.data, treeSig = TR.sig, P2 = {...P}, tl2 = {...tl};
+      const tree = TR.data, treeSig = TR.sig, P2 = {...P}, tl2 = {...tl}, owner = lightCur().id;
       TR.windTimer = setTimeout(() => {
+        if (lightCur().id !== owner) { if (TR.windPending === ws) TR.windPending = null; return; }
         const gen = windSetupGen(tree, P2, tl2);
         const pump = () => {
-          if (TR.windPending !== ws || TR.sig !== treeSig) return;          // superseded
+          if (TR.windPending !== ws || TR.sig !== treeSig || lightCur().id !== owner) return;          // superseded
           const t0 = performance.now();
-          while (performance.now() - t0 < 12) { if (gen.next().done) { TR.windSig = ws; TR.windPending = null; dirty = true; const c = document.querySelector('.windchip'); if (c) c.remove(); return; } }
+          while (performance.now() - t0 < 12) { if (gen.next().done) { TR.windSig = ws; TR.windPending = null; dirty = true; treeChip('windchip', '', false); return; } }
           TR.windTimer = setTimeout(pump, 0);
         };
         pump();
-      }, 120);
+      }, fresh ? 0 : 120);
     }
   }
   return TR.data;
 }
+// is the wind ready for these trees (a newly grown tree stands still until its wind is simulated)
+const windReady = () => !!(TR.wind && TR.wind.ng !== undefined && TR.windTree === TR.sig && TR.wind.tree === TR.data);
+const CALM = {twA:0, twF:[1, 1, 1], wk:new Float32Array(4), wa:new Float32Array(4), nM:0, U:0, wx:1, wy:0, ztop:10};
 function renderTrees(P, res, t, tl) {
   const Q = QUAL[S.quality];
   const T = treesFor(P, tl);
@@ -1014,7 +1178,7 @@ function renderTrees(P, res, t, tl) {
   gl.clearBufferfv(gl.COLOR, 0, [1, 1, 1, 1]); gl.clearBufferfv(gl.COLOR, 1, [1, 1, 1, 1]);
   gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
-  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); const Wd = TR.wind; gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds);
+  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); const Wd = windReady() ? TR.wind : CALM; f1(p, 'uTwA', Wd.twA); f3(p, 'uTwF', ...Wd.twF); i1(p, 'uDisp', 0); gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds);
     // painted density (Paint over), sampled by every leaf and twig at its resting place
     const ov = ovlOn() && ovlTarget('trees').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) { tex(p, 'uOvl', ovlTex(ovlTarget('trees')), 3); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex); } };
   if (P.woody) {
@@ -1045,7 +1209,7 @@ function renderTrees(P, res, t, tl) {
     tex(p, 'uS0', sl.tex, 0); tex(p, 'uS1', sl.tex2, 1); tex(p, 'uTaps', taps.tex, 2); i1(p, 'uNTaps', taps.n);
     gl.uniform1fv(p.u('uH[0]'), new Float32Array(H)); gl.uniform1fv(p.u('uLod[0]'), new Float32Array(lod)); f3(p, 'uK', ...K);
   });
-  const W = TR.wind, th = P.sunDisk * 0.5 * DEG;
+  const W = windReady() ? TR.wind : null, th = P.sunDisk * 0.5 * DEG;
   const zTop = T.patch ? P.canopyTop : T.B.treeInfo.reduce((s, q) => s + q.H, 0) / T.B.treeInfo.length;
   const zBot = T.patch ? Math.max(0.3, P.canopyTop - P.canopyDepth) : zTop * 0.8;
   const dMean = Math.max(0.5 * (zTop + zBot) - zr, 0.1) / sinE;
@@ -1054,8 +1218,9 @@ function renderTrees(P, res, t, tl) {
   info = fr + (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
          `Light space: the tile is ${P.tileSize.toFixed(1)} m square across the beam. Project it along the sun and the renderer stretches it ${(1 / sinE).toFixed(2)}× on flat ground\n` +
          `Foliage ${zBot.toFixed(1)}–${zTop.toFixed(1)} m above the lit surface: shadow edges soften by ${(2 * dLo * Math.tan(th) * 100).toFixed(1)}–${(2 * dHi * Math.tan(th) * 100).toFixed(1)} cm (real sun Ø ${P.sunDisk.toFixed(2)}°); gaps throw round sun spots that size\n` +
+         (!W ? `Wind ${P.windSpeed.toFixed(1)} m/s: being simulated for these trees (they stand still until it is ready)` :
          `Wind ${P.windSpeed.toFixed(1)} m/s at the tree tops, turbulence ${Math.round((P.turb ?? 0.35) * 100)}% · simulated: ${W.nGroups} limbs, branches and twig sprays, each a damped cantilever pushed by drag on the moving air`+
-         `\nLimbs sway near ${W.fnLimb.toFixed(2)} Hz, ±${(W.rmsTop * 100).toFixed(1)} cm, leaning ${(W.lean * 100).toFixed(1)} cm downwind · leaves flutter about ${(T.sp.flutHz * (0.75 + 0.25 * clamp(P.windSpeed / 3, 0.3, 2.5))).toFixed(1)} Hz when the local wind is strong enough` +
+         `\nLimbs sway near ${W.fnLimb.toFixed(2)} Hz, ±${(W.rmsTop * 100).toFixed(1)} cm, leaning ${(W.lean * 100).toFixed(1)} cm downwind · leaves flutter about ${(T.sp.flutHz * (0.75 + 0.25 * clamp(P.windSpeed / 3, 0.3, 2.5))).toFixed(1)} Hz when the local wind is strong enough`) +
          (tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
 }

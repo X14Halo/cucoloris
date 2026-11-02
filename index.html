@@ -115,6 +115,9 @@ details.grp:not([open]) > summary::after{transform:rotate(-45deg)}
 .row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center}
 .row > label{color:var(--fg);font-size:12.5px;cursor:default;user-select:none;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row output{font-family:var(--f-mono);font-size:11.5px;color:var(--accent);font-variant-numeric:tabular-nums}
+.row output.editable{cursor:text;border-bottom:1px dotted transparent}
+.row output.editable:hover{border-bottom-color:var(--accent)}
+.row input.numin{font-family:var(--f-mono);font-size:11.5px;width:6.5em;justify-self:end;background:var(--raise);border:1px solid var(--accent);border-radius:4px;padding:1px 5px;color:var(--fg);text-align:right}
 .row input[type=range]{grid-column:1 / -1}
 .row select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px;max-width:170px}
 .row.chk input{accent-color:var(--accent);width:16px;height:16px}
@@ -251,6 +254,12 @@ const WATER = name => ({name, params:[
 const IMPERF = {name:'Imperfections', params:[
   {k:'uneven', l:'Uneven wave energy', min:0, max:1, step:0.01, h:'Real water is never uniform: sheltered corners, wave groups and leftover swell leave some areas busier than others. The pattern of busy and calm areas drifts slowly.'},
 ]};
+// splashes: rain, drips or a fish breaking the surface, each a ring of waves where short ripples outrun long ones
+const SPLASH = {name:'Splashes', params:[
+  {k:'distRate', l:'Splashes per minute', min:0, max:600, step:1, log:false, h:'Rain drops, drips or fish breaking the surface, at random places across the tile. Each sends out a ring of waves by the exact gravity–capillary dispersion of water: the short ripples outrun the long ones. 0 turns them off.'},
+  {k:'distAmt', l:'Splash strength', min:0.02, max:0.6, step:0.01, h:'The steepest slope of the water right after each splash. Rain is about 0.1–0.3; a stone or a fish 0.4 and up.'},
+  {k:'distSize', l:'Splash size', min:0.005, max:0.3, step:0.001, log:true, u:'m', h:'Radius of the dent each splash makes. Rain drops are 1–3 mm across but dent about 1–2 cm; a fish is 10 cm and up.'},
+]};
 const MOTION = {name:'Motion', params:[
   {k:'timeScale', l:'Time scale', min:0.05, max:2, step:0.01, u:'×', h:'1 = real speed from the gravity–capillary dispersion relation. Lower it only as a deliberate art-direction choice.'},
 ]};
@@ -272,6 +281,17 @@ const SPECIES = [
    shape:3, len:0.06, wid:0.058, lai:1.8, cluster:0.2, transl:0.08, flutHz:3.5, flutAmp:0.25, fn:0.35, tilt:1.0},
   {flutU:2.0, name:'Scots pine', kind:'pine', H:16, R:3.0, base:0.55, seg:0.3, infl:1.5, kill:0.4, attract:2000, trop:-0.15, droop:0.15, shape:5, len:0.24, wid:0.13, lai:1.6, cluster:0.28, tilt:0.6, transl:0.0, flutHz:3.0, flutAmp:0.02, fn:0.25},
   {flutU:1.2, name:'Coconut palm', kind:'palm', H:9, R:4.2, shape:4, len:0.65, wid:0.04, transl:0.05, flutHz:1.6, flutAmp:0.05, fn:0.4},
+  // cold-climate trees: the spruce and fir of northern and mountain forests, larch, and bare winter birch and aspen
+  {flutU:2.4, name:'Norway spruce', kind:'conifer', H:18, R:2.6, base:0.06, whorl:0.42, nb:5, el:-0.05, sag:0.55, tipUp:0.75, pend:0.55, latA:1.1, conePow:1.0,
+   shape:6, len:0.34, wid:0.085, dens:2.4, tilt:0.5, transl:0.0, flutHz:2.6, flutAmp:0.012, fn:0.22},
+  {flutU:2.4, name:'Subalpine fir', kind:'conifer', H:15, R:1.5, base:0.04, whorl:0.36, nb:4, el:0.02, sag:0.25, tipUp:0.25, pend:0.08, latA:0.95, conePow:1.35,
+   shape:6, len:0.3, wid:0.1, dens:2.4, tilt:0.35, transl:0.0, flutHz:2.8, flutAmp:0.01, fn:0.28},
+  {flutU:1.4, name:'Larch', kind:'conifer', H:18, R:2.8, base:0.25, whorl:0.55, nb:4, el:0.1, sag:0.35, tipUp:0.5, pend:0.7, latA:1.2, conePow:0.9,
+   shape:8, len:0.24, wid:0.24, dens:2.6, tilt:0.8, transl:0.25, flutHz:3.2, flutAmp:0.06, fn:0.25},
+  {flutU:0.8, name:'Birch in winter (bare)', kind:'sc', bare:true, wai:0.6, H:13, R:3.2, base:0.3, env:'narrow', seg:0.26, infl:1.4, kill:0.36, attract:2600, trop:0.2, droop:0.7,
+   shape:2, len:0.055, wid:0.04, lai:0, cluster:0.4, transl:0.0, flutHz:3.0, flutAmp:0, fn:0.38, tilt:1.0},
+  {flutU:0.8, name:'Aspen in winter (bare)', kind:'sc', bare:true, wai:0.55, H:12, R:2.8, base:0.4, env:'narrow', seg:0.26, infl:1.3, kill:0.36, attract:2400, trop:0.35, droop:0.05,
+   shape:3, len:0.06, wid:0.058, lai:0, cluster:0.32, transl:0.0, flutHz:3.5, flutAmp:0, fn:0.38, tilt:1.0},
 ];
 
 const LEVELS = {exposure:-1.3, rolloff:0.35, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false};
@@ -282,6 +302,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'depth', l:'Depth below surface', min:0.1, max:15, step:0.05, u:'m', h:'Distance from the water surface to the surface receiving the caustics.'},
         {k:'sunElev', l:'Sun elevation (in air)', min:10, max:90, step:0.5, u:'°'},
@@ -306,6 +327,7 @@ const MODES = {
       {name:'River riffle', v:{tileSize:1.5, wavelength:0.2, slope:0.09, tail:0.7, peak:1.1, directional:0.85, opposing:0.6, ripple:0.005, uneven:0.6, chop:0.4, depth:0.4, sunElev:55, waterType:4}},
       {name:'Clear river pool', v:{tileSize:2, wavelength:0.25, slope:0.05, tail:0.35, peak:1.3, directional:0.5, opposing:0.25, ripple:0.002, uneven:0.45, depth:1.0, sunElev:50, waterType:4}},
       {name:'Swimming pool', v:{tileSize:3, wavelength:0.32, slope:0.05, tail:0.3, peak:1.2, directional:0.15, opposing:0.55, ripple:0, depth:1.5, sunElev:62, waterType:0}},
+      {name:'Rain on a still pond', v:{tileSize:2, wavelength:0.25, slope:0.025, tail:0.3, peak:1.2, directional:0.3, opposing:0.2, ripple:0.001, uneven:0.4, depth:0.5, sunElev:55, waterType:4, distRate:240, distAmt:0.25, distSize:0.015}},
     ],
     post:{...LEVELS},
   },
@@ -314,6 +336,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'depth', l:'Height above water', min:0.1, max:15, step:0.05, u:'m', h:'Height of the ceiling, dock or hull underside above the water.'},
         {k:'sunElev', l:'Sun elevation', min:10, max:85, step:0.5, u:'°'},
@@ -337,6 +360,7 @@ const MODES = {
     groups:[
       WATER('Water surface'),
       IMPERF,
+      SPLASH,
       {name:'Light path', params:[
         {k:'sunElev', l:'Sun elevation', min:5, max:75, step:0.5, u:'°', h:'Lower sun stretches the pattern into horizontal bands; higher sun stretches it upward.'},
         {k:'sunAz', l:'Sun angle to the wall', min:-75, max:75, step:0.5, u:'°', h:'0 = the sun faces the wall squarely across the water.'},
@@ -368,6 +392,7 @@ const MODES = {
         {k:'canopyDepth', l:'Canopy depth', min:0.5, max:10, step:0.1, u:'m', h:'Thickness of the leafy layer below the tree tops. Nothing hangs lower than this, so all shadows come from up in the canopy.'},
         {k:'leafDensity', l:'Leaf density', min:0.2, max:2, step:0.01, u:'×', h:'Scales the leaf area index of the crown.'},
         {k:'leafScale', l:'Leaf size', min:0.5, max:2, step:0.01, u:'×'},
+        {k:'snow', l:'Snow on the branches', min:0, max:1, step:0.01, h:'Snow lying along every branch level enough to hold it, and in pillows on spruce and fir sprays. It is opaque, so branch shadows fatten and the crown closes up; snow-laden boughs also stop fluttering.'},
         {k:'framing', l:'Framing', opts:['Seamless canopy', 'Single element in white'], h:'Single element keeps one cluster of branches, centred, with open sunlight all around it. Seamless canopy tiles in every direction.'},
         {k:'elemSize', l:'Element size', min:0.05, max:1, step:0.01, h:'How much of the canopy the single element takes. Raise Tile size if it touches the frame edges.'},
         {k:'woody', l:'Branches and twigs', type:'chk'},
@@ -402,6 +427,14 @@ const MODES = {
       {name:'Oak sprig, white frame', v:{species:0, tileSize:4, cover:1.0, canopyTop:3.5, canopyDepth:1.8, framing:1, elemSize:0.5, sunElev:55}},
       {name:'Aspen pool of light', v:{species:3, tileSize:5.5, cover:0.75, canopyTop:9, canopyDepth:4, windSpeed:3, sunElev:55, framing:0, pool:true, poolSize:1.0, poolSoft:0.6}},
       {name:'Late-afternoon oak', v:{species:0, tileSize:3, cover:0.7, canopyTop:9, canopyDepth:4, leafDensity:0.5, sunElev:15}},
+      {name:'Spruce forest', v:{species:6, tileSize:12, cover:0.6, canopyTop:16, canopyDepth:7, sunElev:60, windSpeed:3}},
+      {name:'Snow-laden spruce', v:{species:6, tileSize:12, cover:0.55, canopyTop:14, canopyDepth:6, snow:0.75, sunElev:50, windSpeed:1.5}},
+      {name:'Fir spires on a slope', v:{species:7, tileSize:10, cover:0.5, canopyTop:13, canopyDepth:6, snow:0.35, sunElev:55, windSpeed:2}},
+      {name:'Larch stand', v:{species:8, tileSize:12, cover:0.6, canopyTop:16, canopyDepth:7, sunElev:58, windSpeed:3}},
+      {name:'Bare winter birches', v:{species:9, tileSize:4, cover:0.9, canopyTop:7, canopyDepth:4.5, sunElev:32, windSpeed:3}},
+      {name:'Frosted aspen grove', v:{species:10, tileSize:4, cover:0.9, canopyTop:7, canopyDepth:4.5, snow:0.45, sunElev:32, windSpeed:1.5}},
+      {name:'Bare birch branch, white frame', v:{species:9, framing:1, tileSize:4, elemSize:0.55, cover:1, canopyTop:3.5, canopyDepth:2, sunElev:55}},
+      {name:'Lone spruce, white frame', v:{species:6, framing:1, tileSize:12, elemSize:0.4, cover:1, canopyTop:12, canopyDepth:8, snow:0.4, sunElev:60}},
     ],
     post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
   },
@@ -427,7 +460,7 @@ for (const m of ['under', 'over', 'hull']) {
   Object.defineProperty(MODES.trees, 'groups', {get() {
     const fr = (S.p.trees.framing | 0);
     const top = [all.framing, ...(fr === 1 ? [all.elemSize] : []),
-                 all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.woody, all.trunks];
+                 all.species, all.tileSize, all.cover, all.canopyTop, all.canopyDepth, all.leafDensity, all.leafScale, all.snow, all.woody, all.trunks];
     return [{name:'Trees', params:top}, ...TG.slice(1)];
   }});
 }
@@ -453,7 +486,7 @@ MODES.windows = {
   onParam(k, P) {
     if (k === 'style') { Object.assign(P, WIN_STYLE_DEF[P.style | 0]); return true; }
     if (k === 'rain') { const on = P.rain > 0, ch = on !== this._rainOn; this._rainOn = on; return ch; }
-    return ['blind', 'curtain', 'trees', 'glass'].includes(k);
+    return ['blind', 'curtain', 'trees', 'glass', 'tint'].includes(k);
   },
   get groups() {
     const P = S.p.windows;
@@ -482,6 +515,9 @@ MODES.windows = {
     ];
     if (P.glass === 1 || P.glass === 2 || P.glass === 0) glass.push({k:'distort', l:'Glass waviness', min:0, max:4, step:0.01, u:'×', h:'Thickness ripples in the glass bend the light into soft caustic streaks. Old cylinder glass is 1–2×.'});
     if (P.glass === 3 || P.glass === 4) glass.push({k:'distort', l:'Texture strength', min:0.2, max:3, step:0.01, u:'×', h:'How far the textured glass spreads the light.'});
+    glass.push({k:'tint', l:'Glass colour', opts:['Clear', 'Amber (old bottle glass)', 'Green (antique)', 'Cobalt blue', 'Stained glass (each pane its own colour)'], h:'Coloured glass colours the light it lets through. Stained glass gives each pane its own colour.'});
+    if ((P.tint | 0) > 0) glass.push({k:'tintK', l:'Colour strength', min:0, max:1, step:0.01});
+    glass.push({k:'refract', l:'Rain and wavy glass bend the view', type:'chk', h:'Raindrops and ripples in the glass are lenses: what lies outside (the wall reveal, an eave, trees) is seen through them displaced, upside down inside a drop.'});
     glass.push({k:'screen', l:'Insect screen', opts:['None', 'Full screen', 'Lower half'], h:'Fine mesh outside the glass: it cuts about a third of the light and its frame casts a shadow.'});
     const dirt = [
       {k:'grime', l:'Dust & grime', min:0, max:1, step:0.01, h:'Builds up in the corners and along the bottom of each pane.'},
@@ -548,6 +584,8 @@ MODES.windows = {
     {name:'Barred window', v:{style:0, ...WIN_STYLE_DEF[0], W:1.0, H:1.2, fw:0.05, bw:0.028, cols:6, rows:1, sunElev:30, sunAz:10, recv:2.5}},
     {name:'High sun under an eave', v:{style:3, ...WIN_STYLE_DEF[3], eave:0.45, eaveH:0.35, wallT:0.2, sunElev:50, sunAz:-10, recv:2.2}},
     {name:'Sun shower on the glass', v:{style:0, ...WIN_STYLE_DEF[0], W:1.1, H:1.3, cols:2, rows:2, bw:0.034, rain:1.4, rainDrops:1.6, rainRun:1.5, rainSize:1.6, rainLens:1.8, rainSpeed:1, grime:0.2, srcSize:0.53, sunElev:32, sunAz:12, recv:0.7}},
+    {name:'Stained glass', v:{style:6, ...WIN_STYLE_DEF[6], glass:1, glazing:0, distort:0.8, tint:4, tintK:0.85, grime:0.2, sunElev:32, sunAz:12, recv:2.2, wallT:0.5, inset:0.25}},
+    {name:'Amber bottle-glass window', v:{style:0, ...WIN_STYLE_DEF[0], W:1.0, H:1.2, cols:2, rows:3, glass:1, glazing:0, distort:1.6, tint:1, tintK:0.6, grime:0.3, sunElev:30, sunAz:15, recv:2}},
     {name:'Old leaded window', v:{style:6, ...WIN_STYLE_DEF[6], glass:1, glazing:0, distort:1.4, grime:0.35, sunElev:30, sunAz:15, recv:1.8, wallT:0.5, inset:0.25}},
   ],
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
@@ -560,7 +598,12 @@ MODES.windows = {
 const SHAPES = ['Light shafts (fan)', 'Curtain shafts', 'Parallel beams', 'Ragged streaks', 'Splotches', 'Cucoloris board', 'Water reflection shimmer', 'Soft spots', 'Art deco fan',
                 'Soft blobs', 'Leafy breakup', 'Soft mottling', 'Dappled holes', 'Branches & leaves', 'Paint your own',
                 'Soft clouds', 'Billows', 'Pools that come and go', 'Marbled flow', 'Uneven wash'];
-const SHAPE_ORDER = [9, 15, 11, 16, 17, 18, 19, 7, 0, 1, 2];
+// the menu's sections: soft noise, then shafts and beams, then the classic cookies a grip would put on a stand
+// (no water or leaves here: those are real simulations in their own modes)
+const SHAPE_MENU = [['Soft noise', [9, 15, 11, 16, 17, 18, 19, 7]], ['Shafts and beams', [0, 1, 2]], ['Classic cookies', [5, 4, 3, 12, 8]]];
+const SHAPE_ORDER = SHAPE_MENU.flatMap(([, ids]) => ids);
+const SHAPE_GROUP = SHAPE_MENU.flatMap(([n, ids]) => ids.map(() => n));
+const COOKIES = new Set([3, 4, 5, 8, 12]);
 const SHAPE_SEAMLESS = [false, false, false, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true];
 const ORGANIC = new Set([9, 10, 11, 12, 13]);
 const SOFTNOISE = new Set([7, 9, 11, 15, 16, 17, 18, 19]);
@@ -587,9 +630,9 @@ MODES.shapes = {
     const P = S.p.shapes, sh = P.shape | 0;
     this._blendOn = (P.blend ?? 0) > 0;
     P.paintMode = sh === 14; P.framing = 0;
-    const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
+    const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14, cookie = COOKIES.has(sh);
     const g = [
-      {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER},
+      {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER, og:SHAPE_GROUP},
     ];
     g.push({k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole gobo, as a percentage of its width. Soft noise usually wants several percent.'});
     const look = [];
@@ -610,6 +653,23 @@ MODES.shapes = {
       if (sh !== 17 && sh !== 7 && sh !== 18) look.push({k:'stretch', l:'Stretch', min:1, max:5, step:1, fmt:v => v + '×', h:'Elongates the shapes, for streaky light.'});
       if ((P.stretch || 1) > 1 && sh !== 17 && sh !== 7 || sh === 18) look.push({k:'dir', l:sh === 18 ? 'Band direction' : 'Stretch direction', opts:DIRS});
     }
+    if (cookie && sh !== 8) {
+      const across = {5:'Holes across', 4:'Splotches across', 3:'Streaks across', 12:'Holes across'}[sh];
+      look.push(
+        {k:'scale', l:across, min:1, max:16, step:1, h:'How many main shapes fit across the cookie. Whole numbers keep it seamless.'},
+        {k:'amount', l:sh === 12 ? 'Hole size' : 'Open area', min:0.05, max:0.95, step:0.01, h:'How much of the cookie lets light through.'},
+        {k:'soft', l:'Edge softness', min:0, max:1, step:0.01, h:'Sharp edges are a cookie close to the subject; soft ones are further away, or the light is bigger.'});
+      if (sh !== 12) look.push({k:'brk', l:sh === 5 ? 'Ragged edges' : sh === 3 ? 'Raggedness' : 'Detail', min:0, max:1, step:0.01,
+        h:sh === 5 ? 'How rough the sawn edges of the holes are.' : 'How much finer detail breaks up the shapes.'});
+      if (sh === 3) look.push({k:'dir', l:'Streak direction', opts:DIRS});
+      if (sh === 12) look.push(
+        {k:'warp', l:'Irregularity', min:0, max:1.5, step:0.01, h:'Pulls the holes out of round, into the uneven gaps of a real canopy cookie.'},
+        {k:'darkest', l:'Darkest shadow', min:0, max:0.9, step:0.01, h:'Lets some light through the solid parts, like a cookie of scrim or thin card.'});
+    }
+    if (sh === 8) look.push(
+      {k:'count', l:'Number of lites', min:3, max:24, step:1},
+      {k:'width', l:'Glazing bar width', min:0.05, max:0.98, step:0.01},
+      {k:'soft', l:'Edge softness', min:0, max:1, step:0.01});
     if (fan || beams) look.push(
       {k:'count', l:fan ? 'Number of shafts' : 'Number of beams', min:1, max:40, step:1},
       ...(fan ? [{k:'spread', l:'Fan angle', min:5, max:150, step:0.5, u:'°'}, {k:'apexX', l:'Source position', min:-0.6, max:0.6, step:0.01, h:'Where the light comes from, left to right above the frame.'}, {k:'apexY', l:'Source height above frame', min:0, max:2, step:0.01, h:'0 puts the source at the top edge; larger values make the shafts more parallel.'}] : [{k:'angle', l:'Angle', min:-90, max:90, step:0.5, u:'°'}]),
@@ -626,16 +686,19 @@ MODES.shapes = {
       ...paintDefs());
     const out = [{name:'Paint your own', params:pp, first:true}, {name:'Shape', params:g, off:paint}];
     if (look.length) out.push({name:'Look', params:look, off:paint});
-    if (fan || beams) out.push({name:'Motion', params:[
+    if (sh === 8) {}
+    else if (fan || beams) out.push({name:'Motion', params:[
       {k:'motion', l:'Shimmer', min:0, max:1, step:0.01, h:'Each shaft slowly brightens and dims on its own and wavers a touch, with dust drifting through it.'},
       {k:'shimSpd', l:'Shimmer speed', min:0.1, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '×'},
     ]});
     else {
-      const bl = (P.blend ?? 0) > 0 && sh !== 17 && sh !== 7;
+      const bl = (P.blend ?? 0) > 0 && sh !== 17 && sh !== 7 && !cookie;
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
         {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(cookie ? [{k:'sway', l:'Sway on the stand', min:0, max:1, step:0.01, h:'The cookie rocks on its stand, as it does in a draught or when someone brushes it: the pattern moves almost as one piece, by up to about 10 cm where the light lands.'},
+                      {k:'swayHz', l:'Sway rate', min:0.05, max:2, step:0.01, u:'Hz', log:true}] : []),
+        ...(sh !== 17 && sh !== 7 && !cookie ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
         ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
         {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
@@ -664,6 +727,12 @@ MODES.shapes = {
     {name:'Light shafts, slow shimmer', v:{shape:0, blur:0.5, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.6, shimSpd:0.8}},
     {name:'Shafts from the side', v:{shape:0, blur:0.5, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6, motion:0.5, shimSpd:0.7}},
     {name:'Curtain shafts', v:{shape:1, blur:0.5, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6, motion:0.4}},
+    {name:'Classic cucoloris board', v:{shape:5, blur:0.8, scale:3, amount:0.42, soft:0.15, brk:0.5, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Cookie on a stand, swaying', v:{shape:5, blur:1.5, scale:4, amount:0.45, soft:0.25, brk:0.4, morph:0, flow:0, drift:0, blend:0, sway:0.35, swayHz:0.3, breath:0}},
+    {name:'Splotchy cookie', v:{shape:4, blur:2, scale:3, amount:0.5, soft:0.3, brk:0.6, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Ragged streak cookie', v:{shape:3, blur:1, scale:2, amount:0.55, soft:0.25, brk:0.6, dir:1, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Dappled canopy cookie', v:{shape:12, blur:2.5, scale:4, amount:0.45, soft:0.35, warp:0.8, darkest:0.05, morph:0.05, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Art deco fanlight', v:{shape:8, blur:0.5, count:9, width:0.4, soft:0.15, pool:false}},
     {name:'Parallel beams', v:{shape:2, blur:0.5, count:6, angle:20, width:0.4, wVar:0.4, soft:0.4, fall:0.3, brk:0.4, motion:0.5}},
   ],
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},
@@ -687,6 +756,9 @@ for (const [m, def] of Object.entries(MODES)) DEFAULTS[m] = {...def.presets[0].v
 // every pattern starts framed in a soft pool of light with dark edges (Light pool, in the panel)
 const POOL_DEFAULT = {pool:true, poolSize:1.0, poolSoft:0.55};
 for (const m of Object.keys(DEFAULTS)) DEFAULTS[m] = {...POOL_DEFAULT, ...DEFAULTS[m]};
+for (const m of ['under', 'over', 'hull']) DEFAULTS[m] = {distRate:0, distAmt:0.2, distSize:0.015, ...DEFAULTS[m]};
+DEFAULTS.windows = {tint:0, tintK:0.8, refract:true, ...DEFAULTS.windows};
+DEFAULTS.trees = {snow:0, ...DEFAULTS.trees};
 for (const m of Object.keys(MODES)) for (const ps of MODES[m].presets) if (ps.v.framing === 2 && m === 'trees') ps.v.framing = 0;
 for (const ps of MODES.trees.presets) if (ps.v.framing === 1 && ps.v.pool === undefined) ps.v.pool = false;
 
@@ -726,7 +798,7 @@ try {
       }
     }
     S.savedVer = saved.ver;
-    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig']) if (saved[k] !== undefined) S[k] = saved[k];
+    for (const k of ['mode', 'fps', 'res', 'quality', 'tiles', 'view', 'scenes', 'cams', 'userFraming', 'ovl', 'shot', 'shotSel', 'shotLights', 'shotCams', 'tlBackup', 'exp', 'rig', 'pip']) if (saved[k] !== undefined) S[k] = saved[k];
     if (!MODES[S.mode]) S.mode = 'trees';
   }
 } catch (e) {}
@@ -735,7 +807,7 @@ function save() {
   clearTimeout(saveTimer);
   if (window.__noSave) return;
   saveTimer = setTimeout(() => {
-    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), ver:11})); } catch (e) {}
+    try { localStorage.setItem(STORE, JSON.stringify({p:S.p, post:S.post, tl:S.tl, mode:S.mode, fps:S.fps, res:S.res, quality:S.quality, tiles:S.tiles, view:S.view, scenes:S.scenes, cams:S.cams, userFraming:S.userFraming, ovl:S.ovl, shot:S.shot, shotSel:S.shotSel, shotLights:S.shotLights, shotCams:S.shotCams, tlBackup:S.tlBackup, exp:S.exp, rig:rigSave(), pip:S.pip, ver:11})); } catch (e) {}
   }, 300);
 }
 const TL = () => S.tl[S.mode];
@@ -966,7 +1038,7 @@ layout(location=2) in vec4 aNorm;  // xyz, wid
 layout(location=3) in vec4 aFlut;  // f1, f2, phase, amp
 layout(location=4) in float aNode;
 uniform sampler2D uDisp; uniform float uT, uLx, uLy, uCot, uSinE, uZr, uDS;
-out vec2 vUV; flat out int vSlice; flat out float vShape;
+out vec2 vUV; flat out float vSlice; flat out float vShape;
 
 uniform float uTwA, uGustE, uTwCoh, uLoopT; uniform vec3 uTwF; uniform int uWrap;
 uniform vec4 uWk[32], uWa[32]; uniform int uNW; uniform vec3 uWm; uniform float uZtop, uFlutU, uLeanK;
@@ -1028,11 +1100,20 @@ void main(){
   if (uWrap == 0 && cp != 0) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vUV = c; vShape = aPos.w;
-  vSlice = clamp(int((P.z - uZr) / uSinE / uDS), 0, 7);
+  // height in slices, centred on each slice's own height: a leaf between two is shared by both (no stepping as it sways)
+  vSlice = clamp((P.z - uZr) / uSinE / uDS - 0.5, 0.0, 7.0);
   gl_Position = P.z < uZr ? vec4(-9.0, -9.0, 0.0, 1.0) : vec4((g + shift + o) * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FS_LEAF3 = HEAD + `
-in vec2 vUV; flat in int vSlice; flat in float vShape;
+in vec2 vUV; flat in float vSlice; flat in float vShape;
+// transmittance T laid into the slices around height x (in slices): T^(1-f) into slice k and T^f into k+1, whose product is T
+void slices(float T, float x, out vec4 a, out vec4 b){
+  int k = int(floor(x)); float f = x - float(k);
+  vec4 e0 = vec4(equal(ivec4(k), ivec4(0, 1, 2, 3))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(0, 1, 2, 3))) * f;
+  vec4 e1 = vec4(equal(ivec4(k), ivec4(4, 5, 6, 7))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(4, 5, 6, 7))) * f;
+  T = max(T, 1e-4);
+  a = pow(vec4(T), e0); b = pow(vec4(T), e1);
+}
 uniform float uTransl;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
 void main(){
@@ -1058,6 +1139,27 @@ void main(){
     d = length(q * vec2(1.0, 1.02)) - r * (1.0 - 0.6 * smoothstep(0.35, 0.52, q.x));
   } else if (s == 4){     // palm leaflet: long and narrow
     d = abs(v) - 0.5 * pow(max(sin(PI * u), 0.0), 0.3);
+  } else if (s == 6){     // spruce or fir spray: a dense core of shoots, fringed with needles angled forward
+    float env = 0.5 * pow(max(sin(PI * min(u * 1.04, 1.0)), 0.0), 0.3);
+    float q = (u + abs(v) * 0.5) * 30.0;
+    float needle = abs(fract(q) - 0.5), lw = fwidth(q);
+    float ncov = smoothstep(0.5 * lw + 0.22, 0.22 - 0.5 * lw, needle);
+    float core = smoothstep(0.62, 0.42, abs(v) / max(env, 1e-3));
+    d = abs(v) - env;
+    Tl = 1.0 - max(max(core * 0.9, ncov * 0.95), smoothstep(0.06, 0.025, abs(v)));
+  } else if (s == 7){     // snow lying on a branch or spray: a lumpy pillow, opaque
+    vec2 q = vec2(u - 0.5, v);
+    float a = atan(q.y, q.x);
+    float lump = 0.07 * sin(5.0 * a + 1.3) + 0.05 * sin(9.0 * a + 4.1 + 6.0 * u);
+    d = length(q * vec2(1.0, 1.0)) - (0.5 + lump) * (0.8 + 0.2 * pow(max(sin(PI * u), 0.0), 0.5));
+    Tl = 0.0;
+  } else if (s == 8){     // larch: tufts of soft needles fanning out from short shoots
+    vec2 q = vec2(u - 0.5, v) * 2.0;
+    float r = length(q), a = atan(q.y, q.x);
+    float ray = abs(fract(a * 4.0 / PI) - 0.5);
+    float lw = fwidth(a * 4.0 / PI);
+    d = r - 0.95;
+    Tl = 1.0 - smoothstep(0.5 * lw + 0.12, 0.12 - 0.5 * lw, ray) * smoothstep(1.0, 0.25, r) * 0.8 - 0.2 * smoothstep(0.3, 0.0, r);
   } else {                // pine shoot: a brush of needles
     float env = 0.5 * pow(max(sin(PI * min(u * 1.05, 1.0)), 0.0), 0.5);
     float inside = abs(v) - env;
@@ -1073,10 +1175,7 @@ void main(){
   float cov = clamp(0.5 - d / w, 0.0, 1.0);
   float T = 1.0 - cov * (1.0 - Tl);
   if (cov <= 0.0) discard;
-  vec4 sel = vec4(equal(ivec4(vSlice), ivec4(0, 1, 2, 3)));
-  vec4 sel2 = vec4(equal(ivec4(vSlice), ivec4(4, 5, 6, 7)));
-  o0 = mix(vec4(1.0), vec4(T), sel);
-  o1 = mix(vec4(1.0), vec4(T), sel2);
+  slices(T, vSlice, o0, o1);
 }`;
 /* ---------- Trees: trunk, branches and twigs as tapered capsules ---------- */
 const VS_SEG = HEAD + `
@@ -1098,7 +1197,7 @@ vec3 twigMove(int node, float w, vec2 xy){
   float s1 = sin(TAU * qf(uTwF.x * j) * uT + rp.x), s2 = sin(TAU * qf(uTwF.y * j) * uT + rp.y), s3 = sin(TAU * qf(uTwF.z * j) * uT + rp.z);
   return uTwA * E * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
 }
-out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out int vSlice;
+out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out float vSlice;
 vec3 dsp(float n, vec2 xy){ int i = int(n + 0.5); vec4 d = texelFetch(uDisp, ivec2(i % 1024, i / 1024), 0); return d.xyz + twigMove(i, d.w, xy); }
 uniform sampler2D uOvl; uniform int uOvlOn;
 // painted density where this point of the tree sits at rest, seen along the sun: + thins it out, - fills it in
@@ -1139,11 +1238,18 @@ void main(){
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vP = P; vSeg = vec4(ga, gb); vW = vec2(wa, wb);
   float zm = 0.5 * (A.z + B.z);
-  vSlice = clamp(int((zm - uZr) / uSinE / uDS), 0, 7);
+  vSlice = clamp((zm - uZr) / uSinE / uDS - 0.5, 0.0, 7.0);
   gl_Position = zm < uZr ? vec4(-9.0, -9.0, 0.0, 1.0) : vec4((P + shift + o) * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FS_SEG = HEAD + `
-in vec2 vP; flat in vec4 vSeg; flat in vec2 vW; flat in int vSlice;
+in vec2 vP; flat in vec4 vSeg; flat in vec2 vW; flat in float vSlice;
+void slices(float T, float x, out vec4 a, out vec4 b){
+  int k = int(floor(x)); float f = x - float(k);
+  vec4 e0 = vec4(equal(ivec4(k), ivec4(0, 1, 2, 3))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(0, 1, 2, 3))) * f;
+  vec4 e1 = vec4(equal(ivec4(k), ivec4(4, 5, 6, 7))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(4, 5, 6, 7))) * f;
+  T = max(T, 1e-4);
+  a = pow(vec4(T), e0); b = pow(vec4(T), e1);
+}
 uniform float uPx;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
 void main(){
@@ -1155,10 +1261,7 @@ void main(){
   float cov = clamp((wE - dd) / uPx + 0.5, 0.0, 1.0) * min(1.0, w / (0.5 * uPx));
   if (cov <= 0.0) discard;
   float T = 1.0 - cov;
-  vec4 sel = vec4(equal(ivec4(vSlice), ivec4(0, 1, 2, 3)));
-  vec4 sel2 = vec4(equal(ivec4(vSlice), ivec4(4, 5, 6, 7)));
-  o0 = mix(vec4(1.0), vec4(T), sel);
-  o1 = mix(vec4(1.0), vec4(T), sel2);
+  slices(T, vSlice, o0, o1);
 }`;
 /* ---------- Trees: ray integration over the sun disk. Each direction is traced through
               all eight slices at its own parallax; the gaps act as pinhole cameras. ---------- */
@@ -1541,7 +1644,7 @@ function rippleMask(P, t, tl) {
    gravity–capillary dispersion, so short ripples outrun longer waves exactly as in water. The modes are
    added straight into the simulated spectrum, which keeps them exactly periodic with the tile. */
 function disturbances(P, t, tl) {
-  const rate = 0, amt = 0, s = Math.max(P.distSize || 0.05, 0.005);
+  const rate = P.distRate || 0, amt = P.distAmt ?? 0.2, s = Math.max(P.distSize || 0.015, 0.005);
   const T = tl.loop ? tl.len : 60, tt = ((t % T) + T) % T;
   const life = Math.min(0.92 * T, 12);
   const n = rate > 0 && amt > 0 ? Math.max(1, Math.round(rate / 60 * T)) : 0;
@@ -1855,6 +1958,12 @@ function growSC(sp, r, B, tree, bx, by, H, R, P) {
     const w = Math.exp(-over[(iz * VW + iy) * VW + ix] / ob0) / (1 + 0.4 * tip[i]);
     elig.push([i, w]); wsum += w; q++;
   }
+  if (sp.bare) {
+    const wm = wsum / Math.max(elig.length, 1);
+    for (const [i, w] of elig) { const k = Math.min(4, Math.round(2.5 * w / wm * (P.leafDensity ?? 1))); if (k) bareTwigs(sp, r, B, base + i, base + np[i], tree, k); }
+    addSnow(B, r, P.snow, base);
+    return;
+  }
   const cand = [];
   // leafy twigs: each shoot node sprouts a spray of short twigs; leaves sit alternately along them
   for (const [i, w] of elig) {
@@ -1899,6 +2008,7 @@ function growSC(sp, r, B, tree, bx, by, H, R, P) {
     occ.set(key, o + 1); placed++;
     addLeaf(B, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], sp.shape);
   }
+  addSnow(B, r, P.snow, base);
 }
 
 function growPine(sp, r, B, tree, bx, by, H, R, P) {
@@ -1992,6 +2102,106 @@ function growPalm(sp, r, B, tree, bx, by, H, R, P) {
   }
 }
 
+
+/* Spruces, firs and larches: a straight leader with whorls of branches every year's growth. Each branch sags under
+   its own weight and turns up at the tip (spruce), or lies out flat in layers (fir); side shoots carry flat sprays of
+   needles, and branchlets hang from them (Norway spruce, larch). The crown narrows to a spire (sp.conePow). */
+function growConifer(sp, r, B, tree, bx, by, H, R, P) {
+  // the crown starts at the species' own height up the stem, or lower down only Canopy depth below the top
+  const zb = Math.max(H * Math.min(sp.base * (P.crownBase ?? 1), 0.85), H - (P.canopyDepth || H));
+  const lean = [(r() - 0.5) * 0.04, (r() - 0.5) * 0.04];
+  const trunkR = z => 0.025 + H * 0.013 * (1 - z / H);
+  let prev = addNode(B, bx, by, 0, -1, 1, tree, trunkR(0));
+  const len = sp.len * P.leafScale, wid = sp.wid * P.leafScale, dens = P.leafDensity * (sp.dens || 1);
+  const snow = clamp(P.snow || 0, 0, 1);
+  // a flat spray of needles at a branch node, lying roughly level (needles face the sky), pointing out along the shoot
+  const spray = (node, dx, dy, k, sag) => {
+    const n = Math.floor(dens * k) + (r() < (dens * k) % 1 ? 1 : 0);
+    for (let j = 0; j < n; j++) {
+      const [ax, ay, az] = norm3(dx + gauss(r) * 0.4, dy + gauss(r) * 0.4, -sag + gauss(r) * 0.15);
+      const [lnx, lny, lnz] = norm3(gauss(r) * sp.tilt * 0.5, gauss(r) * sp.tilt * 0.5, 1);
+      const [aax, aay, aaz] = orthoAxis(lnx, lny, lnz, ax, ay, az);
+      const sc = 0.75 + 0.5 * r(), x = B.x[node] + gauss(r) * 0.04, y = B.y[node] + gauss(r) * 0.04, z = B.z[node] + gauss(r) * 0.03;
+      addLeaf(B, x, y, z, aax, aay, aaz, lnx, lny, lnz, len * sc, wid * sc, node, sp.shape);
+      // snow settles on the sprays as pillows, bigger than the spray beneath it and quite opaque
+      if (snow > 0 && r() < snow * 0.55) addLeaf(B, x, y, z + 0.04, aax, aay, aaz, 0, 0, 1, len * sc * (0.8 + 0.5 * snow), wid * sc * (1.0 + 0.7 * snow), node, 7);
+    }
+  };
+  const whorls = [];
+  for (let z = sp.whorl * 0.7; z <= H; z += sp.whorl * (0.8 + 0.4 * r())) {
+    prev = addNode(B, bx + lean[0] * z, by + lean[1] * z, z, prev, 1, tree, trunkR(z));
+    if (z >= zb && z <= H - 0.15) whorls.push(prev);
+  }
+  // the leader's own tuft at the top
+  spray(prev, 0, 0, 2, -1.2);
+  for (const tn of whorls) {
+    const z = B.z[tn], u = (z - zb) / Math.max(H - zb, 0.5);
+    const nb = sp.nb + Math.floor(r() * 3), ph = r() * Math.PI * 2;
+    const L = (R * Math.pow(Math.max(1 - u, 0), sp.conePow || 1) + 0.12) * (0.8 + 0.4 * r());
+    const st = Math.max(0.18, Math.min(0.32, L / 6));
+    for (let b = 0; b < nb; b++) {
+      const az = ph + b * 2 * Math.PI / nb + (r() - 0.5) * 0.6;
+      const el0 = sp.el + (r() - 0.5) * 0.15 - 0.25 * (1 - u) * (sp.sag || 0);
+      let p = tn, x = B.x[tn], y = B.y[tn], zz = z;
+      for (let s = st; s <= L + 1e-6; s += st) {
+        const f = s / L;
+        const el = el0 - (sp.sag || 0) * f + (sp.tipUp || 0) * f * f * f;
+        const dx = Math.cos(az) * Math.cos(el), dy = Math.sin(az) * Math.cos(el), dz = Math.sin(el);
+        x += dx * st; y += dy * st; zz += dz * st;
+        p = addNode(B, x, y, zz, p, 0, tree, (0.045 * Math.sqrt(L / 2) + 0.004) * (1 - f) + 0.005);
+        if (snow > 0 && r() < snow * 0.7) addLeaf(B, x - dx * st * 0.5, y - dy * st * 0.5, zz + 0.03, Math.cos(az), Math.sin(az), 0, 0, 0, 1, st * (1.0 + 0.4 * r()), 0.06 + 0.12 * snow * (1 - 0.5 * f), p, 7);
+        if (f < 0.15) continue;
+        spray(p, Math.cos(az), Math.sin(az), 1, (sp.pend || 0) * 0.5);
+        // side shoots in pairs, level and fanned out, with their own sprays and hanging branchlets
+        if (((s / st) | 0) % 2 === 0) for (const sgn of [-1, 1]) {
+          const sa = az + sgn * (sp.latA || 1.0) + (r() - 0.5) * 0.3, lat = Math.min(0.7, 0.5 * (L - s) + 0.15);
+          let q = p, qx = x, qy = y, qz = zz;
+          const nk = Math.max(1, Math.round(lat / 0.2));
+          for (let k = 0; k < nk; k++) {
+            qx += Math.cos(sa) * 0.2; qy += Math.sin(sa) * 0.2; qz += 0.02 - (sp.pend || 0) * 0.12 * (k + 1);
+            q = addNode(B, qx, qy, qz, q, 0, tree, 0.006);
+            spray(q, Math.cos(sa), Math.sin(sa), 1, sp.pend || 0);
+          }
+        }
+      }
+    }
+  }
+}
+/* Winter trees: no leaves, so the shadow is all wood. Every shoot at the crown's surface ends in a fan of fine twigs,
+   forked once or twice, the lace that bare birches and aspens throw on snow. */
+function bareTwigs(sp, r, B, gi, gp, tree, k) {
+  const [dx, dy, dz] = norm3(B.x[gi] - B.x[gp], B.y[gi] - B.y[gp], B.z[gi] - B.z[gp]);
+  for (let t = 0; t < k; t++) {
+    let [tx, ty, tz] = norm3(dx * 0.7 + gauss(r) * 0.8, dy * 0.7 + gauss(r) * 0.8, dz * 0.5 + 0.15 + gauss(r) * 0.4);
+    let q = gi, x = B.x[gi], y = B.y[gi], z = B.z[gi];
+    const n = 2 + Math.floor(r() * 3), sl = sp.cluster * (0.35 + 0.35 * r());
+    for (let j = 0; j < n; j++) {
+      tz -= (sp.droop || 0) * 0.35;
+      [tx, ty, tz] = norm3(tx + gauss(r) * 0.25, ty + gauss(r) * 0.25, tz + gauss(r) * 0.15);
+      x += tx * sl; y += ty * sl; z += tz * sl;
+      q = addNode(B, x, y, Math.max(0.1, z), q, 0, tree, 0.0032 - 0.0005 * j);
+      if (j < n - 1 && r() < 0.45) {           // a short fork
+        const [fx, fy, fz] = norm3(tx + gauss(r) * 0.9, ty + gauss(r) * 0.9, tz + gauss(r) * 0.4);
+        addNode(B, x + fx * sl * 0.8, y + fy * sl * 0.8, Math.max(0.1, z + fz * sl * 0.8), q, 0, tree, 0.002);
+      }
+    }
+  }
+}
+/* Snow lying along the upper side of every branch that is level enough to hold it: lumpy, opaque, it fattens the
+   branch shadows and fills the forks. Snow clumps do not flutter. */
+function addSnow(B, r, amt, start) {
+  if (!(amt > 0)) return;
+  const n = B.x.length;
+  for (let i = start; i < n; i++) {
+    const p = B.par[i]; if (p < 0 || B.trunk[i]) continue;
+    const dx = B.x[i] - B.x[p], dy = B.y[i] - B.y[p], dz = B.z[i] - B.z[p], l = Math.hypot(dx, dy, dz);
+    if (l < 0.02 || B.rad[i] < 0.0019) continue;
+    const lev = 1 - Math.abs(dz) / l;
+    if (r() > amt * lev * lev * 1.2) continue;
+    const w = (2 * B.rad[i] + 0.02 + 0.07 * amt * (0.5 + r())) * Math.min(1, 0.4 + 30 * B.rad[i]);
+    addLeaf(B, B.x[p] + dx * 0.1, B.y[p] + dy * 0.1, B.z[p] + dz * 0.1 + B.rad[i] + 0.01, dx / l, dy / l, dz / l, 0, 0, 1, l * (0.8 + 0.3 * r()), w, i, 7);
+  }
+}
 
 /* Periodic value noise on an integer lattice (tiles exactly) */
 function pnoise(r, px, py) {
@@ -2092,7 +2302,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   // woody area index: real canopies carry roughly 0.3–0.6 m² of branch silhouette per m² of ground
   let wood = 0;
   for (let i = 0; i < n; i++) if (np[i] >= 0) { const j = np[i]; wood += (rad[i] + rad[j]) * Math.hypot(nx[i] - nx[j], ny[i] - ny[j], nz[i] - nz[j]) * 0.8; }
-  const wai = wood / (Lx * Ly), waiT = 0.3;
+  const wai = wood / (Lx * Ly), waiT = sp.wai || 0.3;
   if (wai > waiT) { const k = waiT / wai; for (let i = 0; i < n; i++) rad[i] = Math.max(0.0018, rad[i] * k); }
   const droop = new Float64Array(n);
   for (let i = 0; i < n; i++) {
@@ -2118,6 +2328,12 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
   const ob0 = Math.max(obs[Math.floor(obs.length * 0.5)] || 1, 1) * 0.6;
   const elig = []; let wsum = 0;
   for (let i = 0; i < n; i++) if (isEl(i)) { const [a, b, c] = vidx(i); const w = Math.exp(-over[(c * VY + b) * VX + a] / ob0) / (1 + 0.4 * tip[i]); elig.push([i, w]); wsum += w; }
+  if (sp.bare) {
+    const wm = wsum / Math.max(elig.length, 1);
+    for (const [i, w] of elig) { if (np[i] < 0) continue; const k = Math.min(4, Math.round(2.5 * w / wm * (P.leafDensity ?? 1))); if (k) bareTwigs(sp, r, B, base + i, base + np[i], B.tree[base + i], k); }
+    addSnow(B, r, P.snow, base);
+    return nStem;
+  }
   const cand = [];
   for (const [i, w] of elig) {
     const cnt = 1.8 * target * w / wsum;
@@ -2156,6 +2372,7 @@ function growPatch(sp, r, B, P, Lx, Ly, H) {
     occ.set(kk, o + 1); placed++;
     addLeaf(B, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9], c[10], c[11], sp.shape);
   }
+  addSnow(B, r, P.snow, base);
   return nStem;
 }
 
@@ -2195,12 +2412,13 @@ function hierarchy(B, start, end, G) {
 
 const treeCache = new Map();
 function growOne(P, sp, idx) {
-  const key = [P.seed, P.species, P.canopyTop, P.leafDensity, P.leafScale, idx].join('|');
+  const key = [P.seed, P.species, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.snow || 0, idx].join('|');
   if (treeCache.has(key)) return treeCache.get(key);
   const r = rng(P.seed * 7717 + (P.species | 0) * 31 + idx * 104729 + 5);
   const H = P.canopyTop * (0.9 + 0.2 * r()), R = sp.R * (0.85 + 0.3 * r());
   const B = newBuilder();
-  if (sp.kind === 'pine') growPine(sp, r, B, 0, 0, 0, H, R, P);
+  if (sp.kind === 'conifer') growConifer(sp, r, B, 0, 0, 0, H, R, P);
+  else if (sp.kind === 'pine') growPine(sp, r, B, 0, 0, 0, H, R, P);
   else if (sp.kind === 'palm') growPalm(sp, r, B, 0, 0, 0, H, R, P);
   else growSC(sp, r, B, 0, 0, 0, H, R, P);
   const T = {B, H, R};
@@ -2231,7 +2449,8 @@ function genTrees(P) {
       const k = clamp(R / 2.5, 0.3, 2.2);
       const ls = Math.sqrt(Math.max(k, 1));   // and somewhat larger leaves, so a big crown is not tens of thousands of them
       const sp2 = {...sp, base:clamp(zbE / zt, 0.05, 0.85), seg:sp.seg * k, infl:sp.infl * k, kill:sp.kill * k, cluster:sp.cluster * Math.sqrt(k), lai:sp.lai * 1.8, len:sp.len * ls, wid:sp.wid * ls};
-      growSC(sp2, r0, B, 0, bx, by, zt, R, P);
+      if (sp.kind === 'conifer') growConifer(sp, r0, B, 0, bx, by, zt, R, P);
+      else growSC(sp2, r0, B, 0, bx, by, zt, R, P);
       B.treeH.push(zt); B.treeInfo.push({x:bx, y:by, H:zt, R});
     }
     // the element's extent in light space: every leaf from its base to its tip
@@ -2258,7 +2477,7 @@ function genTrees(P) {
     hierarchy(B, 0, B.x.length, G);
     return {B, G, sp, nTrees:1, Lx:Lx2, Ly:Ly2, single:true, extent:extent / fit, fit};
   }
-  if (sp.kind !== 'palm') {
+  if (sp.kind !== 'palm' && sp.kind !== 'conifer') {
     const r0 = rng(P.seed * 7717 + (P.species | 0) * 31 + 5);
     const B = newBuilder();
     const G = newG();
@@ -2267,7 +2486,7 @@ function genTrees(P) {
     return {B, G, sp, nTrees:nS, Lx, Ly, patch:true};
   }
   const Rm = sp.R;
-  const nT = clamp(Math.round(P.cover * Lx * Ly / (Math.PI * Rm * Rm)), 1, 16);
+  const nT = clamp(Math.round(P.cover * Lx * Ly / (Math.PI * Rm * Rm)), 1, sp.kind === 'conifer' ? 24 : 16);
   const r = rng(P.seed * 131 + 17);
   const pos = [];
   for (let t = 0; t < nT; t++) {
@@ -2299,6 +2518,25 @@ function genTrees(P) {
   return {B, G, sp, nTrees:nT, Lx, Ly};
 }
 
+/* Growing a canopy takes up to a few hundred milliseconds, so it runs on a worker thread: dragging Tile size or
+   Canopy cover keeps the page moving with the old trees until the new ones are grown. The worker is made from this
+   file's own functions (a blob URL), so the tool stays one page. Exports and scripted renders grow synchronously,
+   so a written frame always has the finished trees. */
+let TREES_SYNC = false;
+const TREE_WORKER = (() => {
+  let w = null, ok = false, seq = 0;
+  const waiting = new Map();
+  try {
+    const fns = [newBuilder, addNode, addLeaf, orthoAxis, norm3, growSC, growPine, growConifer, bareTwigs, addSnow, growPalm, pnoise, growPatch, hierarchy, growOne, genTrees, rng, gauss].map(f => f.toString()).join('\n');
+    const src = `const DEG = Math.PI / 180; const clamp = ${clamp}; const smooth = ${smooth}; const newG = ${newG}; const treeCache = new Map();\nconst SPECIES = ${JSON.stringify(SPECIES)};\n${fns}\n` +
+      'onmessage = e => { try { postMessage({id:e.data.id, T:genTrees(e.data.P)}); } catch (err) { postMessage({id:e.data.id, err:String(err && err.stack || err)}); } };';
+    w = new Worker(URL.createObjectURL(new Blob([src], {type:'text/javascript'})));
+    w.onmessage = e => { const j = waiting.get(e.data.id); if (!j) return; waiting.delete(e.data.id); if (e.data.err) j.rej(new Error(e.data.err)); else j.res(e.data.T); };
+    w.onerror = () => { ok = false; for (const j of waiting.values()) j.rej(new Error('The tree worker stopped.')); waiting.clear(); };
+    ok = true;
+  } catch (e) { ok = false; }
+  return {get ok() { return ok; }, grow:P => new Promise((res, rej) => { if (!ok) { rej(new Error('no worker')); return; } const id = ++seq; waiting.set(id, {res, rej}); w.postMessage({id, P:{...P}}); })};
+})();
 function uploadTrees(T, P) {
   const {B} = T;
   const F = null;
@@ -2584,7 +2822,7 @@ function* windSetupGen(T, P, tl) {
   const fBase = sp.flutHz * (0.75 + 0.25 * clamp(U / 3, 0.3, 2.5));
   for (let i = 0; i < nL; i++) {
     const f2 = fBase * (0.75 + 0.5 * r()), a = r();
-    fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = famp * (0.15 + 1.4 * a * a);
+    fl[i * 4] = qf(f2); fl[i * 4 + 1] = qf(f2 * 1.63); fl[i * 4 + 2] = r() * Math.PI * 2; fl[i * 4 + 3] = T.B.leaves[i * 13 + 3] >= 6.5 ? 0 : famp * (0.15 + 1.4 * a * a);
   }
   if (TR.data !== T) return;   // the tree changed while this ran
   gl.bindBuffer(gl.ARRAY_BUFFER, TR.flutBuf);
@@ -2606,11 +2844,16 @@ function* windSetupGen(T, P, tl) {
     rms = Math.sqrt(xs.reduce((a2, v, i) => a2 + (v - mx) ** 2 + (ys[i] - my) ** 2, 0) / xs.length); mean = [mx, my];
     live.restore(live.cps[0]);
   }
-  TR.wind = {rec, F, rate, ng, groups, off, wts, Tl, wk, wa, live, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
+  TR.wind = {tree:T, rec, F, rate, ng, groups, off, wts, Tl, wk, wa, live, nM:Math.min(32, M), U, wx:WM.wx, wy:WM.wy, ztop, famp,
              twA:0, twF:[1, 1, 1], nG:0, fnLimb:groups[off[0]] ? groups[off[0]].fn : groups[0].fn, rmsTop:rms, lean:Math.hypot(...mean), nGroups:ng - off[0]};
 }
 function gustAt() { return 1; }
 function windEval(T, t) {
+  if (!windReady()) {
+    if (TR.calmFor !== TR.data) { TR.dispData.fill(0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex); gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 1024, TR.rows, gl.RGBA, gl.FLOAT, TR.dispData); TR.calmFor = TR.data; }
+    return;
+  }
+  TR.calmFor = null;
   const {B, G} = T, W = TR.wind;
   const ng = W.ng;
   let g;
@@ -2651,38 +2894,62 @@ function sunTaps(P, n) {
   tapsCache = {sig, tex:dataTex(n, 1, data), n, maxR:Math.tan(th) / P.tileSize};
   return tapsCache;
 }
+const treeChip = (cls, text, on) => {
+  const hud = $('hud'); if (!hud) return;
+  const c = hud.querySelector('.' + cls);
+  if (on && !c) { const chip = document.createElement('span'); chip.className = 'chip ok ' + cls; chip.textContent = text; hud.append(chip); }
+  if (!on && c) c.remove();
+};
 function treesFor(P, tl = S.tl.trees) {
-  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, Math.round(P.sunElev * 2) / 2].join('|');
+  const sig = [P.seed, P.species, P.tileSize, P.cover, P.canopyTop, P.canopyDepth, P.leafDensity, P.leafScale, P.trunks, P.framing, P.elemSize, P.recvHeight, P.snow || 0, Math.round(P.sunElev * 2) / 2].join('|');
   if (sig !== TR.sig) {
-    TR.data = genTrees(P);
-    uploadTrees(TR.data, P);
-    TR.sig = sig; TR.windSig = '';
+    // the first trees, exports and scripted renders: grown here and now; otherwise on the worker, while the old trees keep playing
+    if (TREES_SYNC || !TREE_WORKER.ok || !TR.data) {
+      TR.growing = null; treeChip('growchip', '', false);
+      TR.data = genTrees(P);
+      uploadTrees(TR.data, P);
+      TR.sig = sig; TR.windSig = '';
+    } else if (TR.growing !== sig) {
+      TR.growing = sig; treeChip('growchip', 'Growing the trees…', true);
+      const owner = lightCur().id, P2 = {...P};
+      TREE_WORKER.grow(P2).catch(() => genTrees(P2)).then(T => {
+        // a newer request, or another light now in front: drop it (it is asked for again when needed)
+        if (TR.growing !== sig || lightCur().id !== owner) return;
+        TR.growing = null; treeChip('growchip', '', false);
+        TR.data = T; uploadTrees(T, P2); TR.sig = sig; TR.windSig = ''; dirty = true;
+      });
+    }
   }
-  const ws = [sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.indep, tl.loop, tl.len].join('|');
+  const ws = [TR.sig, P.windSpeed, P.windDir, P.turb, P.swayBranch, P.swayTwig, P.flutter, P.gustAmt, P.indep, tl.loop, tl.len].join('|');
   if (ws !== TR.windSig) {
-    // a new tree needs its wind now; a wind change on the same tree is simulated just after this frame,
-    // so the panel stays responsive and the preview says what is happening
-    if (!TR.wind || TR.wind.ng === undefined || TR.windTree !== TR.sig) { windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; }
+    const fresh = !windReady();
+    if (TREES_SYNC) { clearTimeout(TR.windTimer); TR.windPending = null; windSetup(TR.data, P, tl); TR.windSig = ws; TR.windTree = TR.sig; treeChip('windchip', '', false); }
     else if (TR.windPending !== ws) {
-      // simulate the new wind in the background, a few milliseconds at a time; the old wind keeps playing meanwhile
+      // simulate the wind in the background, a few milliseconds at a time: a wind change keeps the old wind playing
+      // meanwhile; new trees stand still until theirs is ready
       TR.windPending = ws;
-      const hud = $('hud'); if (hud && !hud.querySelector('.windchip')) { const chip = document.createElement('span'); chip.className = 'chip ok windchip'; chip.textContent = 'Simulating the wind…'; hud.append(chip); }
+      if (fresh) TR.windTree = TR.sig;
+      treeChip('windchip', 'Simulating the wind…', true);
       clearTimeout(TR.windTimer);
-      const tree = TR.data, treeSig = TR.sig, P2 = {...P}, tl2 = {...tl};
+      const tree = TR.data, treeSig = TR.sig, P2 = {...P}, tl2 = {...tl}, owner = lightCur().id;
       TR.windTimer = setTimeout(() => {
+        if (lightCur().id !== owner) { if (TR.windPending === ws) TR.windPending = null; return; }
         const gen = windSetupGen(tree, P2, tl2);
         const pump = () => {
-          if (TR.windPending !== ws || TR.sig !== treeSig) return;          // superseded
+          if (TR.windPending !== ws || TR.sig !== treeSig || lightCur().id !== owner) return;          // superseded
           const t0 = performance.now();
-          while (performance.now() - t0 < 12) { if (gen.next().done) { TR.windSig = ws; TR.windPending = null; dirty = true; const c = document.querySelector('.windchip'); if (c) c.remove(); return; } }
+          while (performance.now() - t0 < 12) { if (gen.next().done) { TR.windSig = ws; TR.windPending = null; dirty = true; treeChip('windchip', '', false); return; } }
           TR.windTimer = setTimeout(pump, 0);
         };
         pump();
-      }, 120);
+      }, fresh ? 0 : 120);
     }
   }
   return TR.data;
 }
+// is the wind ready for these trees (a newly grown tree stands still until its wind is simulated)
+const windReady = () => !!(TR.wind && TR.wind.ng !== undefined && TR.windTree === TR.sig && TR.wind.tree === TR.data);
+const CALM = {twA:0, twF:[1, 1, 1], wk:new Float32Array(4), wa:new Float32Array(4), nM:0, U:0, wx:1, wy:0, ztop:10};
 function renderTrees(P, res, t, tl) {
   const Q = QUAL[S.quality];
   const T = treesFor(P, tl);
@@ -2699,7 +2966,7 @@ function renderTrees(P, res, t, tl) {
   gl.clearBufferfv(gl.COLOR, 0, [1, 1, 1, 1]); gl.clearBufferfv(gl.COLOR, 1, [1, 1, 1, 1]);
   gl.enable(gl.BLEND); gl.blendFunc(gl.DST_COLOR, gl.ZERO);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex);
-  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); f1(p, 'uTwA', TR.wind.twA); f3(p, 'uTwF', ...TR.wind.twF); i1(p, 'uDisp', 0); const Wd = TR.wind; gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds);
+  const common = p => { i1(p, 'uWrap', TR.frame ? 0 : 1); f1(p, 'uTwCoh', 0); f1(p, 'uLoopT', tl.loop ? tl.len : 0); f1(p, 'uT', tt); f1(p, 'uGustE', Math.pow(gustAt(tt), 2.5)); const Wd = windReady() ? TR.wind : CALM; f1(p, 'uTwA', Wd.twA); f3(p, 'uTwF', ...Wd.twF); i1(p, 'uDisp', 0); gl.uniform4fv(p.u('uWk[0]'), Wd.wk); gl.uniform4fv(p.u('uWa[0]'), Wd.wa); i1(p, 'uNW', Wd.nM); f3(p, 'uWm', Wd.U * Wd.wx, Wd.U * Wd.wy, 0); f1(p, 'uZtop', Wd.ztop); f1(p, 'uFlutU', T.sp.flutU || 1.0); f1(p, 'uLeanK', 0.022 * (P.flutter > 0 ? 1 : 0)); f1(p, 'uLx', T.Lx); f1(p, 'uLy', T.Ly); f1(p, 'uCot', cot); f1(p, 'uSinE', sinE); f1(p, 'uZr', zr); f1(p, 'uDS', ds);
     // painted density (Paint over), sampled by every leaf and twig at its resting place
     const ov = ovlOn() && ovlTarget('trees').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) { tex(p, 'uOvl', ovlTex(ovlTarget('trees')), 3); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, TR.dispTex); } };
   if (P.woody) {
@@ -2730,7 +2997,7 @@ function renderTrees(P, res, t, tl) {
     tex(p, 'uS0', sl.tex, 0); tex(p, 'uS1', sl.tex2, 1); tex(p, 'uTaps', taps.tex, 2); i1(p, 'uNTaps', taps.n);
     gl.uniform1fv(p.u('uH[0]'), new Float32Array(H)); gl.uniform1fv(p.u('uLod[0]'), new Float32Array(lod)); f3(p, 'uK', ...K);
   });
-  const W = TR.wind, th = P.sunDisk * 0.5 * DEG;
+  const W = windReady() ? TR.wind : null, th = P.sunDisk * 0.5 * DEG;
   const zTop = T.patch ? P.canopyTop : T.B.treeInfo.reduce((s, q) => s + q.H, 0) / T.B.treeInfo.length;
   const zBot = T.patch ? Math.max(0.3, P.canopyTop - P.canopyDepth) : zTop * 0.8;
   const dMean = Math.max(0.5 * (zTop + zBot) - zr, 0.1) / sinE;
@@ -2739,8 +3006,9 @@ function renderTrees(P, res, t, tl) {
   info = fr + (T.patch ? `Seamless ${T.sp.name.toLowerCase()} canopy fed by ${T.nTrees} branch${T.nTrees === 1 ? '' : 'es'}` : `${T.nTrees} × ${T.sp.name.toLowerCase()}`) + ` · ${TR.nLeaves.toLocaleString()} leaves · ${TR.nSegs.toLocaleString()} branch segments\n` +
          `Light space: the tile is ${P.tileSize.toFixed(1)} m square across the beam. Project it along the sun and the renderer stretches it ${(1 / sinE).toFixed(2)}× on flat ground\n` +
          `Foliage ${zBot.toFixed(1)}–${zTop.toFixed(1)} m above the lit surface: shadow edges soften by ${(2 * dLo * Math.tan(th) * 100).toFixed(1)}–${(2 * dHi * Math.tan(th) * 100).toFixed(1)} cm (real sun Ø ${P.sunDisk.toFixed(2)}°); gaps throw round sun spots that size\n` +
+         (!W ? `Wind ${P.windSpeed.toFixed(1)} m/s: being simulated for these trees (they stand still until it is ready)` :
          `Wind ${P.windSpeed.toFixed(1)} m/s at the tree tops, turbulence ${Math.round((P.turb ?? 0.35) * 100)}% · simulated: ${W.nGroups} limbs, branches and twig sprays, each a damped cantilever pushed by drag on the moving air`+
-         `\nLimbs sway near ${W.fnLimb.toFixed(2)} Hz, ±${(W.rmsTop * 100).toFixed(1)} cm, leaning ${(W.lean * 100).toFixed(1)} cm downwind · leaves flutter about ${(T.sp.flutHz * (0.75 + 0.25 * clamp(P.windSpeed / 3, 0.3, 2.5))).toFixed(1)} Hz when the local wind is strong enough` +
+         `\nLimbs sway near ${W.fnLimb.toFixed(2)} Hz, ±${(W.rmsTop * 100).toFixed(1)} cm, leaning ${(W.lean * 100).toFixed(1)} cm downwind · leaves flutter about ${(T.sp.flutHz * (0.75 + 0.25 * clamp(P.windSpeed / 3, 0.3, 2.5))).toFixed(1)} Hz when the local wind is strong enough`) +
          (tl.loop ? `\nEvery motion completes whole cycles in ${fmtLen(tl.len)}` : '');
   return out;
 }
@@ -2910,6 +3178,7 @@ Pane frame(vec2 p){
 const FS_WINL = HEAD + `
 layout(location = 0) out vec4 oA;
 layout(location = 1) out vec4 oB;
+layout(location = 2) out vec4 oC;
 uniform vec2 uRes;
 ` + COMMON.split('uniform vec2 uRes;')[1] + WIN_GLSL + `
 uniform float uDm, uDist, uTp, uDistort, uGrime, uSmudge, uSpots, uRain, uFog, uScreenT, uT, uLoopT;
@@ -2917,6 +3186,22 @@ uniform float uRainSz, uRainDens, uRainRun, uRainLens, uRainSpd;
 uniform int uGlass, uScreen, uBlind, uCurt;
 uniform float uTilt, uLower, uImperf, uCOpen, uFull, uBreeze;
 uniform vec3 uBF;
+uniform int uTint; uniform float uTintK, uRefr;
+// how the glass bends rays passing through it here (radians, x and y): thickness ripples and raindrops are lenses
+vec2 gDefl = vec2(0.0);
+// glass colour: clear, amber bottle glass, antique green, cobalt, or stained glass with each pane its own colour
+vec3 tintOf(Pane P){
+  if (uTint == 0 || P.g <= 0.0) return vec3(1.0);
+  vec3 c;
+  if (uTint == 1) c = vec3(1.0, 0.72, 0.36);
+  else if (uTint == 2) c = vec3(0.64, 0.86, 0.56);
+  else if (uTint == 3) c = vec3(0.36, 0.52, 1.0);
+  else {
+    float k = floor(h2(vec2(P.id, 3.7), 71u) * 6.0);
+    c = k < 1.0 ? vec3(0.95, 0.22, 0.24) : k < 2.0 ? vec3(0.28, 0.42, 1.0) : k < 3.0 ? vec3(1.0, 0.74, 0.28) : k < 4.0 ? vec3(0.3, 0.86, 0.42) : k < 5.0 ? vec3(0.7, 0.36, 0.95) : vec3(1.0);
+  }
+  return mix(vec3(1.0), c, uTintK);
+}
 // glass relief (m) for the caustic calculation
 float relief(vec2 p, float id){
   vec2 o = vec2(id * 3.17, id * 1.71);
@@ -2952,6 +3237,8 @@ float glassT(vec2 p, Pane P, out float scat){
     float over = smoothstep(1.5, 4.0, F);
     float I = clamp(1.0 / max(abs(det), 0.18), 0.0, 5.0);
     T *= mix(I, 0.0, over); scat += over * 0.9;
+    // the same ripples tilt each ray by (n - 1) times the thickness gradient
+    gDefl += 0.52 * vec2(relief(p + vec2(e, 0), P.id) - relief(p - vec2(e, 0), P.id), relief(p + vec2(0, e), P.id) - relief(p - vec2(0, e), P.id)) / (2.0 * e);
   }
   if (uGlass == 2){ float rg; float b = dropField(p, 0.007, 0.22 * uDistort + 0.08, 0.0003, 0.0012, 31u, rg); T *= 1.0 - 0.8 * step(0.001, b); }
   if (uGlass == 6){
@@ -3021,7 +3308,8 @@ float glassT(vec2 p, Pane P, out float scat){
       float rD = (0.0018 + 0.0018 * h2(vec2(c, 16), 91u) * (0.5 + uRain)) * uRainSz * grow;
       vec2 q = vec2(dx, (p.y - yD) * 0.7) / rD;
       float dd = length(q);
-      if (dd < 1.0) { run *= 1.0 + uRainLens * (-0.75 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd)); runS += 0.4 * uRainLens; }
+      if (dd < 1.0) { run *= 1.0 + uRainLens * (-0.75 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd)); runS += 0.4 * uRainLens;
+                      gDefl -= 0.2 * min(uRainLens, 1.5) * q; }   // a drop is a small converging lens: rays bend toward its middle
       // trail behind it (above): a thin wet line that breaks into beads and slowly dries
       if (p.y > yD && p.y < yStart + rD){
         float age = (p.y - yD) / (span * n / loopT);
@@ -3037,7 +3325,7 @@ float glassT(vec2 p, Pane P, out float scat){
       }
     }
     // beaded drops from new impacts appear all the time and stay until a runner sweeps them away
-    float cs = 0.006 * uRainSz / sqrt(max(uRainDens, 0.2)), best = 0.0; vec2 cc0 = floor(p / cs);
+    float cs = 0.006 * uRainSz / sqrt(max(uRainDens, 0.2)), best = 0.0; vec2 cc0 = floor(p / cs), bq = vec2(0.0);
     for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
       vec2 cc = cc0 + vec2(i, j);
       if (h2(cc, 93u) > clamp(0.7 * uRain * min(uRainDens, 1.4), 0.0, 0.97)) continue;
@@ -3047,9 +3335,10 @@ float glassT(vec2 p, Pane P, out float scat){
       vec2 ctr = (cc + vec2(h2(cc, 96u), h2(cc, 97u))) * cs;
       float r = (0.0004 + 0.0014 * pow(h2(cc, 98u), 2.0)) * (0.6 + min(uRain, 1.0)) * uRainSz;
       float q = length((p - ctr) / vec2(1.0, 1.1)) / r;
-      if (q < 1.0) best = max(best, 1.0 - q);
+      if (q < 1.0 && 1.0 - q > best) { best = 1.0 - q; bq = (p - ctr) / r; }
     }
     float inB = step(0.001, best) * (1.0 - clear);
+    gDefl -= 0.2 * min(uRainLens, 1.5) * inB * bq;
     T *= max(1.0 + (-0.7 + 1.1 * smoothstep(0.45, 1.0, best)) * inB * uRainLens, 0.0) * max(run, 0.0);
     scat += 0.35 * inB * uRainLens + runS;
   }
@@ -3260,11 +3549,12 @@ void main(){
   vec2 pb = p, pc = p;
   float b = blinds(pb, s2), c = curtains(pc, s3);
   oA = vec4(P.m, g * scr, b, c);
-  oB = vec4(min(P.g, 1.0), P.m * (s1 * scr + g * scr * (s2 + s3)), 0.0, 1.0);
+  oB = vec4(min(P.g, 1.0), P.m * (s1 * scr + g * scr * (s2 + s3)), gDefl * uRefr * step(0.0, P.g - 1e-4));
+  oC = vec4(tintOf(P), 1.0);
 }`;
 /* Pass 2: trace each gobo pixel back toward the sun through every layer. */
 const FS_WIN = COMMON + WIN_GLSL + `
-uniform sampler2D uL0, uL1, uTree;
+uniform sampler2D uL0, uL1, uL2, uTree; uniform float uTreeZ;
 uniform vec3 uR, uU, uS;
 uniform vec2 uQ0; uniform float uCover, uDm, uZo, uZi, uFD, uZB, uZC, uDist, uSunR, uPxG, uSmear, uGlowLod, uGlowK, uTreeL;
 uniform int uTaps, uSmearDir, uTreeOn, uFDn; uniform float uTexel, uEave, uEaveY;
@@ -3279,7 +3569,7 @@ float aaT(float d, float L){ return clamp(d / max(uPxG, 1.8 * L * uSunR / sqrt(f
 void main(){
   vec2 q = uQ0 + (gl_FragCoord.xy / uRes - 0.5) * uCover;
   // light spread by reeded, textured or frosted glass, sampled around the central ray
-  float smear = 0.0;
+  vec3 smear = vec3(0.0);
   if (uSmear > 0.0){
     vec2 c0 = toWin(q, 0.0);
     float ls = max(0.0, log2(uSmear * (uSmearDir == 1 ? 2.0 / 24.0 : 0.36) / uTexel));
@@ -3289,11 +3579,11 @@ void main(){
       else { float rho = sqrt((float(i) + 0.5) / 24.0), th = float(i) * 2.39996; o = uSmear * rho * vec2(cos(th), sin(th)); }
       vec2 x = c0 + o;
       vec4 a = textureLod(uL0, wuv(x), ls); float gc = textureLod(uL1, wuv(x), ls).r;
-      smear += a.r * a.g * gc * aaG(sdOpen(x));
+      smear += a.r * a.g * gc * aaG(sdOpen(x)) * textureLod(uL2, wuv(x), ls).rgb;
     }
     smear /= 24.0;
   }
-  float acc = 0.0, ws = 0.0;
+  vec3 acc = vec3(0.0); float ws = 0.0;
   float lF = lodAt(uDist), lB = lodAt(uDist + uZB / uS.z), lC = lodAt(uDist + uZC / uS.z);
   for (int i = 0; i < 256; i++){
     if (i >= uTaps) break;
@@ -3301,13 +3591,15 @@ void main(){
     vec2 d = uSunR * rho * vec2(cos(th), sin(th));
     float w = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - rho * rho)));
     ws += w;
-    // wall reveal: outer and inner faces
-    float Lo = uDist + uZo / uS.z, Li = uDist + uZi / uS.z;
-    float v = aaT(sdOpen(toWin(q + Lo * d, uZo)), Lo) * aaT(sdOpen(toWin(q + Li * d, uZi)), Li);
-    // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
-    if (uEave > 0.0){ float ze = uZo + uEave, Le = uDist + ze / uS.z; v *= aaT(uEaveY - toWin(q + Le * d, ze).y, Le); }
-    if (v <= 0.0) continue;
+    // where this ray crosses the glass, and how the glass (ripples, raindrops) bends it on toward the outside
     vec2 xg = toWin(q + uDist * d, 0.0);
+    vec2 df = textureLod(uL1, wuv(xg), lF).ba;
+    // wall reveal: outer and inner faces (the outer one is seen through the glass)
+    float Lo = uDist + uZo / uS.z, Li = uDist + uZi / uS.z;
+    float v = aaT(sdOpen(toWin(q + Lo * d, uZo) + df * max(uZo, 0.0)), Lo) * aaT(sdOpen(toWin(q + Li * d, uZi)), Li);
+    // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
+    if (uEave > 0.0){ float ze = uZo + uEave, Le = uDist + ze / uS.z; v *= aaT(uEaveY - (toWin(q + Le * d, ze).y + df.y * ze), Le); }
+    if (v <= 0.0) continue;
     // frame members have depth: their shadow is the union of their slices from front to back
     vec4 c = textureLod(uL0, wuv(xg), lF);
     float f1 = c.r, f2 = 1.0;
@@ -3321,26 +3613,33 @@ void main(){
     else gl = min(f1, f2) * c.g;
     float bl = textureLod(uL0, wuv(toWin(q + (uDist + uZB / uS.z) * d, uZB)), lB).b;
     float cu = textureLod(uL0, wuv(toWin(q + (uDist + uZC / uS.z) * d, uZC)), lC).a;
-    acc += w * v * gl * bl * cu;
+    // the trees outside, seen through the glass: each sun-disk ray looks through its own bit of glass, so raindrops and
+    // ripples scramble the canopy's shadow where they sit (a drop shows it upside down), and the rays average it out
+    // (the bend is read from a softened level of the glass: at this distance a drop's sharp lensing blurs the canopy, it does not speckle it)
+    vec2 dS = textureLod(uL1, wuv(xg), lF + 3.0).ba;
+    float tr = uTreeOn == 1 ? texture(uTree, (q + 0.5 * mix(dS, df, 0.25) * uTreeZ) / uTreeL + 0.5).r : 1.0;
+    acc += w * v * gl * bl * cu * tr * textureLod(uL2, wuv(xg), lF).rgb;
   }
-  float T = acc / ws;
+  vec3 T = acc / ws;
+  // light the glass scatters (frosting, the diffuse glow below) still comes in under the trees
+  float treeC = uTreeOn == 1 ? texture(uTree, q / uTreeL + 0.5).r : 1.0;
   // light spread by the glass leaves it in all directions, so the window outline no longer crops it; blinds and curtains still do
-  if (uSmear > 0.0) T += smear * textureLod(uL0, wuv(toWin(q, uZB)), lodAt(uDist + uZB / uS.z) + 2.0).b * textureLod(uL0, wuv(toWin(q, uZC)), lodAt(uDist + uZC / uS.z) + 2.0).a;
+  if (uSmear > 0.0) T += treeC * smear * textureLod(uL0, wuv(toWin(q, uZB)), lodAt(uDist + uZB / uS.z) + 2.0).b * textureLod(uL0, wuv(toWin(q, uZC)), lodAt(uDist + uZC / uS.z) + 2.0).a;
   // light turned diffuse by the glass, shades or curtains spreads into a broad glow
   vec2 c0 = toWin(q, 0.0);
-  float glow = 0.0;
+  vec3 glow = vec3(0.0);
   for (int i = 0; i < 6; i++){
     float th = float(i) * 1.0472;
-    glow += textureLod(uL1, wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th))), uGlowLod).g;
+    vec2 gx = wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th)));
+    glow += textureLod(uL1, gx, uGlowLod).g * textureLod(uL2, gx, uGlowLod).rgb;
   }
   // diffused light only shows where the opening lets light through, so nothing appears outside the window
   float open0 = aaG(sdOpen(toWin(q, uZo))) * aaG(sdOpen(toWin(q, uZi)));
-  T += glow / 6.0 * uGlowK * open0;
-  if (uTreeOn == 1) T *= texture(uTree, q / uTreeL + 0.5).r;
+  T += treeC * glow / 6.0 * uGlowK * open0;
   // the faint scattered glow fades out before the frame edge so the gobo has a clean black border
   vec2 e2 = abs(gl_FragCoord.xy / uRes - 0.5);
-  T *= 1.0 - smoothstep(0.42, 0.5, max(e2.x, e2.y)) * smoothstep(0.35, 0.15, T);
-  fragColor = vec4(vec3(T), 1.0);
+  T *= 1.0 - smoothstep(0.42, 0.5, max(e2.x, e2.y)) * smoothstep(0.35, 0.15, dot(T, vec3(0.2126, 0.7152, 0.0722)));
+  fragColor = vec4(T, 1.0);
 }`;
 PR.winL = program(VS_FULL, FS_WINL, 'window layers');
 PR.win = program(VS_FULL, FS_WIN, 'window composite');
@@ -3348,9 +3647,9 @@ PR.win = program(VS_FULL, FS_WIN, 'window composite');
 function winMRT(name, w, h) {
   let t = targets[name];
   if (t && t.w === w && t.h === h) return t;
-  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
-  const a = makeTex(w, h, 'f16', true), b = makeTex(w, h, 'f16', true);
-  for (const x of [a, b]) {
+  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); if (t.tex3) gl.deleteTexture(t.tex3); gl.deleteFramebuffer(t.fb); }
+  const a = makeTex(w, h, 'f16', true), b = makeTex(w, h, 'f16', true), c = makeTex(w, h, 'u8', true);
+  for (const x of [a, b, c]) {
     gl.bindTexture(gl.TEXTURE_2D, x);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
@@ -3358,8 +3657,9 @@ function winMRT(name, w, h) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b, 0);
-  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-  t = targets[name] = {tex:a, tex2:b, fb, w, h};
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, c, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+  t = targets[name] = {tex:a, tex2:b, tex3:c, fb, w, h};
   return t;
 }
 const loopF = (f, tl) => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f;
@@ -3412,9 +3712,11 @@ function renderWindows(P, res, t, tl) {
       i1(p, 'uGlass', P.glass | 0); i1(p, 'uScreen', P.screen | 0); i1(p, 'uBlind', bl); i1(p, 'uCurt', P.curtain | 0);
       f1(p, 'uTilt', P.tilt); f1(p, 'uLower', P.lower); f1(p, 'uImperf', P.imperf); f1(p, 'uCOpen', P.cOpen); f1(p, 'uFull', P.full); f1(p, 'uBreeze', P.breeze);
       f3(p, 'uBF', loopF(0.21, tl), loopF(0.37, tl), loopF(0.83, tl));
+      i1(p, 'uTint', P.tint | 0); f1(p, 'uTintK', P.tintK ?? 0.8); f1(p, 'uRefr', P.refract === false ? 0 : 1);
     });
     gl.bindTexture(gl.TEXTURE_2D, L.tex); gl.generateMipmap(gl.TEXTURE_2D);
     gl.bindTexture(gl.TEXTURE_2D, L.tex2); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, L.tex3); gl.generateMipmap(gl.TEXTURE_2D);
   }
   // trees outside: a real canopy rendered in the same light space, at its own distance
   let treeTex = null, treeL = 3, tinfo = '';
@@ -3433,7 +3735,7 @@ function renderWindows(P, res, t, tl) {
   }
   const out = tgt('winOut', res, res, 'f16');
   pass(PR.win, out, p => {
-    tex(p, 'uL0', L.tex, 0); tex(p, 'uL1', L.tex2, 1); tex(p, 'uTree', treeTex || L.tex, 2);
+    tex(p, 'uL0', L.tex, 0); tex(p, 'uL1', L.tex2, 1); tex(p, 'uTree', treeTex || L.tex, 2); tex(p, 'uL2', L.tex3, 3); f1(p, 'uTreeZ', P.treeDist || 8);
     f3(p, 'uR', ...B.r); f3(p, 'uU', ...B.u); f3(p, 'uS', ...s);
     f2(p, 'uQ0', cx, cy); f1(p, 'uCover', cover); f1(p, 'uDm', Dm);
     i1(p, 'uFDn', clamp(Math.ceil(2 * fd * Math.hypot(s[0], s[1]) / s[2] / Math.max(P.bw * 0.6, 0.004)) + 1, 2, 8)); f1(p, 'uZo', zo); f1(p, 'uZi', zi); f1(p, 'uFD', fd); f1(p, 'uZB', zB); f1(p, 'uZC', zC); f1(p, 'uDist', D);
@@ -3986,7 +4288,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
     f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
     tex(p, 'uPaint', paintTex(), 1); f1(p, 'uPaintUp', res / PAINT.N); f1(p, 'uOvlUp', res / 512);
-    const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) tex(p, 'uOvl', ovlTex(ovlTarget('shapes')), 2);
+    const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); tex(p, 'uOvl', ov ? ovlTex(ovlTarget('shapes')) : paintTex(), 2);   // always a real texture: an unset sampler reads unit 0, which may hold this very target (a feedback loop, and a black frame)
   });
   return out;
 }
@@ -4037,13 +4339,26 @@ function renderAt(t) {
   if (MODES[S.mode].kind === 'shapes') return renderShapes(S.p[S.mode], S.res, t, TL());
   return renderCaustics(S.p[S.mode], S.res, t, MODES[S.mode].target, TL());
 }
+const SIMCACHE = {key:'', name:'', info:''};
 function render(expT) {
   syncShotTimeline();
   const tl = TL(), Q = QUAL[S.quality];
   const sub = tl.shutter > 0 && (!S.playing || S.mbPlay) ? Q.sub : 1;
+  /* The simulated pattern is kept while only what comes after it changes (light pool, paint over on caustics and
+     windows, output levels): with the timeline paused and motion blur on, a Levels drag or a paint stroke would
+     otherwise re-run every motion-blur sub-frame of the simulation. */
+  const P = S.p[S.mode], kind = MODES[S.mode].kind;
+  const paintPending = (kind === 'shapes' && (P.shape | 0) === 14 && PAINT.dirty) || (['trees', 'shapes'].includes(kind) && ovlOn() && OVL[S.mode] && OVL[S.mode].dirty);
+  const simKey = JSON.stringify([S.mode, P, tl, S.t, S.res, S.quality, sub, S.fps, lightCur().id, TR.sig, TR.windSig, ovlOn(), S.shotSel],
+    (k, v) => (k === 'pool' || k === 'poolSize' || k === 'poolSoft' || k.startsWith('pb')) ? undefined : v);
   let out;
-  if (sub <= 1) out = renderAt(S.t);
-  else {
+  if (!paintPending && SIMCACHE.key === simKey && targets[SIMCACHE.name]) { out = targets[SIMCACHE.name]; info = SIMCACHE.info; }
+  else if (sub <= 1) {
+    out = renderAt(S.t);
+    const keep = tgt('simRaw', out.w, out.h, 'f16');
+    pass(PR.copy, keep, p => { tex(p, 'uSrc', out.tex, 0); f1(p, 'uGain', 1); });
+    out = keep; Object.assign(SIMCACHE, {key:simKey, name:'simRaw', info});
+  } else {
     const span = tl.shutter / 360 / S.fps;
     const acc = tgt('mblur', S.res, S.res, 'f16');
     let msg = '';
@@ -4058,6 +4373,7 @@ function render(expT) {
     }
     info = msg;
     out = acc;
+    Object.assign(SIMCACHE, {key:simKey, name:'mblur', info});
   }
   if (usesPool()) out = poolPass(out);
   // in a shot the hull pattern runs the length of the hull, so it is not faded at the sides
@@ -4076,15 +4392,34 @@ function render(expT) {
   goboInfo = info;
 }
 let goboInfo = '';
+// the gobo's average transmission after the output levels, read from the 1×1 top of its mip chain
+let meanFb = null;
+function goboMean() {
+  const f = targets.final; if (!f || !f.mip) return null;
+  if (!meanFb) meanFb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, meanFb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, Math.round(Math.log2(f.w)));
+  const px = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return (0.2126 * px[0] + 0.7152 * px[1] + 0.0722 * px[2]) / 255;
+}
+const fmtMean = m => m === null ? '' : `Mean ${m.toFixed(2)} · ${m > 0.002 ? (Math.log2(m) >= 0 ? '+' : '−') + Math.abs(Math.log2(m)).toFixed(1) : '−9'} EV`;
 function display() {
   const fin = targets.final;
   if (!fin) return;
-  if (S.view === 'scene') { const others = otherLights(); info = goboInfo + '\n' + drawScene(targets.final, others).join('\n'); gizDraw(); return; }
-  if (gcv && gcv.width) gizDraw();
+  if (S.view === 'scene') {
+    const others = otherLights();
+    info = goboInfo + '\n' + drawScene(targets.final, others).join('\n');
+    if (SNAP.Lc) drawCompare(others);
+    gizDraw(); pipDraw();
+    return;
+  }
   info = goboInfo;
   pass(PR.disp, null, p => {
     tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0);
   });
+  if (SNAP.Lc) drawCompare();
+  gizDraw();
 }
 
 /* =====================================================================
@@ -4143,7 +4478,7 @@ uniform int uType, uShape, uSingle, uSphere, uGizmo, uSet;
 uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
 uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uSrcR;
 uniform vec4 uSph;
-uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT;
+uniform float uAlb, uAmb, uHaze, uExpo, uGoboRes, uT; uniform vec2 uGoboOff;
 // several lights: each draws its own light, linear, added together (uAcc); only the first adds the ambient and sky (uAmbK)
 uniform int uAcc; uniform float uAmbK;
 const vec2 FX = vec2(-8.0, 8.0); const float FZ = 10.0, WY = 6.0, DY = 1.5;
@@ -4192,6 +4527,7 @@ float occl(vec3 p, vec3 l, float dl){
 }
 
 vec3 gobo(vec2 uv, float lod){
+  uv -= uGoboOff;   // the gobo slid across the beam (Keep hero lit): the image moves by this much of its width
   if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }   // tiles sideways only (hulls and walls)
   else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return textureLod(uGobo, uv, lod).rgb;
@@ -4347,7 +4683,7 @@ function accTarget(depth) {
 function toneOut(acc, expo) { gl.disable(gl.BLEND); pass(PR.tone, null, p => { tex(p, 'uSrc', acc.tex, 0); f1(p, 'uExpo', expo); }); }
 
 const SCENE_DEFAULTS = {
-  set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0,
+  set:1, ltype:0, cone:90, soft:0.15, shape:0, rep:1, sunScale:1, blur:0, goffX:0, goffY:0,
   dist:5, az:25, el:40, roll:0, ev:0, color:'#ffffff',
   aimX:0, aimY:0.8, aimZ:0.8,
   sphere:true, gizmo:true, haze:0, amb:0.12, alb:0.5, expo:0, follow:true, real:true,
@@ -4416,6 +4752,8 @@ const SCENE_GROUPS = () => {
   );
   light.push(
     {k:'blur', l:'Gobo blur', min:0, max:5, step:0.05, u:'%', h:'Defocus of the gobo image, as a percentage of the image width. Real projectors throw a slightly soft image; these gobos already contain the sun\'s own blur.'},
+    {k:'goffX', l:'Gobo offset across', min:-0.5, max:0.5, step:0.005, h:'Slides the image across the beam, as a fraction of its width, without moving the light. Keep hero lit sets it for you.'},
+    {k:'goffY', l:'Gobo offset up', min:-0.5, max:0.5, step:0.005, h:'Slides the image up the beam, as a fraction of its height.'},
     {k:'roll', l:'Gobo rotation', min:-180, max:180, step:1, u:'°', h:'Rotates the image around the light\'s axis.'},
     {k:'ev', l:'Intensity', min:-6, max:6, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV', h:sun ? 'Irradiance in stops.' : 'Stops. At 0 EV the light gives an irradiance of 1 at 5 m; it falls off with the inverse square of distance.'},
     {k:'color', l:'Light colour', type:'color', h:'The gobo multiplies the light\'s colour, as when a texture is assigned to the light colour.'},
@@ -4441,7 +4779,7 @@ const SCENE_GROUPS = () => {
     {k:'alb', l:shot && SHOT.frame.hasCol ? 'Surface colour gain' : 'Surface grey', min:0.05, max:0.9, step:0.01, h:shot && SHOT.frame.hasCol ? 'Scales the shot\'s surface colour; 0.5 uses it as rendered.' : 'Albedo of the set.'},
     {k:'expo', l:'Camera exposure', min:-4, max:4, step:0.1, fmt:v => (v >= 0 ? '+' : '') + v.toFixed(1) + ' EV'},
   ];
-  const out = [{name:'Scene light', params:light}, {name:'Light placement', params:place}, {name:sa ? 'Display' : 'Set & camera', params:set}];
+  const out = [{name:'Scene light', params:light}, {name:'Light placement', params:place}, heroGroup(), {name:sa ? 'Display' : 'Set & camera', params:set}];
   return sa ? [{name:'Shot', params:shotDefs(), shot:true}, ...out] : out;
 };
 const hex3 = h => { const n = parseInt((h || '#ffffff').slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255].map(c => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)); };
@@ -4515,7 +4853,7 @@ function lightUniforms(p, d) {
   f3(p, 'uLPos', ...L.pos); f3(p, 'uLF', ...L.f); f3(p, 'uLR', ...L.r); f3(p, 'uLU', ...L.u); f3(p, 'uAim', ...L.aim);
   f3(p, 'uLCol', ...hex3(c.color));
   f1(p, 'uTanC', d.tanC); f1(p, 'uSoft', c.soft); f1(p, 'uRep', d.rep); f1(p, 'uBlur', d.blur); f1(p, 'uBlurLod', d.lod);
-  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w);
+  f1(p, 'uI', d.off ? 0 : d.I); f1(p, 'uSunSize', d.sunSize); f1(p, 'uGoboRes', d.fin.w); f2(p, 'uGoboOff', c.goffX || 0, c.goffY || 0);
 }
 /* others: the other lights of the scene (descriptions made while each was swapped in, see lights.js) */
 function drawScene(fin, others = []) {
@@ -4664,7 +5002,13 @@ function control(def, store, idPrefix, dflt, onChange) {
   row.append(lab);
   if (def.opts) {
     const sel = document.createElement('select'); sel.id = id;
-    def.opts.forEach((o, i) => { const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o; sel.append(op); });
+    // def.og (optional) names a group for each option; options sharing a group sit together under its heading
+    let grp = null;
+    def.opts.forEach((o, i) => {
+      const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o;
+      if (def.og) { if (!grp || grp.label !== def.og[i]) { grp = document.createElement('optgroup'); grp.label = def.og[i]; sel.append(grp); } grp.append(op); }
+      else sel.append(op);
+    });
     sel.value = store[def.k];
     sel.onchange = () => { store[def.k] = def.vals && typeof def.vals[0] === 'string' ? sel.value : +sel.value; onChange(def.k); };
     row.append(sel);
@@ -4696,6 +5040,35 @@ function control(def, store, idPrefix, dflt, onChange) {
     setPct(rg);
     rg.oninput = () => { store[def.k] = fromSlider(rg.value); out.textContent = fmtVal(def, store[def.k]); setPct(rg); onChange(def.k); };
     lab.ondblclick = () => { if (dflt && dflt[def.k] !== undefined) { rg.value = toSlider(dflt[def.k]); rg.oninput(); } };
+    // set a value directly: click the readout and type it (Enter keeps it, Escape cancels)
+    const setValue = v => {
+      if (!isFinite(v)) return;
+      v = clamp(Math.round(v / def.step) * def.step, def.min, def.max);
+      store[def.k] = +v.toFixed(Math.max(decimals(def.step), 0) + 2);
+      rg.value = toSlider(store[def.k]); out.textContent = fmtVal(def, store[def.k]); setPct(rg); onChange(def.k);
+    };
+    out.title = 'Click to type a value · Shift-drag the slider for fine control';
+    out.classList.add('editable');
+    out.onclick = () => {
+      if (row.querySelector('input.numin')) return;
+      const ni = document.createElement('input'); ni.type = 'text'; ni.inputMode = 'decimal'; ni.className = 'numin';
+      ni.value = String(+(+store[def.k]).toFixed(decimals(def.step) + 1)); ni.setAttribute('aria-label', def.l);
+      out.replaceWith(ni); ni.focus(); ni.select();
+      let done = false;
+      const finish = keep => { if (done) return; done = true; if (keep) setValue(parseFloat(ni.value.replace(',', '.'))); ni.replaceWith(out); };
+      ni.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+      ni.addEventListener('blur', () => finish(true));
+    };
+    // Shift-drag: a tenth of the normal speed, for fine adjustments
+    rg.addEventListener('pointerdown', e => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+      const x0 = e.clientX, v0 = +rg.value, w = rg.getBoundingClientRect().width || 200, span = (+rg.max) - (+rg.min);
+      try { rg.setPointerCapture(e.pointerId); } catch (err) {}
+      const mv = ev => { rg.value = clamp(v0 + (ev.clientX - x0) / w * span * 0.1, +rg.min, +rg.max); rg.oninput(); };
+      const up = () => { rg.removeEventListener('pointermove', mv); rg.removeEventListener('pointerup', up); rg.removeEventListener('pointercancel', up); };
+      rg.addEventListener('pointermove', mv); rg.addEventListener('pointerup', up); rg.addEventListener('pointercancel', up);
+    });
     row.append(out, rg);
   }
   if (def.h && def.showHint) { const h = document.createElement('p'); h.className = 'phint'; h.textContent = def.h; row.append(h); }
@@ -4826,7 +5199,10 @@ const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHe
 vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
 // the gobo's own resolution: everything is recalculated at it (painted layers are smoothly upscaled), and exports follow it
 { const mx = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
-  for (const o of [...vRes.options]) if (+o.value > mx) o.remove(); }
+  for (const o of [...vRes.options]) if (+o.value > mx) o.remove();
+  // a size saved earlier that is not in the list (a small screen's 256, say) still shows
+  if (![...vRes.options].some(o => +o.value === S.res)) { const o = document.createElement('option'); o.value = S.res; o.textContent = S.res + ' px'; vRes.prepend(o); }
+  vRes.value = S.res; }
 vRes.onchange = () => { S.res = +vRes.value; if (S.exp) S.exp.res = S.res; changed(); };
 vQual.onchange = () => { S.quality = vQual.value; changed(); };
 vTiles.onchange = () => { S.tiles = +vTiles.value; viewDirty = true; save(); };
@@ -4923,6 +5299,7 @@ function updateHud(ms) {
   const m = MODES[S.mode], tl = TL();
   hud.innerHTML = '';
   const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
+  if (typeof TR !== 'undefined' && TR.growing && MODES[S.mode].kind === 'trees') add('Growing the trees…', 'ok growchip');
   if (typeof TR !== 'undefined' && TR.windPending && MODES[S.mode].kind === 'trees') add('Simulating the wind…', 'ok windchip');
   if (S.view === 'scene') {
     const c = SC();
@@ -4933,6 +5310,8 @@ function updateHud(ms) {
   }
   add(`${S.res}²`);
   add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
+  // how much light the gobo lets through on average, and what that costs the light in stops
+  { const mean = goboMean(); if (mean !== null) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = fmtMean(mean); c.title = 'Average transmission of the finished gobo (after Output levels), and the same in stops: what the gobo takes off the light\'s average brightness. Export can compensate the light rig\'s exposure for it.'; hud.append(c); } }
   const tileNow = m.tileableNow !== undefined ? m.tileableNow : m.tileable && !usesPool() && !(m.kind === 'trees' && (S.p[S.mode].framing | 0) === 1);
   add(tileNow ? 'Seamless tile' : m.target === 2 && !(S.p.hull.fade > 0) ? 'Tiles sideways' : 'Single frame', 'ok');
   add(tl.loop ? `Loop ${fmtLen(tl.len)}` : `Sequence ${fmtLen(tl.len)}`, tl.loop ? 'ok' : '');
@@ -4993,10 +5372,12 @@ function ovlTarget(m = S.mode) {
   return T;
 }
 let CUR = null;   // the target of the stroke in progress
+let SCENE_RING = null;   // the brush footprint in the Scene view (world points), drawn on the light manipulator's overlay
 const PT = () => CUR || (ovlOn() ? ovlTarget() : paintCanvas());
 const PB = () => {
   const P = PT().set();
-  return {tool:P.pbTool | 0, ink:P.pbInk | 0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
+  const ink0 = P.pbInk | 0;
+  return {tool:P.pbTool | 0, ink:INK_FLIP && ink0 < 2 ? 1 - ink0 : ink0, size:P.pbSize ?? 6, soft:P.pbSoft ?? 0.6, flow:P.pbFlow ?? 0.6, wrap:P.pbWrap ?? true,
           angle:P.pbAngle ?? 20, len:P.pbLen ?? 6, streak:P.pbStreak ?? 0.5, blurAmt:P.pbBlur ?? 0.5};
 };
 function paintSave(T = PT()) {
@@ -5004,11 +5385,20 @@ function paintSave(T = PT()) {
   T.saveT = setTimeout(() => { try { localStorage.setItem(T.key, T.cv.toDataURL('image/png')); } catch (e) {} }, 700);
 }
 function paintChanged(T = PT()) { T.dirty = true; T.used = true; dirty = true; paintSave(T); padRedraw(); }
+const snapCanvas = T => { const c = document.createElement('canvas'); c.width = c.height = T.N; c.getContext('2d').drawImage(T.cv, 0, 0); return c; };
 function pushUndo(T = PT()) {
-  const c = document.createElement('canvas'); c.width = c.height = T.N;
-  c.getContext('2d').drawImage(T.cv, 0, 0);
-  T.undo.push(c); if (T.undo.length > 12) T.undo.shift();
+  T.undo.push(snapCanvas(T)); if (T.undo.length > 24) T.undo.shift();
+  T.redo = [];                            // a new stroke ends the redo trail
 }
+const putCanvas = (T, c) => { const ctx = T.ctx; ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; };
+// undo and redo for a paint target (the paint-your-own canvas or a paint-over layer)
+function undoPaint(T = PT()) { const c = T.undo.pop(); if (!c) return false; (T.redo = T.redo || []).push(snapCanvas(T)); putCanvas(T, c); paintChanged(T); return true; }
+function redoPaint(T = PT()) { const c = (T.redo || []).pop(); if (!c) return false; T.undo.push(snapCanvas(T)); putCanvas(T, c); paintChanged(T); return true; }
+// Shift while painting flips the ink (shadow and light, or open up and thicken)
+let INK_FLIP = false;
+document.addEventListener('keydown', e => { if (e.key === 'Shift') INK_FLIP = true; });
+document.addEventListener('keyup', e => { if (e.key === 'Shift') INK_FLIP = false; });
+window.addEventListener('blur', () => { INK_FLIP = false; });
 /* ---------- brush sprites: drawn once per dab as a white alpha mask, then tinted with the ink ---------- */
 function sprite(w, h, draw) {
   const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h));
@@ -5260,6 +5650,12 @@ function sceneHit(e) {
 }
 // where in the gobo the light that reaches this point came from (the same mapping the scene's light uses)
 function goboUVAt(p) {
+  const q = goboUVRaw(p); if (!q) return null;
+  const c = SC();
+  return [q[0] - (c.goffX || 0), q[1] - (c.goffY || 0)];
+}
+// the same, before the gobo offset: where the beam itself puts this point
+function goboUVRaw(p) {
   const S0 = LASTSCENE; if (!S0) return null;
   const L = S0.L;
   if (S0.ltype === 1) { const v = v3.sub(p, L.aim); return [v3.dot(v, L.r) / S0.sunSize + 0.5, v3.dot(v, L.u) / S0.sunSize + 0.5]; }
@@ -5295,6 +5691,32 @@ function goboUVAt(p) {
     CUR = PT(); pushUndo(); CUR.last = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
     stroke(...q); ST.q = q; paintChanged();
   });
+  // the brush's footprint where the light lands: the gobo-space circle carried out along the light onto the surface
+  const footprint = e => {
+    SCENE_RING = null;
+    if (!scenePaintOn() || e.altKey || !LASTSCENE) return;
+    const p = sceneHit(e); if (!p) return;
+    const nb = (dx, dy) => sceneHit({clientX:e.clientX + dx, clientY:e.clientY + dy});
+    const a = nb(3, 0), b = nb(0, 3);
+    let n = a && b ? v3.cross(v3.sub(a, p), v3.sub(b, p)) : null;
+    const S0 = LASTSCENE, L = S0.L, sun = S0.ltype === 1;
+    if (!n || Math.hypot(...n) < 1e-9) n = v3.mul(L.f, -1); else n = v3.norm(n);
+    const ruv = PB().size / 200;           // brush radius as a fraction of the gobo's width
+    const z = sun ? 1 : v3.dot(v3.sub(p, L.pos), L.f); if (!sun && z <= 1e-3) return;
+    const R = sun ? ruv * S0.sunSize : ruv * 2 * z * S0.tanC / S0.rep;
+    const pts = [];
+    for (let i = 0; i <= 48; i++) {
+      const th = i / 48 * 2 * Math.PI, q = v3.add(p, v3.add(v3.mul(L.r, R * Math.cos(th)), v3.mul(L.u, R * Math.sin(th))));
+      // follow the light through q onto the surface's plane at p
+      const o = sun ? q : L.pos, d = sun ? L.f : v3.norm(v3.sub(q, L.pos)), dn = v3.dot(d, n);
+      if (Math.abs(dn) < 1e-4) { pts.push(null); continue; }
+      const t = v3.dot(v3.sub(p, o), n) / dn;
+      pts.push(v3.add(o, v3.mul(d, t)));
+    }
+    SCENE_RING = {pts, ctr:p};
+  };
+  cv.addEventListener('pointermove', e => { footprint(e); if (typeof gizDraw === 'function') gizDraw(); });
+  cv.addEventListener('pointerleave', () => { SCENE_RING = null; if (typeof gizDraw === 'function') gizDraw(); });
   cv.addEventListener('pointermove', e => {
     if (!ST) return;
     const h = point(e), q = h && toPaint(h.p);
@@ -5308,8 +5730,9 @@ function goboUVAt(p) {
 })();
 function paintAction(a) {
   const T = CUR = paintCanvas(), ctx = T.ctx, N = T.N;
-  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
-  else {
+  if (a === 'undo') { undoPaint(T); CUR = null; return; }
+  if (a === 'redo') { redoPaint(T); CUR = null; return; }
+  {
     pushUndo();
     if (a === 'light' || a === 'shadow') { ctx.fillStyle = a === 'light' ? '#fff' : '#000'; ctx.fillRect(0, 0, N, N); }
     else if (a === 'invert') { ctx.globalCompositeOperation = 'difference'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, N, N); ctx.globalCompositeOperation = 'source-over'; }
@@ -5342,8 +5765,8 @@ function paintDefs() {
     {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01},
     {k:'pbWrap', l:'Wrap at the edges (keeps it seamless)', type:'chk'},
     {k:'pbScene', l:'Paint in the Scene view too', type:'chk', h:'In the Scene view, painting lands in the gobo exactly where the light falls on the set or shot, so you can rough in shapes right where you want them. Alt-drag still orbits.'},
-    {type:'buttons', items:[['Undo', () => paintAction('undo')], ['Fill with soft noise', () => paintAction('breakup')], ['Clear to light', () => paintAction('light')], ['Clear to shadow', () => paintAction('shadow')], ['Invert', () => paintAction('invert')]]},
-    {type:'note', l:'Paint on the canvas above, straight onto the Gobo preview, or in the Scene view where the light lands. White lets light through, black blocks it; Blur softens the whole gobo, and the Motion controls bring it to life.'},
+    {type:'buttons', items:[['Undo', () => paintAction('undo')], ['Redo', () => paintAction('redo')], ['Fill with soft noise', () => paintAction('breakup')], ['Clear to light', () => paintAction('light')], ['Clear to shadow', () => paintAction('shadow')], ['Invert', () => paintAction('invert')]]},
+    {type:'note', l:'Paint on the canvas above, straight onto the Gobo preview, or in the Scene view where the light lands. White lets light through, black blocks it; Blur softens the whole gobo, and the Motion controls bring it to life. Keys: [ and ] size the brush, hold Shift to paint with the other ink, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.'},
   ];
 }
 // pointer painting on the preview
@@ -5422,9 +5845,10 @@ function ovlApply(src) {
 }
 function ovlAction(a) {
   const T = CUR = ovlTarget(), ctx = T.ctx, N = T.N;
-  if (a === 'undo') { const c = T.undo.pop(); if (c) { ctx.globalCompositeOperation = 'copy'; ctx.drawImage(c, 0, 0); ctx.globalCompositeOperation = 'source-over'; } }
-  else if (a === 'clear') { pushUndo(T); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, N, N); }
-  paintChanged(T); CUR = null;
+  if (a === 'undo') undoPaint(T);
+  else if (a === 'redo') redoPaint(T);
+  else if (a === 'clear') { pushUndo(T); ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0, 0, N, N); paintChanged(T); }
+  CUR = null;
 }
 // the Paint over section, at the top of every pattern's panel
 function ovlGroup() {
@@ -5442,8 +5866,8 @@ function ovlGroup() {
     {k:'pbFlow', l:'Strength', min:0.02, max:1, step:0.01, h:'How much each stroke adds. Light strokes thin the pattern out or fill it in; keep going over an area to clear it completely or close it up.'},
     ...(tool === 3 ? [{k:'pbBlur', l:'Blur amount', min:0, max:1, step:0.01}] : []),
     {k:'pbWrap', l:'Wrap at the edges', type:'chk', h:'For seamless tiles, so the painting repeats with the tile.'},
-    {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Clear the paint-over', () => ovlAction('clear')]]},
-    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change.'},
+    {type:'buttons', items:[['Undo', () => ovlAction('undo')], ['Redo', () => ovlAction('redo')], ['Clear the paint-over', () => ovlAction('clear')]]},
+    {type:'note', l:(trees ? 'Paint on the canvas above (warm: fewer leaves, blue: more, hatched magenta: branches removed), on the Gobo preview, or in the Scene view right where the light lands, for example on a face the leaves shade too much. The change belongs to the leaves themselves, so it sways with the tree. ' : 'Paint on the canvas above (warm: opened up, blue: thickened), on the Gobo preview, or in the Scene view right where the light lands. ') + 'Strokes build up: go over an area again for a stronger change. Keys: [ and ] size the brush, hold Shift for the opposite effect, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes.'},
   );
   return defs;
 }
@@ -5452,6 +5876,26 @@ function ovlChanged(k) {
   else if (k === 'pbTool') buildPanel();
   save();
 }
+
+/* ---------- painting keys: [ ] brush size, Ctrl/Cmd+Z undo, Ctrl/Cmd+Shift+Z (or Ctrl+Y) redo ---------- */
+const paintActive = () => ovlOn() || paintShape();
+function setBrushSize(f) {
+  const T = PT(), P = T.set(), k = 'pbSize', id = (T.kind === 'ovl' ? 'ovl' : 'shapes') + '-pbSize';
+  const max = T.kind === 'ovl' ? 60 : 40;
+  P[k] = clamp(+((P[k] ?? 6) * f).toFixed(1), 0.5, max);
+  const rg = $(id);
+  if (rg && rg.type === 'range') { rg.value = P[k]; rg.oninput(); } else save();
+  padRedraw();
+}
+document.addEventListener('keydown', e => {
+  const ae = document.activeElement;
+  if (ae && (/INPUT|SELECT|TEXTAREA/.test(ae.tagName) && ae.type !== 'range' && ae.type !== 'checkbox')) return;
+  if (!paintActive()) return;
+  const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+  if (mod && k === 'z') { e.preventDefault(); if (e.shiftKey) redoPaint(); else undoPaint(); return; }
+  if (mod && k === 'y') { e.preventDefault(); redoPaint(); return; }
+  if (!mod && (e.key === '[' || e.key === ']')) { e.preventDefault(); setBrushSize(e.key === ']' ? 1.18 : 1 / 1.18); }
+});
 
 /* =====================================================================
    OpenEXR reader (scanline images, single- or multi-part; uncompressed,
@@ -5973,8 +6417,9 @@ const SHOT_LIGHT = `
 uniform sampler2D uGobo, uShadow;
 uniform int uType, uShape, uSingle;
 uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
-uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uGoboRes, uShT, uShHalf, uShFar, uShRes;
+uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uGoboRes, uShT, uShHalf, uShFar, uShRes; uniform vec2 uGoboOff;
 vec3 gobo(vec2 uv){
+  uv -= uGoboOff;
   if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }
   else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return texture(uGobo, uv).rgb;
@@ -6704,8 +7149,18 @@ function gizDraw() {
   const W = Math.round(r.width * d), Hh = Math.round(r.height * d);
   if (gcv.width !== W || gcv.height !== Hh) { gcv.width = W; gcv.height = Hh; }
   gctx.setTransform(1, 0, 0, 1, 0, 0); gctx.clearRect(0, 0, W, Hh);
-  if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
   gctx.setTransform(d, 0, 0, d, 0, 0);
+  if (typeof drawWipe === 'function') drawWipe(gctx);
+  if (S.view !== 'scene' || !VIEWCAM || (inShot() && (S.shot.disp | 0) > 0)) return;
+  // the paint brush's footprint where the light lands
+  if (SCENE_RING && scenePaintOn()) {
+    gctx.lineWidth = 1.5; gctx.strokeStyle = 'rgba(255,255,255,.9)'; gctx.shadowColor = 'rgba(0,0,0,.7)'; gctx.shadowBlur = 2;
+    gctx.beginPath(); let on = false;
+    for (const P of SCENE_RING.pts) { const q = P && toCss(P); if (!q) { on = false; continue; } if (on) gctx.lineTo(q[0], q[1]); else { gctx.moveTo(q[0], q[1]); on = true; } }
+    gctx.stroke(); gctx.shadowBlur = 0;
+    const c = toCss(SCENE_RING.ctr); if (c) { gctx.fillStyle = 'rgba(255,255,255,.9)'; gctx.beginPath(); gctx.arc(c[0], c[1], 1.5, 0, 7); gctx.fill(); }
+  }
+  if (typeof heroDraw === 'function') heroDraw(gctx);
   // the scene's other lights: small icons with their names; click one to select it
   for (const o of (LASTSCENE && LASTSCENE.others) || []) {
     const q = otherIcon(o); if (!q) continue;
@@ -6939,9 +7394,10 @@ async function forEachLight(fn, filter = () => true) {
    time, resolution or quality moved on (or it has none yet), and described while it is in. */
 function otherLights() {
   if (!lightMulti()) return [];
-  const home = RIG.sel, keepInfo = info, keepGobo = goboInfo, out = [];
+  const home = RIG.sel, keepInfo = info, keepGobo = goboInfo, out = [], keepSync = TREES_SYNC;
   const key = [S.t, S.res, S.quality, S.shotSel, SHOT.frame ? SHOT.frame.n : 0].join('|');
   lightStash(lightCur());
+  TREES_SYNC = true;                       // background work for a light that is not in front would be dropped
   try {
     RIG.lights.forEach((Lr, i) => {
       if (i === home || Lr.on === false) return;
@@ -6952,6 +7408,7 @@ function otherLights() {
       lightStash(Lr);
     });
   } finally {
+    TREES_SYNC = keepSync;
     RIG.sel = home; lightUnstash(lightCur());
     info = keepInfo; goboInfo = keepGobo;
   }
@@ -7044,7 +7501,7 @@ const EXPORT = (() => {
     jpg: {label:'JPEG  .jpg', ext:'jpg', depths:[['8', '8-bit']]},
   };
   const isFloat = d => d === 'half' || d === 'float' || d === '32';
-  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this'};
+  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this', comp:'off'};
   S.exp = {...DEF, ...(S.exp || {})};
   if (!FMT[S.exp.fmt]) S.exp.fmt = 'exr';
   const st = {busy:false, cancel:false};
@@ -7511,7 +7968,7 @@ const EXPORT = (() => {
     const outDir = hw ? exportDir(e) : '';
     const keep = {res:S.res, quality:S.quality, t:S.t};
     const ZIPCAP = 1 << 30;
-    let written = 0;
+    let written = 0, meanSum = 0;
     const paths = [];
     const t0 = performance.now();
     const flush = async (final) => {
@@ -7531,6 +7988,8 @@ const EXPORT = (() => {
       await ctx.zip.add(name, blob); if (num !== undefined) { ctx.zip.hi = num; ctx.lo = Math.min(ctx.lo, num); ctx.hi = Math.max(ctx.hi, num); }
       return './' + name;
     };
+    const keepSync = TREES_SYNC;
+    TREES_SYNC = true;                     // written frames always have the finished trees and wind
     try {
       S.res = R; S.quality = e.qual;
       for (let i = 0; i < fl.length; i++) {
@@ -7541,6 +8000,7 @@ const EXPORT = (() => {
         if (MODES[S.mode].kind === 'trees') { treesFor(S.p[S.mode], TL()); while (TR.windPending) { await sleep(60); if (st.cancel) break; } }
         S.t = F.time(f);
         const img = grab(R, nch);
+        { let m = 0; const d = img.data, n = d.length / nch; for (let j = 0; j < d.length; j += nch) m += nch === 3 ? 0.2126 * d[j] + 0.7152 * d[j + 1] + 0.0722 * d[j + 2] : d[j]; meanSum += m / n; }
         const blob = await encode(img, e);
         const num = F.num(f);
         paths.push({frame:num, path:await put(fname(num, e), blob, num)});
@@ -7555,7 +8015,8 @@ const EXPORT = (() => {
         const json = new Blob([JSON.stringify(settingsFile(), null, 1)], {type:'application/json'});
         const setPath = await put(rn.settings, json);
         const info = {files:paths, pattern:`${base}.$F4.${ext}`, hashPattern:`${base}.####.${ext}`, format:e.fmt, depth:e.depth,
-                      colorSpace:isFloat(e.depth) || e.enc !== 'srgb' ? 'linear' : 'sRGB', channels:e.chans, res:R, fps:S.fps, settingsPath:setPath};
+                      colorSpace:isFloat(e.depth) || e.enc !== 'srgb' ? 'linear' : 'sRGB', channels:e.chans, res:R, fps:S.fps, settingsPath:setPath,
+                      mean:meanSum / written, compensate:e.comp === 'on'};
         const rigObj = lightRig(info);
         const usdPath = await put(rn.usd, new Blob([rigUSDA(rigObj)], {type:'text/plain'}));
         rigOut = {rig:rigObj, files:{gobo:paths.map(p => p.path), usd:usdPath, settings:setPath}};
@@ -7565,6 +8026,7 @@ const EXPORT = (() => {
       onProgress && onProgress(written, fl.length, null, performance.now() - t0);
       return {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send), light:lightName()};
     } finally {
+      TREES_SYNC = keepSync;
       S.res = keep.res; S.quality = keep.quality; S.t = keep.t;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
     }
@@ -7623,6 +8085,7 @@ const EXPORT = (() => {
   <div class="exprow" data-show="dest"><span>Save as</span><div class="expseg" data-seg="dest"><button data-v="zip">One zip</button><button data-v="folder">Into a folder</button></div></div>
   <div class="exprow" data-show="hostdir"><span>Writes to</span><span class="expnote" data-out="hostdir"></span></div>
   <div class="exprow"><span>Light rig</span><div class="expseg" data-seg="rig"><button data-v="off">Gobo only</button><button data-v="on">Gobo + light rig</button></div></div>
+  <div class="exprow" data-show="comp"><span>Light exposure</span><div class="expseg" data-seg="comp"><button data-v="off">As set</button><button data-v="on">Compensate for the gobo</button></div></div>
   <div class="exprow" data-show="send"><span>Then</span><div class="expseg" data-seg="send"><button data-v="off">Just write the files</button><button data-v="on" data-out="sendlbl">Create the light</button></div></div>
   <p class="expnote" data-out="sum"></p>
   <div class="expgo"><button class="run" data-run>Export</button><button class="stop" data-stop hidden>Cancel</button><div class="expbar"><i></i></div></div>
@@ -7658,6 +8121,7 @@ const EXPORT = (() => {
     q('[data-show="hostdir"]').hidden = !hw;
     if (hw) q('[data-out="hostdir"]').textContent = exportDir() || '(the host decides)';
     q('[data-show="send"]').hidden = !HOST.sendLight;
+    q('[data-show="comp"]').hidden = !rig;
     q('[data-show="who"]').hidden = !lightMulti();
     q('[data-out="thislbl"]').textContent = `This light (${lightName()})`;
     const every = e.who === 'all' && lightMulti(), nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;
@@ -7784,7 +8248,9 @@ function lightRig(info = {}) {
   // light axes: +X right and +Y up across the gobo image, light shines down -Z (the USD / Houdini convention)
   const X = sp.dir(L.r), Y = sp.dir(L.u), Z = sp.dir(v3.mul(L.f, -1)), T = sp.pos(L.pos);
   const matrix = [[...X, 0], [...Y, 0], [...Z, 0], [...T, 1]].map(r6v);
-  const dist = c.dist, ev = c.ev, col = hex3(c.color);
+  // optionally raise the light by what the gobo takes off its average (mean transmission over the exported frames)
+  const comp = info.compensate && info.mean > 1e-4 ? -Math.log2(info.mean) : 0;
+  const dist = c.dist, ev = c.ev + comp, col = hex3(c.color);
   const wrap = ['repeat', 'white', 'black', 'repeat-u'][G.single];
   const files = info.files || [];
   const frames = files.map(f => f.frame);
@@ -7807,16 +8273,18 @@ function lightRig(info = {}) {
         coneSoftness:r6(c.soft),                                        // fraction of the beam radius the edge fades over
         sourceRadius:r6(sp.len(0.04)),
       }),
-      exposure:r6(ev), color:r6v(col),
+      exposure:r6(ev), exposureCompensation:r6(comp), color:r6v(col),
       irradianceAtAim:r6(Math.pow(2, ev) * (sun ? 1 : 25 / Math.max(dist * dist, 1e-6))),   // in the tool's preview units, on a surface facing the light
     },
     gobo:{
       files, frameRange:frames.length ? [Math.min(...frames), Math.max(...frames)] : null,
       pattern:info.pattern || null, hashPattern:info.hashPattern || null, fps:info.fps || S.fps,
+      meanTransmission:info.mean !== undefined ? r6(info.mean) : null,
       format:info.format || null, bitDepth:info.depth || null, colorSpace:info.colorSpace || 'linear', channels:info.channels || 'rgb', resolution:info.res || null,
       projection:sun ? {kind:'orthographic', width:r6(sp.len(G.sunSize)), center:r6v(sp.pos(L.aim))}
                      : {kind:'perspective', fov:r6(G.cone), tiling:r6(G.rep)},
       wrap,
+      offset:[r6(c.goffX || 0), r6(c.goffY || 0)],                      // the image slid across the beam: look up uv - offset
       blur:r6(c.blur / 100),                                            // defocus as a fraction of the image width
       imageAxes:'Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling.',
     },
@@ -7898,8 +8366,11 @@ function rigUSDA(rig) {
   }
   add(`        custom token cucoloris:gobo:wrap = ${usdStr(G.wrap)}`);
   add(`        custom float cucoloris:gobo:blur = ${usdNum(G.blur)}`);
+  add(`        custom float2 cucoloris:gobo:offset = ${usdTup(G.offset || [0, 0])}`);
   add(`        custom point3d cucoloris:aim = ${usdTup(L.aim)}`);
   add(`        custom float cucoloris:irradianceAtAim = ${usdNum(L.irradianceAtAim)}`);
+  if (G.meanTransmission !== null && G.meanTransmission !== undefined) add(`        custom float cucoloris:gobo:meanTransmission = ${usdNum(G.meanTransmission)}`);
+  if (L.exposureCompensation) add(`        custom float cucoloris:exposureCompensation = ${usdNum(L.exposureCompensation)}`);
   add(`        custom string cucoloris:mode = ${usdStr(rig.mode)}`);
   if (L.name) add(`        custom string cucoloris:lightName = ${usdStr(L.name)}`);
   if (rig.settings) add(`        custom asset cucoloris:settings = ${usdAsset(rig.settings)}`);
@@ -8003,12 +8474,14 @@ window.cucoloris = Object.freeze({
   // render one frame of the final gobo: {w, h, nch, data: Float32Array, linear, rows top to bottom}
   renderFrame(n, res = 1024, opts = {}) {
     if (EXPORT.busy) throw new Error('An export is running.');
-    const keep = {res:S.res, t:S.t, quality:S.quality};
+    const keep = {res:S.res, t:S.t, quality:S.quality}, keepSync = TREES_SYNC;
+    TREES_SYNC = true;
     try {
       if (n !== undefined && n !== null) this.setFrame(n);
       S.res = res; if (opts.quality) S.quality = opts.quality;
       return EXPORT.grab(res, opts.channels === 'y' ? 1 : 3);
     } finally {
+      TREES_SYNC = keepSync;
       S.res = keep.res; S.t = keep.t; S.quality = keep.quality;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
       dirty = true;
@@ -8024,6 +8497,340 @@ window.cucoloris = Object.freeze({
   // the gobo encoders, for a host that writes files its own way: each takes {w, h, nch, data} from renderFrame
   encode:(img, opts) => EXPORT.encode(img, {...EXPORT.DEF, ...opts}),
 });
+
+/* =====================================================================
+   SNAPSHOTS, A/B WIPE AND THE GOBO INSET
+   · Snapshots A–D keep the selected light's whole gobo (a settings file)
+     to recall later, or to compare against the live one with a wipe line
+     across the preview (Gobo or Scene view). A compared snapshot is drawn
+     as a hidden light of its own, with its own caches, so both sides play.
+   · In the Scene view a small inset shows the gobo itself, with a
+     crosshair where the point under the cursor takes its light from.
+   ===================================================================== */
+const SNAP = {slots:[null, null, null, null], cmp:-1, split:0.5, Lc:null, drag:false};
+try { const v = JSON.parse(localStorage.getItem('cucLab.snaps') || 'null'); if (Array.isArray(v)) v.slice(0, 4).forEach((x, i) => { SNAP.slots[i] = x; }); } catch (e) {}
+const SNAP_NAMES = ['A', 'B', 'C', 'D'];
+function snapPersist() {
+  // the paint layers make snapshots large: if browser storage refuses, they still live for this session
+  try { localStorage.setItem('cucLab.snaps', JSON.stringify(SNAP.slots)); } catch (e) {}
+}
+function snapSave(i) {
+  SNAP.slots[i] = {at:new Date().toISOString(), light:lightName(), mode:S.mode, settings:settingsFile()};
+  snapPersist();
+  if (SNAP.cmp === i) compareOff(), compareOn(i);
+  snapBar();
+}
+async function snapRecall(i) {
+  const sl = SNAP.slots[i]; if (!sl) return;
+  if (SNAP.cmp === i) compareOff();
+  await applySettings(sl.settings);
+  snapBar();
+}
+function snapClear(i) { if (SNAP.cmp === i) compareOff(); SNAP.slots[i] = null; snapPersist(); snapBar(); }
+// the snapshot as a hidden light: the live light's state, with the snapshot's gobo and placement in it
+function compareOn(i) {
+  const sl = SNAP.slots[i]; if (!sl) return;
+  compareOff();
+  const o = sl.settings, m = o.mode;
+  const deepc = x => JSON.parse(JSON.stringify(x, (k, v) => k.startsWith('_') ? undefined : v));
+  const Lc = {id:'CMP' + i, name:'Snapshot ' + SNAP_NAMES[i], on:true};
+  for (const k of LIGHT_STATE) Lc[k] = deepc(S[k]);
+  Lc.mode = m;
+  Lc.p[m] = {...DEFAULTS[m], ...(o.pattern || {})};
+  Lc.post[m] = {...MODES[m].post, ...(o.levels || {})};
+  Lc.tl[m] = {...MODES[m].tl, ...(o.timeline || {})};
+  if (o.light) { if (shotActive()) { Lc.shotLights[S.shotSel] = Lc.shotLights[S.shotSel] || {}; Lc.shotLights[S.shotSel][m] = deepc(o.light); } else Lc.scenes[m] = deepc(o.light); }
+  Lc.ovl.on = {[m]:!!(o.paintOver && o.paintOver.on)};
+  Lc.paint = {own:o.paintYourOwn && o.paintYourOwn.image, over:o.paintOver && o.paintOver.image};
+  SNAP.Lc = Lc; SNAP.cmp = i;
+  snapBar(); dirty = true; viewDirty = true;
+}
+function compareOff() {
+  const Lc = SNAP.Lc; SNAP.Lc = null; SNAP.cmp = -1;
+  const c = Lc && Lc.cache;
+  if (c) for (const t of [c.final, c.winL]) if (t) { gl.deleteTexture(t.tex); if (t.tex2) gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
+  snapBar(); viewDirty = true;
+}
+/* Swap the snapshot in, bring its gobo up to the current time, run fn (drawing with it), swap the live light back. */
+function withCompare(fn) {
+  const Lc = SNAP.Lc; if (!Lc) return null;
+  const home = lightCur(), keepInfo = info, keepGobo = goboInfo, keepSync = TREES_SYNC, keepSel = RIG.sel;
+  const key = [S.t, S.res, S.quality, S.shotSel, SHOT.frame ? SHOT.frame.n : 0].join('|');
+  lightStash(home);
+  TREES_SYNC = true;
+  let out = null;
+  try {
+    lightUnstash(Lc); lightNormalize();
+    // its paint layers, once
+    if (Lc.paint && !Lc.paintLoaded) {
+      Lc.paintLoaded = true;
+      const draw = (T, url) => { const im = new Image(); im.onload = () => { T.ctx.drawImage(im, 0, 0, T.N, T.N); T.dirty = true; T.used = true; Lc.rkey = ''; viewDirty = true; dirty = true; }; im.src = url; };
+      if (Lc.paint.own) { const T = paintCanvas(); T.key = 'cucLab.cmp'; draw(T, Lc.paint.own); }
+      if (Lc.paint.over) { const T = ovlTarget(S.mode); T.key = 'cucLab.cmp.ovl'; draw(T, Lc.paint.over); }
+    }
+    if (Lc.rkey !== key || !targets.final || targets.final.w !== S.res) { render(); Lc.rkey = key; }
+    out = fn(targets.final);
+    lightStash(Lc);
+  } finally {
+    lightUnstash(home); RIG.sel = keepSel;
+    TREES_SYNC = keepSync; info = keepInfo; goboInfo = keepGobo;
+  }
+  return out;
+}
+// the snapshot's side of the wipe: the left part of the preview, drawn over the live picture
+function drawCompare(sceneOthers) {
+  if (!SNAP.Lc) return;
+  const x = Math.round(SNAP.split * cv.width);
+  if (x <= 0) return;
+  const keepLS = LASTSCENE, keepVC = VIEWCAM;
+  withCompare(fin => {
+    gl.enable(gl.SCISSOR_TEST); gl.scissor(0, 0, x, cv.height);
+    try {
+      if (S.view === 'scene') drawScene(fin, sceneOthers || []);
+      else pass(PR.disp, null, p => { tex(p, 'uSrc', fin.tex, 0); f1(p, 'uTiles', S.tiles); i1(p, 'uHeat', S.heat ? 1 : 0); i1(p, 'uSeams', S.seams ? 1 : 0); });
+    } finally { gl.disable(gl.SCISSOR_TEST); }
+  });
+  LASTSCENE = keepLS; VIEWCAM = keepVC;
+}
+// the wipe line, on the light manipulator's overlay
+function drawWipe(ctx) {
+  if (!SNAP.Lc) return;
+  const w = cv.clientWidth, h = cv.clientHeight, x = SNAP.split * w;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 2; ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = 3;
+  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  ctx.fillStyle = 'rgba(14,17,21,.85)'; ctx.beginPath(); ctx.arc(x, h / 2, 11, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0; ctx.fillStyle = '#fff'; ctx.font = '600 11px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('⟷', x, h / 2 + 4);
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(14,17,21,.8)';
+  const tag = (t, tx) => { const tw = ctx.measureText(t).width + 12; ctx.fillStyle = 'rgba(14,17,21,.8)'; ctx.fillRect(tx, h - 60, tw, 20); ctx.fillStyle = '#fff'; ctx.fillText(t, tx + 6, h - 46); };
+  tag('Snapshot ' + SNAP_NAMES[SNAP.cmp], Math.max(4, x - 110)); tag('Live', x + 8);
+  ctx.restore();
+}
+// dragging the wipe line (ahead of painting, the camera and the light manipulator)
+(() => {
+  const plate = $('plate');
+  const near = e => { if (!SNAP.Lc) return false; const r = cv.getBoundingClientRect(); return Math.abs(e.clientX - (r.left + SNAP.split * r.width)) < 9 && e.clientY > r.top && e.clientY < r.bottom; };
+  plate.addEventListener('pointerdown', e => {
+    if (!near(e) || e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault(); SNAP.drag = true;
+    try { plate.setPointerCapture(e.pointerId); } catch (err) {}
+  }, true);
+  plate.addEventListener('pointermove', e => {
+    if (SNAP.drag) { e.stopPropagation(); const r = cv.getBoundingClientRect(); SNAP.split = clamp((e.clientX - r.left) / r.width, 0, 1); viewDirty = true; gizDraw(); return; }
+    if (SNAP.Lc) plate.style.cursor = near(e) ? 'ew-resize' : '';
+  }, true);
+  const up = e => { if (SNAP.drag) { e.stopPropagation(); SNAP.drag = false; } };
+  plate.addEventListener('pointerup', up, true); plate.addEventListener('pointercancel', up, true);
+})();
+
+/* ---------- the snapshot bar, under the preview ---------- */
+const snapEl = document.createElement('div');
+snapEl.className = 'snapbar';
+{ const vb = document.querySelector('.viewbar'); if (vb) vb.before(snapEl); }
+const snapCss = document.createElement('style');
+snapCss.textContent = `
+.snapbar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;color:var(--mute);font-size:12px}
+.snapbar .slots{display:flex;gap:4px}
+.snapbar .slot{width:30px;height:26px;border-radius:6px;border:1px dashed var(--line);background:none;color:var(--mute);font-weight:700;cursor:pointer}
+.snapbar .slot.full{border-style:solid;background:var(--raise);color:var(--fg)}
+.snapbar .slot.cmp{border-color:var(--accent);color:var(--accent)}
+.snapbar .slot:hover{border-color:var(--accent)}
+.snapbar select{background:var(--raise);border:1px solid var(--line);border-radius:5px;padding:4px 6px}
+.snapbar .tip{font-size:11px}
+.pip{position:absolute;right:12px;bottom:34px;width:168px;height:168px;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.45);pointer-events:none;display:none;background:#000}
+body.in-scene .pip.on{display:block}`;
+document.head.append(snapCss);
+function snapBar() {
+  snapEl.innerHTML = '';
+  const lab = document.createElement('span'); lab.textContent = 'Snapshots';
+  lab.title = 'Click an empty slot to keep the selected light\'s gobo there. Click a full slot to bring it back; Shift-click to overwrite it; Alt-click to empty it.';
+  const slots = document.createElement('div'); slots.className = 'slots';
+  SNAP.slots.forEach((sl, i) => {
+    const b = document.createElement('button');
+    b.className = 'slot' + (sl ? ' full' : '') + (SNAP.cmp === i ? ' cmp' : ''); b.textContent = SNAP_NAMES[i];
+    b.title = sl ? `${SNAP_NAMES[i]}: ${sl.light} · ${(MODES[sl.mode] || {}).short || sl.mode} · ${new Date(sl.at).toLocaleString()}\nClick: bring it back · Shift-click: overwrite · Alt-click: empty` : `Keep the selected light's gobo in ${SNAP_NAMES[i]}`;
+    b.onclick = e => { if (!sl || e.shiftKey) snapSave(i); else if (e.altKey) snapClear(i); else snapRecall(i); };
+    slots.append(b);
+  });
+  const cmpL = document.createElement('label'); cmpL.textContent = 'Compare ';
+  const sel = document.createElement('select'); sel.setAttribute('aria-label', 'Compare with a snapshot');
+  sel.innerHTML = '<option value="-1">Off</option>' + SNAP.slots.map((sl, i) => sl ? `<option value="${i}">Wipe: ${SNAP_NAMES[i]} | live</option>` : '').join('');
+  sel.value = String(SNAP.cmp);
+  sel.onchange = () => { const v = +sel.value; if (v < 0) compareOff(); else compareOn(v); };
+  cmpL.append(sel);
+  snapEl.append(lab, slots, cmpL);
+  if (SNAP.Lc) { const t = document.createElement('span'); t.className = 'tip'; t.textContent = 'Drag the line across the preview'; snapEl.append(t); }
+}
+snapBar();
+// the inset's switch, beside the other view settings (Scene view only)
+{
+  const vb = document.querySelector('.viewbar');
+  if (vb) {
+    const l = document.createElement('label'); l.className = 'tog scene-only';
+    l.innerHTML = '<input type="checkbox" id="vPip"> Gobo inset'; l.title = 'A small view of the gobo in the corner, with a crosshair where the point under the cursor takes its light from';
+    const ex = vb.querySelector('#exportBtn'); if (ex) ex.before(l); else vb.append(l);
+    const cb = l.querySelector('input'); cb.checked = S.pip !== false;
+    cb.onchange = () => { S.pip = cb.checked; pipDraw(true); save(); };
+  }
+  const st = document.createElement('style'); st.textContent = 'body:not(.in-scene) .scene-only{display:none}'; document.head.append(st);
+}
+
+/* ---------- the gobo inset in the Scene view ---------- */
+const pip = document.createElement('canvas');
+pip.className = 'pip on'; pip.width = pip.height = 336; pip.setAttribute('aria-hidden', 'true');
+$('plate').append(pip);
+let pipUV = null, pipT = 0;
+if (S.pip === undefined) S.pip = true;
+function pipDraw(force) {
+  pip.classList.toggle('on', !!S.pip);
+  if (S.view !== 'scene' || !S.pip) return;
+  const now = performance.now();
+  if (!force && now - pipT < 120) return;
+  pipT = now;
+  const th = goboThumb(), x = pip.getContext('2d'), n = pip.width;
+  x.fillStyle = '#000'; x.fillRect(0, 0, n, n);
+  if (th) { x.imageSmoothingEnabled = true; x.drawImage(th, 0, 0, n, n); }
+  x.font = '600 20px system-ui, sans-serif'; x.fillStyle = 'rgba(255,255,255,.8)'; x.fillText('Gobo · ' + lightName(), 10, 28);
+  if (pipUV) {
+    // a repeating tile shows where in the tile; outside a framed gobo, the cursor gets no light from it
+    const S0 = LASTSCENE, tiled = S0 && (S0.rep > 1.0001 || (S0.ltype === 1 && goboProjection().single === 0));
+    let u = pipUV[0], v = pipUV[1];
+    const inside = u >= 0 && u <= 1 && v >= 0 && v <= 1;
+    if (tiled) { u -= Math.floor(u); v -= Math.floor(v); }
+    if (tiled || inside) {
+      const px = u * n, py = (1 - v) * n;
+      x.strokeStyle = '#f0b25e'; x.lineWidth = 3;
+      x.beginPath(); x.moveTo(px, 0); x.lineTo(px, n); x.moveTo(0, py); x.lineTo(n, py); x.stroke();
+      x.beginPath(); x.arc(px, py, 9, 0, 7); x.stroke();
+    } else { x.fillStyle = 'rgba(240,178,94,.9)'; x.fillText('cursor is outside the gobo', 10, n - 14); }
+  }
+}
+// where the point under the cursor takes its light from, while hovering the Scene view
+(() => {
+  let raf = 0, last = null;
+  cv.addEventListener('pointermove', e => {
+    if (S.view !== 'scene' || !S.pip) return;
+    last = {clientX:e.clientX, clientY:e.clientY};
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const p = last && sceneHit(last);
+      pipUV = p ? goboUVAt(p) : null; pipDraw(true);
+    });
+  });
+  cv.addEventListener('pointerleave', () => { pipUV = null; pipDraw(true); });
+})();
+
+/* =====================================================================
+   KEEP HERO LIT
+   Pick a spot in the Scene view (a face, the hero's hands), then let the tool slide the gobo across the beam
+   until that spot sits in light for as much of the shot as it can: it renders the gobo at a few moments across
+   the timeline, reads where the spot falls in each, and tries every offset. The light itself never moves.
+   ===================================================================== */
+const HERO = {picking:false, msg:''};
+function heroSamples(c) {
+  // the spot as a small disc facing the light: a centre and two rings, in the beam's own uv (before any offset)
+  const L = sceneLight(), P = c.hero, r = c.heroR || 0.25, out = [];
+  if (!P) return out;
+  const add = p => { const q = goboUVRaw(p); if (q) out.push(q); };
+  add(P);
+  for (const [k, n] of [[0.5, 6], [1, 12]]) for (let i = 0; i < n; i++) {
+    const a = (i + (k < 1 ? 0.5 : 0)) / n * 2 * Math.PI;
+    add(v3.add(P, v3.add(v3.mul(L.r, Math.cos(a) * r * k), v3.mul(L.u, Math.sin(a) * r * k))));
+  }
+  return out;
+}
+function heroFind() {
+  const c = SC();
+  if (!c.hero || !LASTSCENE) { HERO.msg = 'Pick the hero spot first.'; return; }
+  const smp = heroSamples(c);
+  if (!smp.length) { HERO.msg = 'The light does not reach that spot.'; return; }
+  const G = goboProjection(c), wrap = G.single, tl = TL();
+  // a few moments across the timeline (a looping gobo: across its loop)
+  const span = tl.loop ? tl.len : Math.min(tl.len || 10, 12), K = 8, R = 128, t0 = S.t;
+  const keep = {res:S.res, t:S.t, quality:S.quality}, keepSync = TREES_SYNC, imgs = [];
+  TREES_SYNC = true;
+  try {
+    S.res = R; S.quality = 'draft';
+    for (let k = 0; k < K; k++) {
+      S.t = tl.loop ? (t0 + k * span / K) % span : t0 + k * span / K;
+      dirty = true;
+      imgs.push(EXPORT.grab(R, 1).data);
+    }
+  } finally {
+    TREES_SYNC = keepSync; S.res = keep.res; S.t = keep.t; S.quality = keep.quality;
+    const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
+    dirty = true;
+  }
+  let gm = 0; for (const im of imgs) { let s = 0; for (let i = 0; i < im.length; i++) s += im[i]; gm += s / im.length / K; }
+  const look = (im, u, v) => {
+    if (wrap === 0 || wrap === 3) u -= Math.floor(u);
+    if (wrap === 0) v -= Math.floor(v);
+    if (u < 0 || v < 0 || u >= 1 || v >= 1) return wrap === 1 ? 1 : 0;
+    return im[Math.min(R - 1, Math.floor((1 - v) * R)) * R + Math.min(R - 1, Math.floor(u * R))];
+  };
+  const score = (ox, oy) => {
+    let m = 0, m2 = 0;
+    for (const im of imgs) { let s = 0; for (const q of smp) s += look(im, q[0] - ox, q[1] - oy); s /= smp.length; m += s / K; m2 += s * s / K; }
+    const sd = Math.sqrt(Math.max(m2 - m * m, 0));
+    return {m, sd, s:m - 0.6 * sd};
+  };
+  // a repeating gobo can slide a whole tile; a framed one (a light pool, a single branch, a window) only a little,
+  // so its frame stays on the set
+  const tiled = wrap === 0 || wrap === 3, ext = tiled ? 0.5 : 0.15, N = tiled ? 32 : 24;
+  const was = score(c.goffX || 0, c.goffY || 0), zero = score(0, 0);
+  let best = {ox:c.goffX || 0, oy:c.goffY || 0, ...was};
+  for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
+    const ox = -ext + 2 * ext * i / N, oy = wrap === 3 ? 0 : -ext + 2 * ext * j / N;
+    const r = score(ox, oy), pen = 0.03 * gm * Math.hypot(ox, oy);   // among equals, the smallest slide
+    if (r.s - pen > best.s - 0.03 * gm * Math.hypot(best.ox, best.oy) + 1e-6) best = {ox, oy, ...r};
+    if (wrap === 3) break;
+  }
+  c.goffX = +best.ox.toFixed(3); c.goffY = +best.oy.toFixed(3);
+  // in terms of the open light (a gobo value of 1: no shadow), averaged over the moments tried
+  const pct = x => Math.round(100 * x) + '%';
+  HERO.msg = `The spot now gets ${pct(best.m)} of the open light on average (it had ${pct(was.m)}${(was.m !== zero.m) ? `, ${pct(zero.m)} with no offset` : ''}; ` +
+    `the whole gobo averages ${pct(gm)}), over ${span.toFixed(0)} s. Offset ${c.goffX.toFixed(3)}, ${c.goffY.toFixed(3)} of the image.`;
+  viewDirty = true; save();
+}
+function heroGroup() {
+  const c = SC();
+  const items = [[HERO.picking ? 'Click the spot in the view…' : c.hero ? 'Pick the spot again' : 'Pick the hero spot', () => { HERO.picking = !HERO.picking; buildPanel(); }]];
+  if (c.hero) items.push(['Find the best offset', () => { HERO.msg = 'Searching…'; buildPanel(); setTimeout(() => { heroFind(); buildPanel(); }, 30); }]);
+  if (c.goffX || c.goffY) items.push(['Clear the offset', () => { c.goffX = 0; c.goffY = 0; HERO.msg = ''; viewDirty = true; save(); buildPanel(); }]);
+  const params = [
+    {type:'note', l:'Slides the gobo across the beam so the spot you pick (a face, the hero\'s hands) stays in light through the shot. The light does not move; the offset goes out with the light rig.'},
+    {type:'buttons', items},
+  ];
+  if (c.hero) params.push({k:'heroR', l:'Spot size', min:0.05, max:1.5, step:0.01, u:'m', h:'Radius of the area to keep lit, around the picked point.'});
+  if (HERO.msg) params.push({type:'note', l:HERO.msg});
+  return {name:'Keep hero lit', params};
+}
+// picking: the next click in the Scene view sets the spot (and does not aim the light or paint)
+(() => {
+  const block = e => { if (HERO.picking && e.target === cv && S.view === 'scene') { e.stopImmediatePropagation(); e.preventDefault(); return true; } return false; };
+  window.addEventListener('pointerdown', e => {
+    if (!block(e)) return;
+    const p = sceneHit(e);
+    if (p) { const c = SC(); c.hero = p.map(v => +v.toFixed(4)); if (!c.heroR) c.heroR = 0.25; HERO.picking = false; HERO.justPicked = true; HERO.msg = ''; viewDirty = true; save(); buildPanel(); }
+  }, true);
+  window.addEventListener('pointerup', e => { if (e.target === cv && HERO.justPicked) { e.stopImmediatePropagation(); HERO.justPicked = false; } }, true);
+  window.addEventListener('pointerdown', e => { if (e.target === cv && !HERO.picking) HERO.justPicked = false; }, true);
+})();
+// the spot, drawn where it sits in the Scene view
+function heroDraw(ctx) {
+  const c = SC(); if (!c.hero || S.view !== 'scene') return;
+  const L = sceneLight(), r = c.heroR || 0.25;
+  ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(240,178,94,.95)'; ctx.setLineDash([5, 4]);
+  ctx.beginPath(); let on = false;
+  for (let i = 0; i <= 40; i++) {
+    const a = i / 40 * 2 * Math.PI, q = toCss(v3.add(c.hero, v3.add(v3.mul(L.r, Math.cos(a) * r), v3.mul(L.u, Math.sin(a) * r))));
+    if (!q) { on = false; continue; } if (on) ctx.lineTo(q[0], q[1]); else { ctx.moveTo(q[0], q[1]); on = true; }
+  }
+  ctx.stroke(); ctx.setLineDash([]);
+  const q = toCss(c.hero); if (q) { ctx.fillStyle = 'rgba(240,178,94,.95)'; ctx.font = '600 11px system-ui, sans-serif'; ctx.fillText('hero', q[0] + 6, q[1] - 6); }
+}
 
 /* =====================================================================
    LOOP

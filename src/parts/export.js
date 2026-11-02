@@ -14,7 +14,7 @@ const EXPORT = (() => {
     jpg: {label:'JPEG  .jpg', ext:'jpg', depths:[['8', '8-bit']]},
   };
   const isFloat = d => d === 'half' || d === 'float' || d === '32';
-  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this'};
+  const DEF = {fmt:'exr', depth:'half', res:2048, range:'current', from:1, to:48, first:1001, chans:'rgb', enc:'srgb', qual:'high', name:'', dest:'zip', rig:'off', send:'on', who:'this', comp:'off'};
   S.exp = {...DEF, ...(S.exp || {})};
   if (!FMT[S.exp.fmt]) S.exp.fmt = 'exr';
   const st = {busy:false, cancel:false};
@@ -481,7 +481,7 @@ const EXPORT = (() => {
     const outDir = hw ? exportDir(e) : '';
     const keep = {res:S.res, quality:S.quality, t:S.t};
     const ZIPCAP = 1 << 30;
-    let written = 0;
+    let written = 0, meanSum = 0;
     const paths = [];
     const t0 = performance.now();
     const flush = async (final) => {
@@ -501,6 +501,8 @@ const EXPORT = (() => {
       await ctx.zip.add(name, blob); if (num !== undefined) { ctx.zip.hi = num; ctx.lo = Math.min(ctx.lo, num); ctx.hi = Math.max(ctx.hi, num); }
       return './' + name;
     };
+    const keepSync = TREES_SYNC;
+    TREES_SYNC = true;                     // written frames always have the finished trees and wind
     try {
       S.res = R; S.quality = e.qual;
       for (let i = 0; i < fl.length; i++) {
@@ -511,6 +513,7 @@ const EXPORT = (() => {
         if (MODES[S.mode].kind === 'trees') { treesFor(S.p[S.mode], TL()); while (TR.windPending) { await sleep(60); if (st.cancel) break; } }
         S.t = F.time(f);
         const img = grab(R, nch);
+        { let m = 0; const d = img.data, n = d.length / nch; for (let j = 0; j < d.length; j += nch) m += nch === 3 ? 0.2126 * d[j] + 0.7152 * d[j + 1] + 0.0722 * d[j + 2] : d[j]; meanSum += m / n; }
         const blob = await encode(img, e);
         const num = F.num(f);
         paths.push({frame:num, path:await put(fname(num, e), blob, num)});
@@ -525,7 +528,8 @@ const EXPORT = (() => {
         const json = new Blob([JSON.stringify(settingsFile(), null, 1)], {type:'application/json'});
         const setPath = await put(rn.settings, json);
         const info = {files:paths, pattern:`${base}.$F4.${ext}`, hashPattern:`${base}.####.${ext}`, format:e.fmt, depth:e.depth,
-                      colorSpace:isFloat(e.depth) || e.enc !== 'srgb' ? 'linear' : 'sRGB', channels:e.chans, res:R, fps:S.fps, settingsPath:setPath};
+                      colorSpace:isFloat(e.depth) || e.enc !== 'srgb' ? 'linear' : 'sRGB', channels:e.chans, res:R, fps:S.fps, settingsPath:setPath,
+                      mean:meanSum / written, compensate:e.comp === 'on'};
         const rigObj = lightRig(info);
         const usdPath = await put(rn.usd, new Blob([rigUSDA(rigObj)], {type:'text/plain'}));
         rigOut = {rig:rigObj, files:{gobo:paths.map(p => p.path), usd:usdPath, settings:setPath}};
@@ -535,6 +539,7 @@ const EXPORT = (() => {
       onProgress && onProgress(written, fl.length, null, performance.now() - t0);
       return {written, total:fl.length, cancelled:st.cancel, ms:performance.now() - t0, folder:dir && dir.name, dir:outDir, paths, rig:rigOut, sent:!!(rigOut && send), light:lightName()};
     } finally {
+      TREES_SYNC = keepSync;
       S.res = keep.res; S.quality = keep.quality; S.t = keep.t;
       const T = targets.expF; if (T) { gl.deleteTexture(T.tex); gl.deleteFramebuffer(T.fb); delete targets.expF; }
     }
@@ -593,6 +598,7 @@ const EXPORT = (() => {
   <div class="exprow" data-show="dest"><span>Save as</span><div class="expseg" data-seg="dest"><button data-v="zip">One zip</button><button data-v="folder">Into a folder</button></div></div>
   <div class="exprow" data-show="hostdir"><span>Writes to</span><span class="expnote" data-out="hostdir"></span></div>
   <div class="exprow"><span>Light rig</span><div class="expseg" data-seg="rig"><button data-v="off">Gobo only</button><button data-v="on">Gobo + light rig</button></div></div>
+  <div class="exprow" data-show="comp"><span>Light exposure</span><div class="expseg" data-seg="comp"><button data-v="off">As set</button><button data-v="on">Compensate for the gobo</button></div></div>
   <div class="exprow" data-show="send"><span>Then</span><div class="expseg" data-seg="send"><button data-v="off">Just write the files</button><button data-v="on" data-out="sendlbl">Create the light</button></div></div>
   <p class="expnote" data-out="sum"></p>
   <div class="expgo"><button class="run" data-run>Export</button><button class="stop" data-stop hidden>Cancel</button><div class="expbar"><i></i></div></div>
@@ -628,6 +634,7 @@ const EXPORT = (() => {
     q('[data-show="hostdir"]').hidden = !hw;
     if (hw) q('[data-out="hostdir"]').textContent = exportDir() || '(the host decides)';
     q('[data-show="send"]').hidden = !HOST.sendLight;
+    q('[data-show="comp"]').hidden = !rig;
     q('[data-show="who"]').hidden = !lightMulti();
     q('[data-out="thislbl"]').textContent = `This light (${lightName()})`;
     const every = e.who === 'all' && lightMulti(), nl = every ? RIG.lights.filter(l => l.on !== false).length : 1;

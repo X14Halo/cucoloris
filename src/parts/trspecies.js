@@ -9,4 +9,15 @@ const SPECIES = [
    shape:3, len:0.06, wid:0.058, lai:1.8, cluster:0.2, transl:0.08, flutHz:3.5, flutAmp:0.25, fn:0.35, tilt:1.0},
   {flutU:2.0, name:'Scots pine', kind:'pine', H:16, R:3.0, base:0.55, seg:0.3, infl:1.5, kill:0.4, attract:2000, trop:-0.15, droop:0.15, shape:5, len:0.24, wid:0.13, lai:1.6, cluster:0.28, tilt:0.6, transl:0.0, flutHz:3.0, flutAmp:0.02, fn:0.25},
   {flutU:1.2, name:'Coconut palm', kind:'palm', H:9, R:4.2, shape:4, len:0.65, wid:0.04, transl:0.05, flutHz:1.6, flutAmp:0.05, fn:0.4},
+  // cold-climate trees: the spruce and fir of northern and mountain forests, larch, and bare winter birch and aspen
+  {flutU:2.4, name:'Norway spruce', kind:'conifer', H:18, R:2.6, base:0.06, whorl:0.42, nb:5, el:-0.05, sag:0.55, tipUp:0.75, pend:0.55, latA:1.1, conePow:1.0,
+   shape:6, len:0.34, wid:0.085, dens:2.4, tilt:0.5, transl:0.0, flutHz:2.6, flutAmp:0.012, fn:0.22},
+  {flutU:2.4, name:'Subalpine fir', kind:'conifer', H:15, R:1.5, base:0.04, whorl:0.36, nb:4, el:0.02, sag:0.25, tipUp:0.25, pend:0.08, latA:0.95, conePow:1.35,
+   shape:6, len:0.3, wid:0.1, dens:2.4, tilt:0.35, transl:0.0, flutHz:2.8, flutAmp:0.01, fn:0.28},
+  {flutU:1.4, name:'Larch', kind:'conifer', H:18, R:2.8, base:0.25, whorl:0.55, nb:4, el:0.1, sag:0.35, tipUp:0.5, pend:0.7, latA:1.2, conePow:0.9,
+   shape:8, len:0.24, wid:0.24, dens:2.6, tilt:0.8, transl:0.25, flutHz:3.2, flutAmp:0.06, fn:0.25},
+  {flutU:0.8, name:'Birch in winter (bare)', kind:'sc', bare:true, wai:0.6, H:13, R:3.2, base:0.3, env:'narrow', seg:0.26, infl:1.4, kill:0.36, attract:2600, trop:0.2, droop:0.7,
+   shape:2, len:0.055, wid:0.04, lai:0, cluster:0.4, transl:0.0, flutHz:3.0, flutAmp:0, fn:0.38, tilt:1.0},
+  {flutU:0.8, name:'Aspen in winter (bare)', kind:'sc', bare:true, wai:0.55, H:12, R:2.8, base:0.4, env:'narrow', seg:0.26, infl:1.3, kill:0.36, attract:2400, trop:0.35, droop:0.05,
+   shape:3, len:0.06, wid:0.058, lai:0, cluster:0.32, transl:0.0, flutHz:3.5, flutAmp:0, fn:0.38, tilt:1.0},
 ];

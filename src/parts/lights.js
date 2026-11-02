@@ -117,9 +117,10 @@ async function forEachLight(fn, filter = () => true) {
    time, resolution or quality moved on (or it has none yet), and described while it is in. */
 function otherLights() {
   if (!lightMulti()) return [];
-  const home = RIG.sel, keepInfo = info, keepGobo = goboInfo, out = [];
+  const home = RIG.sel, keepInfo = info, keepGobo = goboInfo, out = [], keepSync = TREES_SYNC;
   const key = [S.t, S.res, S.quality, S.shotSel, SHOT.frame ? SHOT.frame.n : 0].join('|');
   lightStash(lightCur());
+  TREES_SYNC = true;                       // background work for a light that is not in front would be dropped
   try {
     RIG.lights.forEach((Lr, i) => {
       if (i === home || Lr.on === false) return;
@@ -130,6 +131,7 @@ function otherLights() {
       lightStash(Lr);
     });
   } finally {
+    TREES_SYNC = keepSync;
     RIG.sel = home; lightUnstash(lightCur());
     info = keepInfo; goboInfo = keepGobo;
   }

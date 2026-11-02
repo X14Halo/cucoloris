@@ -364,8 +364,9 @@ const SHOT_LIGHT = `
 uniform sampler2D uGobo, uShadow;
 uniform int uType, uShape, uSingle;
 uniform vec3 uLPos, uLF, uLR, uLU, uAim, uLCol;
-uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uGoboRes, uShT, uShHalf, uShFar, uShRes;
+uniform float uTanC, uSoft, uRep, uBlur, uBlurLod, uI, uSunSize, uGoboRes, uShT, uShHalf, uShFar, uShRes; uniform vec2 uGoboOff;
 vec3 gobo(vec2 uv){
+  uv -= uGoboOff;
   if (uSingle == 3){ if (uv.y < 0.0 || uv.y > 1.0) return vec3(0.0); }
   else if (uSingle > 0 && (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0)) return vec3(uSingle == 1 ? 1.0 : 0.0);
   if (uBlur <= 0.0) return texture(uGobo, uv).rgb;

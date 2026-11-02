@@ -20,7 +20,7 @@ MODES.windows = {
   onParam(k, P) {
     if (k === 'style') { Object.assign(P, WIN_STYLE_DEF[P.style | 0]); return true; }
     if (k === 'rain') { const on = P.rain > 0, ch = on !== this._rainOn; this._rainOn = on; return ch; }
-    return ['blind', 'curtain', 'trees', 'glass'].includes(k);
+    return ['blind', 'curtain', 'trees', 'glass', 'tint'].includes(k);
   },
   get groups() {
     const P = S.p.windows;
@@ -49,6 +49,9 @@ MODES.windows = {
     ];
     if (P.glass === 1 || P.glass === 2 || P.glass === 0) glass.push({k:'distort', l:'Glass waviness', min:0, max:4, step:0.01, u:'×', h:'Thickness ripples in the glass bend the light into soft caustic streaks. Old cylinder glass is 1–2×.'});
     if (P.glass === 3 || P.glass === 4) glass.push({k:'distort', l:'Texture strength', min:0.2, max:3, step:0.01, u:'×', h:'How far the textured glass spreads the light.'});
+    glass.push({k:'tint', l:'Glass colour', opts:['Clear', 'Amber (old bottle glass)', 'Green (antique)', 'Cobalt blue', 'Stained glass (each pane its own colour)'], h:'Coloured glass colours the light it lets through. Stained glass gives each pane its own colour.'});
+    if ((P.tint | 0) > 0) glass.push({k:'tintK', l:'Colour strength', min:0, max:1, step:0.01});
+    glass.push({k:'refract', l:'Rain and wavy glass bend the view', type:'chk', h:'Raindrops and ripples in the glass are lenses: what lies outside (the wall reveal, an eave, trees) is seen through them displaced, upside down inside a drop.'});
     glass.push({k:'screen', l:'Insect screen', opts:['None', 'Full screen', 'Lower half'], h:'Fine mesh outside the glass: it cuts about a third of the light and its frame casts a shadow.'});
     const dirt = [
       {k:'grime', l:'Dust & grime', min:0, max:1, step:0.01, h:'Builds up in the corners and along the bottom of each pane.'},
@@ -115,6 +118,8 @@ MODES.windows = {
     {name:'Barred window', v:{style:0, ...WIN_STYLE_DEF[0], W:1.0, H:1.2, fw:0.05, bw:0.028, cols:6, rows:1, sunElev:30, sunAz:10, recv:2.5}},
     {name:'High sun under an eave', v:{style:3, ...WIN_STYLE_DEF[3], eave:0.45, eaveH:0.35, wallT:0.2, sunElev:50, sunAz:-10, recv:2.2}},
     {name:'Sun shower on the glass', v:{style:0, ...WIN_STYLE_DEF[0], W:1.1, H:1.3, cols:2, rows:2, bw:0.034, rain:1.4, rainDrops:1.6, rainRun:1.5, rainSize:1.6, rainLens:1.8, rainSpeed:1, grime:0.2, srcSize:0.53, sunElev:32, sunAz:12, recv:0.7}},
+    {name:'Stained glass', v:{style:6, ...WIN_STYLE_DEF[6], glass:1, glazing:0, distort:0.8, tint:4, tintK:0.85, grime:0.2, sunElev:32, sunAz:12, recv:2.2, wallT:0.5, inset:0.25}},
+    {name:'Amber bottle-glass window', v:{style:0, ...WIN_STYLE_DEF[0], W:1.0, H:1.2, cols:2, rows:3, glass:1, glazing:0, distort:1.6, tint:1, tintK:0.6, grime:0.3, sunElev:30, sunAz:15, recv:2}},
     {name:'Old leaded window', v:{style:6, ...WIN_STYLE_DEF[6], glass:1, glazing:0, distort:1.4, grime:0.35, sunElev:30, sunAz:15, recv:1.8, wallT:0.5, inset:0.25}},
   ],
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},

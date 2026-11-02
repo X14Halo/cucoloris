@@ -198,6 +198,9 @@ def Xform "cucoloris" {
         custom float  cucoloris:gobo:width; point3d cucoloris:gobo:center   # orthographic
         custom token  cucoloris:gobo:wrap = "repeat" | "black" | "white" | "repeat-u"
         custom float  cucoloris:gobo:blur                               # fraction of image width
+        custom float2 cucoloris:gobo:offset                             # image slid across the beam (Keep hero lit)
+        custom float  cucoloris:gobo:meanTransmission                   # the gobo's average, over the exported frames
+        custom float  cucoloris:exposureCompensation                    # stops added to exposure to make up for it (0 unless asked)
         custom token  cucoloris:beamShape = "round" | "square"          # spot only
         custom point3d cucoloris:aim
         custom float  cucoloris:irradianceAtAim
@@ -240,6 +243,8 @@ uv  = 0.5 + 0.5 * (x / z, y / z) / t * tiling
 uv = 0.5 + (dot(p - center, X), dot(p - center, Y)) / width
 ```
 
+**Offset:** the image is looked up at `uv - offset` (both formulas), before wrapping. *Keep hero lit* sets it; it is usually 0.
+
 **Wrap outside 0–1:**
 
 - `repeat`: seamless tiles.
@@ -263,6 +268,8 @@ This is the one renderer-specific step (`attach_gobo()` in `houdini/cucoloris_pa
 | `cucoloris:gobo:width`, `center` | orthographic projection, `width` scene units across (sun) |
 | `cucoloris:gobo:wrap` | wrap / tile mode outside the image |
 | `cucoloris:gobo:blur` | filter blur, if the filter has one (or pre-blur the frames) |
+| `cucoloris:gobo:offset` | texture translate (uv offset); mind your filter's sign convention: the image moves by +offset |
+| `cucoloris:exposureCompensation` | already folded into the light's exposure; shown so it can be removed |
 | light transform | the filter's placement: usually inherits the light's transform; image +Y = light +Y |
 
 Notes. None of these were tested inside the renderers, so verify against your renderer and Houdini versions:

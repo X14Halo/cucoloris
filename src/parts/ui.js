@@ -18,7 +18,13 @@ function control(def, store, idPrefix, dflt, onChange) {
   row.append(lab);
   if (def.opts) {
     const sel = document.createElement('select'); sel.id = id;
-    def.opts.forEach((o, i) => { const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o; sel.append(op); });
+    // def.og (optional) names a group for each option; options sharing a group sit together under its heading
+    let grp = null;
+    def.opts.forEach((o, i) => {
+      const op = document.createElement('option'); op.value = def.vals ? def.vals[i] : i; op.textContent = o;
+      if (def.og) { if (!grp || grp.label !== def.og[i]) { grp = document.createElement('optgroup'); grp.label = def.og[i]; sel.append(grp); } grp.append(op); }
+      else sel.append(op);
+    });
     sel.value = store[def.k];
     sel.onchange = () => { store[def.k] = def.vals && typeof def.vals[0] === 'string' ? sel.value : +sel.value; onChange(def.k); };
     row.append(sel);
@@ -50,6 +56,35 @@ function control(def, store, idPrefix, dflt, onChange) {
     setPct(rg);
     rg.oninput = () => { store[def.k] = fromSlider(rg.value); out.textContent = fmtVal(def, store[def.k]); setPct(rg); onChange(def.k); };
     lab.ondblclick = () => { if (dflt && dflt[def.k] !== undefined) { rg.value = toSlider(dflt[def.k]); rg.oninput(); } };
+    // set a value directly: click the readout and type it (Enter keeps it, Escape cancels)
+    const setValue = v => {
+      if (!isFinite(v)) return;
+      v = clamp(Math.round(v / def.step) * def.step, def.min, def.max);
+      store[def.k] = +v.toFixed(Math.max(decimals(def.step), 0) + 2);
+      rg.value = toSlider(store[def.k]); out.textContent = fmtVal(def, store[def.k]); setPct(rg); onChange(def.k);
+    };
+    out.title = 'Click to type a value · Shift-drag the slider for fine control';
+    out.classList.add('editable');
+    out.onclick = () => {
+      if (row.querySelector('input.numin')) return;
+      const ni = document.createElement('input'); ni.type = 'text'; ni.inputMode = 'decimal'; ni.className = 'numin';
+      ni.value = String(+(+store[def.k]).toFixed(decimals(def.step) + 1)); ni.setAttribute('aria-label', def.l);
+      out.replaceWith(ni); ni.focus(); ni.select();
+      let done = false;
+      const finish = keep => { if (done) return; done = true; if (keep) setValue(parseFloat(ni.value.replace(',', '.'))); ni.replaceWith(out); };
+      ni.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+      ni.addEventListener('blur', () => finish(true));
+    };
+    // Shift-drag: a tenth of the normal speed, for fine adjustments
+    rg.addEventListener('pointerdown', e => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+      const x0 = e.clientX, v0 = +rg.value, w = rg.getBoundingClientRect().width || 200, span = (+rg.max) - (+rg.min);
+      try { rg.setPointerCapture(e.pointerId); } catch (err) {}
+      const mv = ev => { rg.value = clamp(v0 + (ev.clientX - x0) / w * span * 0.1, +rg.min, +rg.max); rg.oninput(); };
+      const up = () => { rg.removeEventListener('pointermove', mv); rg.removeEventListener('pointerup', up); rg.removeEventListener('pointercancel', up); };
+      rg.addEventListener('pointermove', mv); rg.addEventListener('pointerup', up); rg.addEventListener('pointercancel', up);
+    });
     row.append(out, rg);
   }
   if (def.h && def.showHint) { const h = document.createElement('p'); h.className = 'phint'; h.textContent = def.h; row.append(h); }
@@ -180,7 +215,10 @@ const vRes = $('vRes'), vQual = $('vQual'), vTiles = $('vTiles'), vHeat = $('vHe
 vRes.value = S.res; vQual.value = S.quality; vTiles.value = S.tiles;
 // the gobo's own resolution: everything is recalculated at it (painted layers are smoothly upscaled), and exports follow it
 { const mx = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
-  for (const o of [...vRes.options]) if (+o.value > mx) o.remove(); }
+  for (const o of [...vRes.options]) if (+o.value > mx) o.remove();
+  // a size saved earlier that is not in the list (a small screen's 256, say) still shows
+  if (![...vRes.options].some(o => +o.value === S.res)) { const o = document.createElement('option'); o.value = S.res; o.textContent = S.res + ' px'; vRes.prepend(o); }
+  vRes.value = S.res; }
 vRes.onchange = () => { S.res = +vRes.value; if (S.exp) S.exp.res = S.res; changed(); };
 vQual.onchange = () => { S.quality = vQual.value; changed(); };
 vTiles.onchange = () => { S.tiles = +vTiles.value; viewDirty = true; save(); };
@@ -277,6 +315,7 @@ function updateHud(ms) {
   const m = MODES[S.mode], tl = TL();
   hud.innerHTML = '';
   const add = (txt, cls) => { const c = document.createElement('span'); c.className = 'chip' + (cls ? ' ' + cls : ''); c.textContent = txt; hud.append(c); };
+  if (typeof TR !== 'undefined' && TR.growing && MODES[S.mode].kind === 'trees') add('Growing the trees…', 'ok growchip');
   if (typeof TR !== 'undefined' && TR.windPending && MODES[S.mode].kind === 'trees') add('Simulating the wind…', 'ok windchip');
   if (S.view === 'scene') {
     const c = SC();
@@ -287,6 +326,8 @@ function updateHud(ms) {
   }
   add(`${S.res}²`);
   add(ms ? `${ms.toFixed(0)} ms/frame` : 'paused');
+  // how much light the gobo lets through on average, and what that costs the light in stops
+  { const mean = goboMean(); if (mean !== null) { const c = document.createElement('span'); c.className = 'chip'; c.textContent = fmtMean(mean); c.title = 'Average transmission of the finished gobo (after Output levels), and the same in stops: what the gobo takes off the light\'s average brightness. Export can compensate the light rig\'s exposure for it.'; hud.append(c); } }
   const tileNow = m.tileableNow !== undefined ? m.tileableNow : m.tileable && !usesPool() && !(m.kind === 'trees' && (S.p[S.mode].framing | 0) === 1);
   add(tileNow ? 'Seamless tile' : m.target === 2 && !(S.p.hull.fade > 0) ? 'Tiles sideways' : 'Single frame', 'ok');
   add(tl.loop ? `Loop ${fmtLen(tl.len)}` : `Sequence ${fmtLen(tl.len)}`, tl.loop ? 'ok' : '');

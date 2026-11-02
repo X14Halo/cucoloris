@@ -7,7 +7,7 @@ layout(location=2) in vec4 aNorm;  // xyz, wid
 layout(location=3) in vec4 aFlut;  // f1, f2, phase, amp
 layout(location=4) in float aNode;
 uniform sampler2D uDisp; uniform float uT, uLx, uLy, uCot, uSinE, uZr, uDS;
-out vec2 vUV; flat out int vSlice; flat out float vShape;
+out vec2 vUV; flat out float vSlice; flat out float vShape;
 
 uniform float uTwA, uGustE, uTwCoh, uLoopT; uniform vec3 uTwF; uniform int uWrap;
 uniform vec4 uWk[32], uWa[32]; uniform int uNW; uniform vec3 uWm; uniform float uZtop, uFlutU, uLeanK;
@@ -69,11 +69,20 @@ void main(){
   if (uWrap == 0 && cp != 0) { gl_Position = vec4(-9.0, -9.0, 0.0, 1.0); return; }
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vUV = c; vShape = aPos.w;
-  vSlice = clamp(int((P.z - uZr) / uSinE / uDS), 0, 7);
+  // height in slices, centred on each slice's own height: a leaf between two is shared by both (no stepping as it sways)
+  vSlice = clamp((P.z - uZr) / uSinE / uDS - 0.5, 0.0, 7.0);
   gl_Position = P.z < uZr ? vec4(-9.0, -9.0, 0.0, 1.0) : vec4((g + shift + o) * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FS_LEAF3 = HEAD + `
-in vec2 vUV; flat in int vSlice; flat in float vShape;
+in vec2 vUV; flat in float vSlice; flat in float vShape;
+// transmittance T laid into the slices around height x (in slices): T^(1-f) into slice k and T^f into k+1, whose product is T
+void slices(float T, float x, out vec4 a, out vec4 b){
+  int k = int(floor(x)); float f = x - float(k);
+  vec4 e0 = vec4(equal(ivec4(k), ivec4(0, 1, 2, 3))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(0, 1, 2, 3))) * f;
+  vec4 e1 = vec4(equal(ivec4(k), ivec4(4, 5, 6, 7))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(4, 5, 6, 7))) * f;
+  T = max(T, 1e-4);
+  a = pow(vec4(T), e0); b = pow(vec4(T), e1);
+}
 uniform float uTransl;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
 void main(){
@@ -99,6 +108,27 @@ void main(){
     d = length(q * vec2(1.0, 1.02)) - r * (1.0 - 0.6 * smoothstep(0.35, 0.52, q.x));
   } else if (s == 4){     // palm leaflet: long and narrow
     d = abs(v) - 0.5 * pow(max(sin(PI * u), 0.0), 0.3);
+  } else if (s == 6){     // spruce or fir spray: a dense core of shoots, fringed with needles angled forward
+    float env = 0.5 * pow(max(sin(PI * min(u * 1.04, 1.0)), 0.0), 0.3);
+    float q = (u + abs(v) * 0.5) * 30.0;
+    float needle = abs(fract(q) - 0.5), lw = fwidth(q);
+    float ncov = smoothstep(0.5 * lw + 0.22, 0.22 - 0.5 * lw, needle);
+    float core = smoothstep(0.62, 0.42, abs(v) / max(env, 1e-3));
+    d = abs(v) - env;
+    Tl = 1.0 - max(max(core * 0.9, ncov * 0.95), smoothstep(0.06, 0.025, abs(v)));
+  } else if (s == 7){     // snow lying on a branch or spray: a lumpy pillow, opaque
+    vec2 q = vec2(u - 0.5, v);
+    float a = atan(q.y, q.x);
+    float lump = 0.07 * sin(5.0 * a + 1.3) + 0.05 * sin(9.0 * a + 4.1 + 6.0 * u);
+    d = length(q * vec2(1.0, 1.0)) - (0.5 + lump) * (0.8 + 0.2 * pow(max(sin(PI * u), 0.0), 0.5));
+    Tl = 0.0;
+  } else if (s == 8){     // larch: tufts of soft needles fanning out from short shoots
+    vec2 q = vec2(u - 0.5, v) * 2.0;
+    float r = length(q), a = atan(q.y, q.x);
+    float ray = abs(fract(a * 4.0 / PI) - 0.5);
+    float lw = fwidth(a * 4.0 / PI);
+    d = r - 0.95;
+    Tl = 1.0 - smoothstep(0.5 * lw + 0.12, 0.12 - 0.5 * lw, ray) * smoothstep(1.0, 0.25, r) * 0.8 - 0.2 * smoothstep(0.3, 0.0, r);
   } else {                // pine shoot: a brush of needles
     float env = 0.5 * pow(max(sin(PI * min(u * 1.05, 1.0)), 0.0), 0.5);
     float inside = abs(v) - env;
@@ -114,10 +144,7 @@ void main(){
   float cov = clamp(0.5 - d / w, 0.0, 1.0);
   float T = 1.0 - cov * (1.0 - Tl);
   if (cov <= 0.0) discard;
-  vec4 sel = vec4(equal(ivec4(vSlice), ivec4(0, 1, 2, 3)));
-  vec4 sel2 = vec4(equal(ivec4(vSlice), ivec4(4, 5, 6, 7)));
-  o0 = mix(vec4(1.0), vec4(T), sel);
-  o1 = mix(vec4(1.0), vec4(T), sel2);
+  slices(T, vSlice, o0, o1);
 }`;
 /* ---------- Trees: trunk, branches and twigs as tapered capsules ---------- */
 const VS_SEG = HEAD + `
@@ -139,7 +166,7 @@ vec3 twigMove(int node, float w, vec2 xy){
   float s1 = sin(TAU * qf(uTwF.x * j) * uT + rp.x), s2 = sin(TAU * qf(uTwF.y * j) * uT + rp.y), s3 = sin(TAU * qf(uTwF.z * j) * uT + rp.z);
   return uTwA * E * vec3(0.7 * s1 + 0.3 * s3, 0.55 * s2 + 0.2 * s1, 0.6 * s3 + 0.25 * s2);
 }
-out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out int vSlice;
+out vec2 vP; flat out vec4 vSeg; flat out vec2 vW; flat out float vSlice;
 vec3 dsp(float n, vec2 xy){ int i = int(n + 0.5); vec4 d = texelFetch(uDisp, ivec2(i % 1024, i / 1024), 0); return d.xyz + twigMove(i, d.w, xy); }
 uniform sampler2D uOvl; uniform int uOvlOn;
 // painted density where this point of the tree sits at rest, seen along the sun: + thins it out, - fills it in
@@ -180,11 +207,18 @@ void main(){
   vec2 o = vec2((cp & 1) == 1 ? (fc.x > 0.5 ? -1.0 : 1.0) : 0.0, (cp & 2) == 2 ? (fc.y > 0.5 ? -1.0 : 1.0) : 0.0);
   vP = P; vSeg = vec4(ga, gb); vW = vec2(wa, wb);
   float zm = 0.5 * (A.z + B.z);
-  vSlice = clamp(int((zm - uZr) / uSinE / uDS), 0, 7);
+  vSlice = clamp((zm - uZr) / uSinE / uDS - 0.5, 0.0, 7.0);
   gl_Position = zm < uZr ? vec4(-9.0, -9.0, 0.0, 1.0) : vec4((P + shift + o) * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const FS_SEG = HEAD + `
-in vec2 vP; flat in vec4 vSeg; flat in vec2 vW; flat in int vSlice;
+in vec2 vP; flat in vec4 vSeg; flat in vec2 vW; flat in float vSlice;
+void slices(float T, float x, out vec4 a, out vec4 b){
+  int k = int(floor(x)); float f = x - float(k);
+  vec4 e0 = vec4(equal(ivec4(k), ivec4(0, 1, 2, 3))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(0, 1, 2, 3))) * f;
+  vec4 e1 = vec4(equal(ivec4(k), ivec4(4, 5, 6, 7))) * (1.0 - f) + vec4(equal(ivec4(k + 1), ivec4(4, 5, 6, 7))) * f;
+  T = max(T, 1e-4);
+  a = pow(vec4(T), e0); b = pow(vec4(T), e1);
+}
 uniform float uPx;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
 void main(){
@@ -196,10 +230,7 @@ void main(){
   float cov = clamp((wE - dd) / uPx + 0.5, 0.0, 1.0) * min(1.0, w / (0.5 * uPx));
   if (cov <= 0.0) discard;
   float T = 1.0 - cov;
-  vec4 sel = vec4(equal(ivec4(vSlice), ivec4(0, 1, 2, 3)));
-  vec4 sel2 = vec4(equal(ivec4(vSlice), ivec4(4, 5, 6, 7)));
-  o0 = mix(vec4(1.0), vec4(T), sel);
-  o1 = mix(vec4(1.0), vec4(T), sel2);
+  slices(T, vSlice, o0, o1);
 }`;
 /* ---------- Trees: ray integration over the sun disk. Each direction is traced through
               all eight slices at its own parallax; the gaps act as pinhole cameras. ---------- */

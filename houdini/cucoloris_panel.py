@@ -169,6 +169,7 @@ def attach_gobo(sublayer_node, rig, files):
       rig['gobo']['projection']   {'kind': 'perspective', 'fov', 'tiling'} or {'kind': 'orthographic', 'width', 'center'}
       rig['gobo']['wrap']         repeat / black / white / repeat-u
       rig['gobo']['blur']         fraction of the image width
+      rig['gobo']['offset']       the image slid across the beam: look up uv - offset (Keep hero lit; usually 0)
     Image +X is the light's +X, image up is the light's +Y. Keep this idempotent: update an existing filter.
     """
     print('Cucoloris Lab: light rig referenced; attach_gobo() is not written yet for this renderer.')

@@ -530,7 +530,7 @@ function renderShapesRaw(P, res, t, tl, name = 'shRaw') {
     f1(p, 'uSwayHz', P.swayHz ?? 0.4); f1(p, 'uWindA', M.th); gl.uniform2i(p.u('uWindI'), Math.round(M.dir[0]), Math.round(M.dir[1]));
     f1(p, 'uFlow', org ? (P.flow ?? 0) : 0); f1(p, 'uBreath', 0); f1(p, 'uBreathT', Math.max(P.breathT ?? 8, 0.5)); f1(p, 'uGust', P.gust ?? 0);
     tex(p, 'uPaint', paintTex(), 1); f1(p, 'uPaintUp', res / PAINT.N); f1(p, 'uOvlUp', res / 512);
-    const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); if (ov) tex(p, 'uOvl', ovlTex(ovlTarget('shapes')), 2);
+    const ov = name === 'shOut' && ovlOn() && ovlTarget('shapes').used; i1(p, 'uOvlOn', ov ? 1 : 0); tex(p, 'uOvl', ov ? ovlTex(ovlTarget('shapes')) : paintTex(), 2);   // always a real texture: an unset sampler reads unit 0, which may hold this very target (a feedback loop, and a black frame)
   });
   return out;
 }

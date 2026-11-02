@@ -30,7 +30,9 @@ function lightRig(info = {}) {
   // light axes: +X right and +Y up across the gobo image, light shines down -Z (the USD / Houdini convention)
   const X = sp.dir(L.r), Y = sp.dir(L.u), Z = sp.dir(v3.mul(L.f, -1)), T = sp.pos(L.pos);
   const matrix = [[...X, 0], [...Y, 0], [...Z, 0], [...T, 1]].map(r6v);
-  const dist = c.dist, ev = c.ev, col = hex3(c.color);
+  // optionally raise the light by what the gobo takes off its average (mean transmission over the exported frames)
+  const comp = info.compensate && info.mean > 1e-4 ? -Math.log2(info.mean) : 0;
+  const dist = c.dist, ev = c.ev + comp, col = hex3(c.color);
   const wrap = ['repeat', 'white', 'black', 'repeat-u'][G.single];
   const files = info.files || [];
   const frames = files.map(f => f.frame);
@@ -53,16 +55,18 @@ function lightRig(info = {}) {
         coneSoftness:r6(c.soft),                                        // fraction of the beam radius the edge fades over
         sourceRadius:r6(sp.len(0.04)),
       }),
-      exposure:r6(ev), color:r6v(col),
+      exposure:r6(ev), exposureCompensation:r6(comp), color:r6v(col),
       irradianceAtAim:r6(Math.pow(2, ev) * (sun ? 1 : 25 / Math.max(dist * dist, 1e-6))),   // in the tool's preview units, on a surface facing the light
     },
     gobo:{
       files, frameRange:frames.length ? [Math.min(...frames), Math.max(...frames)] : null,
       pattern:info.pattern || null, hashPattern:info.hashPattern || null, fps:info.fps || S.fps,
+      meanTransmission:info.mean !== undefined ? r6(info.mean) : null,
       format:info.format || null, bitDepth:info.depth || null, colorSpace:info.colorSpace || 'linear', channels:info.channels || 'rgb', resolution:info.res || null,
       projection:sun ? {kind:'orthographic', width:r6(sp.len(G.sunSize)), center:r6v(sp.pos(L.aim))}
                      : {kind:'perspective', fov:r6(G.cone), tiling:r6(G.rep)},
       wrap,
+      offset:[r6(c.goffX || 0), r6(c.goffY || 0)],                      // the image slid across the beam: look up uv - offset
       blur:r6(c.blur / 100),                                            // defocus as a fraction of the image width
       imageAxes:'Image left to right runs along the light +X axis, bottom to top along +Y. A pixel at uv (0..1, v up) lands where the light-space direction (x, y, -1) has x = (2u - 1) * tan(fov / 2) / tiling, y = (2v - 1) * tan(fov / 2) / tiling.',
     },
@@ -144,8 +148,11 @@ function rigUSDA(rig) {
   }
   add(`        custom token cucoloris:gobo:wrap = ${usdStr(G.wrap)}`);
   add(`        custom float cucoloris:gobo:blur = ${usdNum(G.blur)}`);
+  add(`        custom float2 cucoloris:gobo:offset = ${usdTup(G.offset || [0, 0])}`);
   add(`        custom point3d cucoloris:aim = ${usdTup(L.aim)}`);
   add(`        custom float cucoloris:irradianceAtAim = ${usdNum(L.irradianceAtAim)}`);
+  if (G.meanTransmission !== null && G.meanTransmission !== undefined) add(`        custom float cucoloris:gobo:meanTransmission = ${usdNum(G.meanTransmission)}`);
+  if (L.exposureCompensation) add(`        custom float cucoloris:exposureCompensation = ${usdNum(L.exposureCompensation)}`);
   add(`        custom string cucoloris:mode = ${usdStr(rig.mode)}`);
   if (L.name) add(`        custom string cucoloris:lightName = ${usdStr(L.name)}`);
   if (rig.settings) add(`        custom asset cucoloris:settings = ${usdAsset(rig.settings)}`);

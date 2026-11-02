@@ -5,7 +5,12 @@
 const SHAPES = ['Light shafts (fan)', 'Curtain shafts', 'Parallel beams', 'Ragged streaks', 'Splotches', 'Cucoloris board', 'Water reflection shimmer', 'Soft spots', 'Art deco fan',
                 'Soft blobs', 'Leafy breakup', 'Soft mottling', 'Dappled holes', 'Branches & leaves', 'Paint your own',
                 'Soft clouds', 'Billows', 'Pools that come and go', 'Marbled flow', 'Uneven wash'];
-const SHAPE_ORDER = [9, 15, 11, 16, 17, 18, 19, 7, 0, 1, 2];
+// the menu's sections: soft noise, then shafts and beams, then the classic cookies a grip would put on a stand
+// (no water or leaves here: those are real simulations in their own modes)
+const SHAPE_MENU = [['Soft noise', [9, 15, 11, 16, 17, 18, 19, 7]], ['Shafts and beams', [0, 1, 2]], ['Classic cookies', [5, 4, 3, 12, 8]]];
+const SHAPE_ORDER = SHAPE_MENU.flatMap(([, ids]) => ids);
+const SHAPE_GROUP = SHAPE_MENU.flatMap(([n, ids]) => ids.map(() => n));
+const COOKIES = new Set([3, 4, 5, 8, 12]);
 const SHAPE_SEAMLESS = [false, false, false, true, true, true, true, true, false, true, true, true, true, true, true, true, true, true, true, true];
 const ORGANIC = new Set([9, 10, 11, 12, 13]);
 const SOFTNOISE = new Set([7, 9, 11, 15, 16, 17, 18, 19]);
@@ -32,9 +37,9 @@ MODES.shapes = {
     const P = S.p.shapes, sh = P.shape | 0;
     this._blendOn = (P.blend ?? 0) > 0;
     P.paintMode = sh === 14; P.framing = 0;
-    const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14;
+    const fan = sh === 0 || sh === 1, beams = sh === 2, soft = SOFTNOISE.has(sh), paint = sh === 14, cookie = COOKIES.has(sh);
     const g = [
-      {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER},
+      {k:'shape', l:'Shape', opts:SHAPE_ORDER.map(i => SHAPES[i]), vals:SHAPE_ORDER, og:SHAPE_GROUP},
     ];
     g.push({k:'blur', l:'Blur', min:0, max:20, step:0.05, u:'%', h:'Defocus of the whole gobo, as a percentage of its width. Soft noise usually wants several percent.'});
     const look = [];
@@ -55,6 +60,23 @@ MODES.shapes = {
       if (sh !== 17 && sh !== 7 && sh !== 18) look.push({k:'stretch', l:'Stretch', min:1, max:5, step:1, fmt:v => v + '×', h:'Elongates the shapes, for streaky light.'});
       if ((P.stretch || 1) > 1 && sh !== 17 && sh !== 7 || sh === 18) look.push({k:'dir', l:sh === 18 ? 'Band direction' : 'Stretch direction', opts:DIRS});
     }
+    if (cookie && sh !== 8) {
+      const across = {5:'Holes across', 4:'Splotches across', 3:'Streaks across', 12:'Holes across'}[sh];
+      look.push(
+        {k:'scale', l:across, min:1, max:16, step:1, h:'How many main shapes fit across the cookie. Whole numbers keep it seamless.'},
+        {k:'amount', l:sh === 12 ? 'Hole size' : 'Open area', min:0.05, max:0.95, step:0.01, h:'How much of the cookie lets light through.'},
+        {k:'soft', l:'Edge softness', min:0, max:1, step:0.01, h:'Sharp edges are a cookie close to the subject; soft ones are further away, or the light is bigger.'});
+      if (sh !== 12) look.push({k:'brk', l:sh === 5 ? 'Ragged edges' : sh === 3 ? 'Raggedness' : 'Detail', min:0, max:1, step:0.01,
+        h:sh === 5 ? 'How rough the sawn edges of the holes are.' : 'How much finer detail breaks up the shapes.'});
+      if (sh === 3) look.push({k:'dir', l:'Streak direction', opts:DIRS});
+      if (sh === 12) look.push(
+        {k:'warp', l:'Irregularity', min:0, max:1.5, step:0.01, h:'Pulls the holes out of round, into the uneven gaps of a real canopy cookie.'},
+        {k:'darkest', l:'Darkest shadow', min:0, max:0.9, step:0.01, h:'Lets some light through the solid parts, like a cookie of scrim or thin card.'});
+    }
+    if (sh === 8) look.push(
+      {k:'count', l:'Number of lites', min:3, max:24, step:1},
+      {k:'width', l:'Glazing bar width', min:0.05, max:0.98, step:0.01},
+      {k:'soft', l:'Edge softness', min:0, max:1, step:0.01});
     if (fan || beams) look.push(
       {k:'count', l:fan ? 'Number of shafts' : 'Number of beams', min:1, max:40, step:1},
       ...(fan ? [{k:'spread', l:'Fan angle', min:5, max:150, step:0.5, u:'°'}, {k:'apexX', l:'Source position', min:-0.6, max:0.6, step:0.01, h:'Where the light comes from, left to right above the frame.'}, {k:'apexY', l:'Source height above frame', min:0, max:2, step:0.01, h:'0 puts the source at the top edge; larger values make the shafts more parallel.'}] : [{k:'angle', l:'Angle', min:-90, max:90, step:0.5, u:'°'}]),
@@ -71,16 +93,19 @@ MODES.shapes = {
       ...paintDefs());
     const out = [{name:'Paint your own', params:pp, first:true}, {name:'Shape', params:g, off:paint}];
     if (look.length) out.push({name:'Look', params:look, off:paint});
-    if (fan || beams) out.push({name:'Motion', params:[
+    if (sh === 8) {}
+    else if (fan || beams) out.push({name:'Motion', params:[
       {k:'motion', l:'Shimmer', min:0, max:1, step:0.01, h:'Each shaft slowly brightens and dims on its own and wavers a touch, with dust drifting through it.'},
       {k:'shimSpd', l:'Shimmer speed', min:0.1, max:4, step:0.01, log:true, fmt:v => v.toFixed(2) + '×'},
     ]});
     else {
-      const bl = (P.blend ?? 0) > 0 && sh !== 17 && sh !== 7;
+      const bl = (P.blend ?? 0) > 0 && sh !== 17 && sh !== 7 && !cookie;
       out.push({name:'Motion', params:[
         {type:'buttons', items:MOTION_LOOKS.map(([n, v]) => [n, () => { Object.assign(S.p.shapes, v); buildPanel(); changed(); }])},
         {k:'mSpeed', l:'Overall speed', min:0.1, max:20, step:0.01, log:true, fmt:v => v.toFixed(2) + '×', h:'Scales every motion below together.'},
-        ...(sh !== 17 && sh !== 7 ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
+        ...(cookie ? [{k:'sway', l:'Sway on the stand', min:0, max:1, step:0.01, h:'The cookie rocks on its stand, as it does in a draught or when someone brushes it: the pattern moves almost as one piece, by up to about 10 cm where the light lands.'},
+                      {k:'swayHz', l:'Sway rate', min:0.05, max:2, step:0.01, u:'Hz', log:true}] : []),
+        ...(sh !== 17 && sh !== 7 && !cookie ? [{k:'blend', l:'Morph', min:0, max:1, step:0.01, h:'The pattern keeps morphing into new versions of itself, shifted by random offsets: shapes stretch, merge and split into the next arrangement, so it stays the same kind of light but never repeats. Higher values make each new version more different.'}] : []),
         ...(bl ? [{k:'blendT', l:'Time per morph', min:0.5, max:60, step:0.1, log:true, u:'s', h:'How long each morph into the next version takes. The motion never pauses between them.'}] : []),
         {k:'morph', l:sh === 17 || sh === 7 ? 'Wander' : 'Evolve', min:0, max:1, step:0.01, h:sh === 17 || sh === 7 ? 'The pools drift around on their own paths.' : 'The shapes slowly change form in place.'},
         {k:'flow', l:'Flow', min:0, max:1, step:0.01, h:'Slowly turning currents carry the shapes around, so they ooze and swirl rather than slide.'},
@@ -109,6 +134,12 @@ MODES.shapes = {
     {name:'Light shafts, slow shimmer', v:{shape:0, blur:0.5, count:9, spread:70, apexY:0.15, width:0.55, wVar:0.6, soft:0.6, fall:0.55, brk:0.5, motion:0.6, shimSpd:0.8}},
     {name:'Shafts from the side', v:{shape:0, blur:0.5, count:8, spread:40, apexX:-0.55, apexY:0.1, width:0.4, wVar:0.7, soft:0.5, fall:0.6, brk:0.6, motion:0.5, shimSpd:0.7}},
     {name:'Curtain shafts', v:{shape:1, blur:0.5, count:7, spread:36, apexY:0.1, width:0.7, wVar:0.5, soft:0.3, fall:0.45, brk:0.6, motion:0.4}},
+    {name:'Classic cucoloris board', v:{shape:5, blur:0.8, scale:3, amount:0.42, soft:0.15, brk:0.5, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Cookie on a stand, swaying', v:{shape:5, blur:1.5, scale:4, amount:0.45, soft:0.25, brk:0.4, morph:0, flow:0, drift:0, blend:0, sway:0.35, swayHz:0.3, breath:0}},
+    {name:'Splotchy cookie', v:{shape:4, blur:2, scale:3, amount:0.5, soft:0.3, brk:0.6, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Ragged streak cookie', v:{shape:3, blur:1, scale:2, amount:0.55, soft:0.25, brk:0.6, dir:1, morph:0, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Dappled canopy cookie', v:{shape:12, blur:2.5, scale:4, amount:0.45, soft:0.35, warp:0.8, darkest:0.05, morph:0.05, flow:0, drift:0, blend:0, sway:0, breath:0}},
+    {name:'Art deco fanlight', v:{shape:8, blur:0.5, count:9, width:0.4, soft:0.15, pool:false}},
     {name:'Parallel beams', v:{shape:2, blur:0.5, count:6, angle:20, width:0.4, wVar:0.4, soft:0.4, fall:0.3, brk:0.4, motion:0.5}},
   ],
   post:{exposure:0, rolloff:0, gamma:1, contrast:0, black:0, white:1, floor:0, invert:false},

@@ -163,6 +163,7 @@ Pane frame(vec2 p){
 const FS_WINL = HEAD + `
 layout(location = 0) out vec4 oA;
 layout(location = 1) out vec4 oB;
+layout(location = 2) out vec4 oC;
 uniform vec2 uRes;
 ` + COMMON.split('uniform vec2 uRes;')[1] + WIN_GLSL + `
 uniform float uDm, uDist, uTp, uDistort, uGrime, uSmudge, uSpots, uRain, uFog, uScreenT, uT, uLoopT;
@@ -170,6 +171,22 @@ uniform float uRainSz, uRainDens, uRainRun, uRainLens, uRainSpd;
 uniform int uGlass, uScreen, uBlind, uCurt;
 uniform float uTilt, uLower, uImperf, uCOpen, uFull, uBreeze;
 uniform vec3 uBF;
+uniform int uTint; uniform float uTintK, uRefr;
+// how the glass bends rays passing through it here (radians, x and y): thickness ripples and raindrops are lenses
+vec2 gDefl = vec2(0.0);
+// glass colour: clear, amber bottle glass, antique green, cobalt, or stained glass with each pane its own colour
+vec3 tintOf(Pane P){
+  if (uTint == 0 || P.g <= 0.0) return vec3(1.0);
+  vec3 c;
+  if (uTint == 1) c = vec3(1.0, 0.72, 0.36);
+  else if (uTint == 2) c = vec3(0.64, 0.86, 0.56);
+  else if (uTint == 3) c = vec3(0.36, 0.52, 1.0);
+  else {
+    float k = floor(h2(vec2(P.id, 3.7), 71u) * 6.0);
+    c = k < 1.0 ? vec3(0.95, 0.22, 0.24) : k < 2.0 ? vec3(0.28, 0.42, 1.0) : k < 3.0 ? vec3(1.0, 0.74, 0.28) : k < 4.0 ? vec3(0.3, 0.86, 0.42) : k < 5.0 ? vec3(0.7, 0.36, 0.95) : vec3(1.0);
+  }
+  return mix(vec3(1.0), c, uTintK);
+}
 // glass relief (m) for the caustic calculation
 float relief(vec2 p, float id){
   vec2 o = vec2(id * 3.17, id * 1.71);
@@ -205,6 +222,8 @@ float glassT(vec2 p, Pane P, out float scat){
     float over = smoothstep(1.5, 4.0, F);
     float I = clamp(1.0 / max(abs(det), 0.18), 0.0, 5.0);
     T *= mix(I, 0.0, over); scat += over * 0.9;
+    // the same ripples tilt each ray by (n - 1) times the thickness gradient
+    gDefl += 0.52 * vec2(relief(p + vec2(e, 0), P.id) - relief(p - vec2(e, 0), P.id), relief(p + vec2(0, e), P.id) - relief(p - vec2(0, e), P.id)) / (2.0 * e);
   }
   if (uGlass == 2){ float rg; float b = dropField(p, 0.007, 0.22 * uDistort + 0.08, 0.0003, 0.0012, 31u, rg); T *= 1.0 - 0.8 * step(0.001, b); }
   if (uGlass == 6){
@@ -274,7 +293,8 @@ float glassT(vec2 p, Pane P, out float scat){
       float rD = (0.0018 + 0.0018 * h2(vec2(c, 16), 91u) * (0.5 + uRain)) * uRainSz * grow;
       vec2 q = vec2(dx, (p.y - yD) * 0.7) / rD;
       float dd = length(q);
-      if (dd < 1.0) { run *= 1.0 + uRainLens * (-0.75 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd)); runS += 0.4 * uRainLens; }
+      if (dd < 1.0) { run *= 1.0 + uRainLens * (-0.75 + 1.3 * smoothstep(0.55, 0.0, dd) + 0.2 * smoothstep(0.55, 1.0, dd)); runS += 0.4 * uRainLens;
+                      gDefl -= 0.2 * min(uRainLens, 1.5) * q; }   // a drop is a small converging lens: rays bend toward its middle
       // trail behind it (above): a thin wet line that breaks into beads and slowly dries
       if (p.y > yD && p.y < yStart + rD){
         float age = (p.y - yD) / (span * n / loopT);
@@ -290,7 +310,7 @@ float glassT(vec2 p, Pane P, out float scat){
       }
     }
     // beaded drops from new impacts appear all the time and stay until a runner sweeps them away
-    float cs = 0.006 * uRainSz / sqrt(max(uRainDens, 0.2)), best = 0.0; vec2 cc0 = floor(p / cs);
+    float cs = 0.006 * uRainSz / sqrt(max(uRainDens, 0.2)), best = 0.0; vec2 cc0 = floor(p / cs), bq = vec2(0.0);
     for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++){
       vec2 cc = cc0 + vec2(i, j);
       if (h2(cc, 93u) > clamp(0.7 * uRain * min(uRainDens, 1.4), 0.0, 0.97)) continue;
@@ -300,9 +320,10 @@ float glassT(vec2 p, Pane P, out float scat){
       vec2 ctr = (cc + vec2(h2(cc, 96u), h2(cc, 97u))) * cs;
       float r = (0.0004 + 0.0014 * pow(h2(cc, 98u), 2.0)) * (0.6 + min(uRain, 1.0)) * uRainSz;
       float q = length((p - ctr) / vec2(1.0, 1.1)) / r;
-      if (q < 1.0) best = max(best, 1.0 - q);
+      if (q < 1.0 && 1.0 - q > best) { best = 1.0 - q; bq = (p - ctr) / r; }
     }
     float inB = step(0.001, best) * (1.0 - clear);
+    gDefl -= 0.2 * min(uRainLens, 1.5) * inB * bq;
     T *= max(1.0 + (-0.7 + 1.1 * smoothstep(0.45, 1.0, best)) * inB * uRainLens, 0.0) * max(run, 0.0);
     scat += 0.35 * inB * uRainLens + runS;
   }
@@ -513,11 +534,12 @@ void main(){
   vec2 pb = p, pc = p;
   float b = blinds(pb, s2), c = curtains(pc, s3);
   oA = vec4(P.m, g * scr, b, c);
-  oB = vec4(min(P.g, 1.0), P.m * (s1 * scr + g * scr * (s2 + s3)), 0.0, 1.0);
+  oB = vec4(min(P.g, 1.0), P.m * (s1 * scr + g * scr * (s2 + s3)), gDefl * uRefr * step(0.0, P.g - 1e-4));
+  oC = vec4(tintOf(P), 1.0);
 }`;
 /* Pass 2: trace each gobo pixel back toward the sun through every layer. */
 const FS_WIN = COMMON + WIN_GLSL + `
-uniform sampler2D uL0, uL1, uTree;
+uniform sampler2D uL0, uL1, uL2, uTree; uniform float uTreeZ;
 uniform vec3 uR, uU, uS;
 uniform vec2 uQ0; uniform float uCover, uDm, uZo, uZi, uFD, uZB, uZC, uDist, uSunR, uPxG, uSmear, uGlowLod, uGlowK, uTreeL;
 uniform int uTaps, uSmearDir, uTreeOn, uFDn; uniform float uTexel, uEave, uEaveY;
@@ -532,7 +554,7 @@ float aaT(float d, float L){ return clamp(d / max(uPxG, 1.8 * L * uSunR / sqrt(f
 void main(){
   vec2 q = uQ0 + (gl_FragCoord.xy / uRes - 0.5) * uCover;
   // light spread by reeded, textured or frosted glass, sampled around the central ray
-  float smear = 0.0;
+  vec3 smear = vec3(0.0);
   if (uSmear > 0.0){
     vec2 c0 = toWin(q, 0.0);
     float ls = max(0.0, log2(uSmear * (uSmearDir == 1 ? 2.0 / 24.0 : 0.36) / uTexel));
@@ -542,11 +564,11 @@ void main(){
       else { float rho = sqrt((float(i) + 0.5) / 24.0), th = float(i) * 2.39996; o = uSmear * rho * vec2(cos(th), sin(th)); }
       vec2 x = c0 + o;
       vec4 a = textureLod(uL0, wuv(x), ls); float gc = textureLod(uL1, wuv(x), ls).r;
-      smear += a.r * a.g * gc * aaG(sdOpen(x));
+      smear += a.r * a.g * gc * aaG(sdOpen(x)) * textureLod(uL2, wuv(x), ls).rgb;
     }
     smear /= 24.0;
   }
-  float acc = 0.0, ws = 0.0;
+  vec3 acc = vec3(0.0); float ws = 0.0;
   float lF = lodAt(uDist), lB = lodAt(uDist + uZB / uS.z), lC = lodAt(uDist + uZC / uS.z);
   for (int i = 0; i < 256; i++){
     if (i >= uTaps) break;
@@ -554,13 +576,15 @@ void main(){
     vec2 d = uSunR * rho * vec2(cos(th), sin(th));
     float w = 1.0 - 0.6 * (1.0 - sqrt(max(0.0, 1.0 - rho * rho)));
     ws += w;
-    // wall reveal: outer and inner faces
-    float Lo = uDist + uZo / uS.z, Li = uDist + uZi / uS.z;
-    float v = aaT(sdOpen(toWin(q + Lo * d, uZo)), Lo) * aaT(sdOpen(toWin(q + Li * d, uZi)), Li);
-    // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
-    if (uEave > 0.0){ float ze = uZo + uEave, Le = uDist + ze / uS.z; v *= aaT(uEaveY - toWin(q + Le * d, ze).y, Le); }
-    if (v <= 0.0) continue;
+    // where this ray crosses the glass, and how the glass (ripples, raindrops) bends it on toward the outside
     vec2 xg = toWin(q + uDist * d, 0.0);
+    vec2 df = textureLod(uL1, wuv(xg), lF).ba;
+    // wall reveal: outer and inner faces (the outer one is seen through the glass)
+    float Lo = uDist + uZo / uS.z, Li = uDist + uZi / uS.z;
+    float v = aaT(sdOpen(toWin(q + Lo * d, uZo) + df * max(uZo, 0.0)), Lo) * aaT(sdOpen(toWin(q + Li * d, uZi)), Li);
+    // roof eave above the window: rays toward the sun that rise past its outer edge are blocked
+    if (uEave > 0.0){ float ze = uZo + uEave, Le = uDist + ze / uS.z; v *= aaT(uEaveY - (toWin(q + Le * d, ze).y + df.y * ze), Le); }
+    if (v <= 0.0) continue;
     // frame members have depth: their shadow is the union of their slices from front to back
     vec4 c = textureLod(uL0, wuv(xg), lF);
     float f1 = c.r, f2 = 1.0;
@@ -574,26 +598,33 @@ void main(){
     else gl = min(f1, f2) * c.g;
     float bl = textureLod(uL0, wuv(toWin(q + (uDist + uZB / uS.z) * d, uZB)), lB).b;
     float cu = textureLod(uL0, wuv(toWin(q + (uDist + uZC / uS.z) * d, uZC)), lC).a;
-    acc += w * v * gl * bl * cu;
+    // the trees outside, seen through the glass: each sun-disk ray looks through its own bit of glass, so raindrops and
+    // ripples scramble the canopy's shadow where they sit (a drop shows it upside down), and the rays average it out
+    // (the bend is read from a softened level of the glass: at this distance a drop's sharp lensing blurs the canopy, it does not speckle it)
+    vec2 dS = textureLod(uL1, wuv(xg), lF + 3.0).ba;
+    float tr = uTreeOn == 1 ? texture(uTree, (q + 0.5 * mix(dS, df, 0.25) * uTreeZ) / uTreeL + 0.5).r : 1.0;
+    acc += w * v * gl * bl * cu * tr * textureLod(uL2, wuv(xg), lF).rgb;
   }
-  float T = acc / ws;
+  vec3 T = acc / ws;
+  // light the glass scatters (frosting, the diffuse glow below) still comes in under the trees
+  float treeC = uTreeOn == 1 ? texture(uTree, q / uTreeL + 0.5).r : 1.0;
   // light spread by the glass leaves it in all directions, so the window outline no longer crops it; blinds and curtains still do
-  if (uSmear > 0.0) T += smear * textureLod(uL0, wuv(toWin(q, uZB)), lodAt(uDist + uZB / uS.z) + 2.0).b * textureLod(uL0, wuv(toWin(q, uZC)), lodAt(uDist + uZC / uS.z) + 2.0).a;
+  if (uSmear > 0.0) T += treeC * smear * textureLod(uL0, wuv(toWin(q, uZB)), lodAt(uDist + uZB / uS.z) + 2.0).b * textureLod(uL0, wuv(toWin(q, uZC)), lodAt(uDist + uZC / uS.z) + 2.0).a;
   // light turned diffuse by the glass, shades or curtains spreads into a broad glow
   vec2 c0 = toWin(q, 0.0);
-  float glow = 0.0;
+  vec3 glow = vec3(0.0);
   for (int i = 0; i < 6; i++){
     float th = float(i) * 1.0472;
-    glow += textureLod(uL1, wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th))), uGlowLod).g;
+    vec2 gx = wuv(c0 + uDist * 0.25 * vec2(cos(th), sin(th)));
+    glow += textureLod(uL1, gx, uGlowLod).g * textureLod(uL2, gx, uGlowLod).rgb;
   }
   // diffused light only shows where the opening lets light through, so nothing appears outside the window
   float open0 = aaG(sdOpen(toWin(q, uZo))) * aaG(sdOpen(toWin(q, uZi)));
-  T += glow / 6.0 * uGlowK * open0;
-  if (uTreeOn == 1) T *= texture(uTree, q / uTreeL + 0.5).r;
+  T += treeC * glow / 6.0 * uGlowK * open0;
   // the faint scattered glow fades out before the frame edge so the gobo has a clean black border
   vec2 e2 = abs(gl_FragCoord.xy / uRes - 0.5);
-  T *= 1.0 - smoothstep(0.42, 0.5, max(e2.x, e2.y)) * smoothstep(0.35, 0.15, T);
-  fragColor = vec4(vec3(T), 1.0);
+  T *= 1.0 - smoothstep(0.42, 0.5, max(e2.x, e2.y)) * smoothstep(0.35, 0.15, dot(T, vec3(0.2126, 0.7152, 0.0722)));
+  fragColor = vec4(T, 1.0);
 }`;
 PR.winL = program(VS_FULL, FS_WINL, 'window layers');
 PR.win = program(VS_FULL, FS_WIN, 'window composite');
@@ -601,9 +632,9 @@ PR.win = program(VS_FULL, FS_WIN, 'window composite');
 function winMRT(name, w, h) {
   let t = targets[name];
   if (t && t.w === w && t.h === h) return t;
-  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); gl.deleteFramebuffer(t.fb); }
-  const a = makeTex(w, h, 'f16', true), b = makeTex(w, h, 'f16', true);
-  for (const x of [a, b]) {
+  if (t) { gl.deleteTexture(t.tex); gl.deleteTexture(t.tex2); if (t.tex3) gl.deleteTexture(t.tex3); gl.deleteFramebuffer(t.fb); }
+  const a = makeTex(w, h, 'f16', true), b = makeTex(w, h, 'f16', true), c = makeTex(w, h, 'u8', true);
+  for (const x of [a, b, c]) {
     gl.bindTexture(gl.TEXTURE_2D, x);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
@@ -611,8 +642,9 @@ function winMRT(name, w, h) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, a, 0);
   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, b, 0);
-  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-  t = targets[name] = {tex:a, tex2:b, fb, w, h};
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT2, gl.TEXTURE_2D, c, 0);
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1, gl.COLOR_ATTACHMENT2]);
+  t = targets[name] = {tex:a, tex2:b, tex3:c, fb, w, h};
   return t;
 }
 const loopF = (f, tl) => tl.loop ? Math.max(1, Math.round(f * tl.len)) / tl.len : f;
@@ -665,9 +697,11 @@ function renderWindows(P, res, t, tl) {
       i1(p, 'uGlass', P.glass | 0); i1(p, 'uScreen', P.screen | 0); i1(p, 'uBlind', bl); i1(p, 'uCurt', P.curtain | 0);
       f1(p, 'uTilt', P.tilt); f1(p, 'uLower', P.lower); f1(p, 'uImperf', P.imperf); f1(p, 'uCOpen', P.cOpen); f1(p, 'uFull', P.full); f1(p, 'uBreeze', P.breeze);
       f3(p, 'uBF', loopF(0.21, tl), loopF(0.37, tl), loopF(0.83, tl));
+      i1(p, 'uTint', P.tint | 0); f1(p, 'uTintK', P.tintK ?? 0.8); f1(p, 'uRefr', P.refract === false ? 0 : 1);
     });
     gl.bindTexture(gl.TEXTURE_2D, L.tex); gl.generateMipmap(gl.TEXTURE_2D);
     gl.bindTexture(gl.TEXTURE_2D, L.tex2); gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, L.tex3); gl.generateMipmap(gl.TEXTURE_2D);
   }
   // trees outside: a real canopy rendered in the same light space, at its own distance
   let treeTex = null, treeL = 3, tinfo = '';
@@ -686,7 +720,7 @@ function renderWindows(P, res, t, tl) {
   }
   const out = tgt('winOut', res, res, 'f16');
   pass(PR.win, out, p => {
-    tex(p, 'uL0', L.tex, 0); tex(p, 'uL1', L.tex2, 1); tex(p, 'uTree', treeTex || L.tex, 2);
+    tex(p, 'uL0', L.tex, 0); tex(p, 'uL1', L.tex2, 1); tex(p, 'uTree', treeTex || L.tex, 2); tex(p, 'uL2', L.tex3, 3); f1(p, 'uTreeZ', P.treeDist || 8);
     f3(p, 'uR', ...B.r); f3(p, 'uU', ...B.u); f3(p, 'uS', ...s);
     f2(p, 'uQ0', cx, cy); f1(p, 'uCover', cover); f1(p, 'uDm', Dm);
     i1(p, 'uFDn', clamp(Math.ceil(2 * fd * Math.hypot(s[0], s[1]) / s[2] / Math.max(P.bw * 0.6, 0.004)) + 1, 2, 8)); f1(p, 'uZo', zo); f1(p, 'uZi', zi); f1(p, 'uFD', fd); f1(p, 'uZB', zB); f1(p, 'uZC', zC); f1(p, 'uDist', D);
